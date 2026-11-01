@@ -62,6 +62,10 @@ public sealed class PlaybackService : MediaSessionService
             .SetChannelId("hibiki-playback")!.SetChannelName(Resource.String.playback_channel)!.Build()!;
         provider.SetSmallIcon(Resource.Drawable.ic_stat_music);
         SetMediaNotificationProvider(provider);
+        // Playback is driven directly by our UI, so onGetSession() may never be
+        // called by a binding controller. Register explicitly: otherwise Media3
+        // doesn't observe state changes and the preparation card remains forever.
+        AddSession(_session);
         _handler = new Handler(Looper.MainLooper!);
         _poll = () =>
         {
