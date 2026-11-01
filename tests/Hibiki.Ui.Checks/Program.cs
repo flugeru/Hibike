@@ -50,6 +50,11 @@ internal static class Program
                     Check(view.GetVisualDescendants().OfType<Slider>().Any(s => s.Bounds.Width > 0 && s.Bounds.Width <= width), "Player slider clipped");
                     var slider = view.GetVisualDescendants().OfType<Slider>().Single();
                     Check(slider.TranslatePoint(default, view)!.Value.Y + slider.Bounds.Height <= view.Bounds.Height, "Player slider below viewport");
+                    if (width == 1260)
+                    {
+                        window.Width = 390; await Task.Delay(300); Capture(view, "player-resized-mobile");
+                        window.Width = width; await Task.Delay(300); Capture(view, "player-resized-desktop");
+                    }
                     Check(AppServices.BackHandler!(), "Player cannot close");
                     await Task.Delay(300);
                     var more = view.GetVisualDescendants().OfType<Button>().First(b => Avalonia.Automation.AutomationProperties.GetName(b)?.StartsWith("Opções de ") == true);

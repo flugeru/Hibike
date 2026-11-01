@@ -293,7 +293,7 @@ public sealed class MainView : UserControl
         // Track has no album metadata; do not invent an album name.
         var album = Text(TrackTextFormatter.Artist(track.Artist), UiTheme.Caption, Muted); album.TextTrimming = TextTrimming.CharacterEllipsis; album.HorizontalAlignment = HorizontalAlignment.Center; Put(header, album, 0, 1);
         Put(header, IconButton("queue", "Abrir fila", () => { ClosePlayer(); _page = "queue"; Refresh(); return Task.CompletedTask; }), 0, 2); panel.Children.Add(header);
-        var art = new Artwork(track, UiTheme.ThumbnailSize) { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        var art = new Artwork(track, UiTheme.ThumbnailSize, fullResolution: true) { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         art.CornerRadius = new(UiTheme.CardRadius); Put(panel, art, 1, 0);
         var metadata = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.CompactGap };
         var labels = new StackPanel { Spacing = UiTheme.CompactGap };
@@ -330,16 +330,57 @@ public sealed class MainView : UserControl
         var currentIndex = _music.Queue.ToList().FindIndex(item => item.Id == track.Id);
         var nextTrack = _music.Queue.Skip(currentIndex + 1).FirstOrDefault();
         var nextTitle = Text(nextTrack is null ? "Nenhuma faixa na sequência" : TrackTextFormatter.Title(nextTrack.Title, nextTrack.Artist), UiTheme.ButtonText);
-        nextTitle.TextTrimming = TextTrimming.CharacterEllipsis; upcoming.Children.Add(nextTitle); Put(panel, UiTheme.Inner(upcoming), 6, 0);
+        nextTitle.TextTrimming = TextTrimming.CharacterEllipsis; upcoming.Children.Add(nextTitle);
+        var upcomingBox = UiTheme.Inner(upcoming); Put(panel, upcomingBox, 6, 0);
         panel.RowDefinitions[1].Height = new GridLength(1, GridUnitType.Star);
         panel.RowDefinitions[4].Height = new GridLength(UiTheme.PlayerBottomWeight, GridUnitType.Star);
-        void ResizeArtwork()
+        var desktopLayout = new Grid { RowDefinitions = new("Auto,*,Auto"), ColumnDefinitions = new("3*,2*"),
+            ColumnSpacing = UiTheme.DesktopPlayerGap, RowSpacing = UiTheme.PageGap, Margin = UiTheme.PageMargin };
+        var queuePanel = new Grid { RowDefinitions = new("Auto,*"), RowSpacing = UiTheme.SectionGap };
+        var queueHeading = UiTheme.Text("A seguir", UiTheme.SectionTitle, weight: FontWeight.SemiBold); queuePanel.Children.Add(queueHeading);
+        var queueItems = new ItemsControl { ItemsSource = _music.Queue,
+            ItemsPanel = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel()),
+            ItemTemplate = new FuncDataTemplate<Track>((item, _) => item is null ? new Border() : TrackRow(item)) };
+        Put(queuePanel, new ScrollViewer { Content = queueItems, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }, 1, 0);
+        var transport = new Grid { RowDefinitions = new("Auto,Auto"), ColumnDefinitions = new("*,Auto,*"), ColumnSpacing = UiTheme.PageGap,
+            Background = UiTheme.Brush(UiTheme.Surface), Margin = UiTheme.Zero };
+        var host = new Grid();
+        bool? wideLayout = null;
+        void ArrangePlayer()
         {
-            var available = Math.Max(UiTheme.ThumbnailSize, panel.Bounds.Height - UiTheme.PlayerChromeHeight);
-            art.Width = art.Height = Math.Max(UiTheme.ThumbnailSize, Math.Min(panel.Bounds.Width, available));
+            var wide = host.Bounds.Width >= UiTheme.DesktopWidth;
+            if (wideLayout != wide)
+            {
+                panel.Children.Clear(); desktopLayout.Children.Clear(); transport.Children.Clear(); host.Children.Clear();
+                if (wide)
+                {
+                    Put(desktopLayout, header, 0, 0); Grid.SetColumnSpan(header, 2);
+                    Put(desktopLayout, art, 1, 0); Put(desktopLayout, queuePanel, 1, 1);
+                    Put(transport, metadata, 0, 0); metadata.VerticalAlignment = VerticalAlignment.Center;
+                    Put(transport, controls, 0, 1);
+                    Put(transport, upcomingBox, 0, 2);
+                    Put(transport, seek, 1, 0); Grid.SetColumnSpan(seek, 3);
+                    Put(desktopLayout, transport, 2, 0); Grid.SetColumnSpan(transport, 2);
+                    host.Children.Add(desktopLayout);
+                }
+                else
+                {
+                    Grid.SetColumnSpan(header, 1); Grid.SetColumnSpan(seek, 1);
+                    Put(panel, header, 0, 0); Put(panel, art, 1, 0); Put(panel, metadata, 2, 0);
+                    Put(panel, seek, 3, 0); Put(panel, controls, 5, 0); Put(panel, upcomingBox, 6, 0);
+                    host.Children.Add(panel);
+                }
+                wideLayout = wide;
+            }
+            var width = wide ? Math.Max(UiTheme.ThumbnailSize, (host.Bounds.Width - UiTheme.PageMargin.Left - UiTheme.PageMargin.Right - UiTheme.DesktopPlayerGap) * .6)
+                : Math.Min(UiTheme.PlayerMaxWidth, host.Bounds.Width - UiTheme.PageMargin.Left - UiTheme.PageMargin.Right);
+            var height = host.Bounds.Height - (wide ? UiTheme.DesktopPlayerChromeHeight : UiTheme.PlayerChromeHeight);
+            art.Width = art.Height = Math.Max(UiTheme.ThumbnailSize, Math.Min(width, height));
         }
-        panel.SizeChanged += (_, _) => ResizeArtwork();
-        _playerPage = new Border { Background = UiTheme.Brush(UiTheme.Background), Child = panel };
+        // Detach initial mobile composition before responsive host takes ownership.
+        panel.Children.Clear();
+        host.SizeChanged += (_, _) => ArrangePlayer();
+        _playerPage = new Border { Background = UiTheme.Brush(UiTheme.Background), Child = host };
         Grid.SetColumn(_playerPage, 1); Grid.SetRowSpan(_playerPage, 3); _root.Children.Add(_playerPage);
         _main.IsVisible = false; _mini.IsVisible = false; _bottom.IsVisible = false;
         Animate(_playerPage); RefreshPlayback();
@@ -435,7 +476,7 @@ public sealed class MainView : UserControl
     private static string Time(double seconds) => TrackTextFormatter.Duration(seconds);
     private static Control ToggleIcon(string name, bool active)
     {
-        var panel = new StackPanel { Spacing = UiTheme.ProgressRadius };
+        var panel = new Grid { Width = UiTheme.IconSize, Height = UiTheme.ToggleIconHeight };
         var icon = new Grid(); icon.Children.Add(Icons.Make(name, active ? Accent : Muted));
         if (name == "repeat" && active)
         {
@@ -445,7 +486,7 @@ public sealed class MainView : UserControl
         panel.Children.Add(icon);
         panel.Children.Add(new Border { Width = UiTheme.ProgressRadius, Height = UiTheme.ProgressRadius,
             CornerRadius = new(UiTheme.ProgressRadius), Background = active ? UiTheme.Brush(Accent) : Brushes.Transparent,
-            HorizontalAlignment = HorizontalAlignment.Center });
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom });
         return panel;
     }
     private static TextBlock Text(string text, double size, string color = UiTheme.TextPrimary) => UiTheme.Text(text, size, color);

@@ -11,7 +11,7 @@ internal sealed class Artwork : Border
     private static readonly HttpClient Client = new() { Timeout = TimeSpan.FromSeconds(12) };
     private CancellationTokenSource? _cancel;
     private Bitmap? _bitmap;
-    public Artwork(Track? track, double size)
+    public Artwork(Track? track, double size, bool fullResolution = false)
     {
         Width = Height = size; CornerRadius = new CornerRadius(size > UiTheme.ThumbnailSize ? UiTheme.CardRadius : UiTheme.ThumbRadius); ClipToBounds = true;
         Background = UiTheme.Brush(UiTheme.SurfaceElevated);
@@ -40,7 +40,8 @@ internal sealed class Artwork : Border
                         memory.Write(buffer, 0, read);
                     }
                     memory.Position = 0;
-                    var bitmap = Bitmap.DecodeToWidth(memory, (int)Math.Max(128, size * 2));
+                    // Player is resized after construction; never upscale its 52dp placeholder decode.
+                    var bitmap = fullResolution ? new Bitmap(memory) : Bitmap.DecodeToWidth(memory, (int)Math.Max(128, size * 2));
                     if (token.IsCancellationRequested) { bitmap.Dispose(); return; }
                     _bitmap = bitmap; picture.Source = bitmap;
                 }
