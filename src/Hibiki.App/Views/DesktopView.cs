@@ -25,7 +25,7 @@ public sealed class DesktopView : UserControl
     private readonly Border _inspector;
     private readonly TextBox _search = new()
     {
-        Watermark = "Música, artista ou cole um link do YouTube",
+        PlaceholderText = "Música, artista ou cole um link do YouTube",
         Height = 44, MinHeight = 44, FontSize = 14
     };
     private readonly StackPanel _results = new() { Spacing = 8 };
