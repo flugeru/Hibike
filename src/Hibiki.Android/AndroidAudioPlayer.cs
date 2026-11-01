@@ -8,6 +8,7 @@ namespace Hibiki.Android;
 public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPreparation
 {
     private PlaybackService? _service;
+    private Task<byte[]?>? _artworkTask;
     private double _volume = 0.8;
     public event EventHandler? Ended;
     public event EventHandler<string>? Failed;
@@ -17,6 +18,9 @@ public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPr
     public double Volume { get => _volume; set { _volume = Math.Clamp(value, 0, 1); Main(() => PlaybackService.Instance?.SetVolume(_volume)); } }
     public async Task BeginPreparationAsync(Track track, CancellationToken cancellationToken)
     {
+        // Prepare the album art while YT-DLP resolves the stream. Never wait for it
+        // before starting the foreground service or fetching the audio URL.
+        _artworkTask = NotificationArtwork.LoadAsync(track.Thumbnail, cancellationToken);
         var intent = new Intent(context, typeof(PlaybackService)).SetAction(PlaybackService.PrepareAction)!.PutExtra("title", track.Title);
         await MainAsync(() => { if (Build.VERSION.SdkInt >= BuildVersionCodes.O) context.StartForegroundService(intent); else context.StartService(intent); }).WaitAsync(cancellationToken);
         while (PlaybackService.Instance is null) await Task.Delay(20, cancellationToken);
@@ -34,7 +38,13 @@ public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPr
         var started = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            await MainAsync(() => service.Open(source, _volume)).WaitAsync(cancellationToken);
+            byte[]? artwork = null;
+            if (_artworkTask is { } coverTask)
+            {
+                try { artwork = await coverTask.WaitAsync(TimeSpan.FromMilliseconds(200), cancellationToken); }
+                catch (TimeoutException) { /* The cover is optional; start audio immediately. */ }
+            }
+            await MainAsync(() => service.Open(source, _volume, artwork)).WaitAsync(cancellationToken);
             while (service.State != 3 || !service.Playing)
             {
                 if (service.Error is { } error) throw new IOException(error);
