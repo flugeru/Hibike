@@ -17,7 +17,7 @@ public sealed partial class App : Application
             {
                 Title = "Hibiki • by Flugel", Width = 1260, Height = 820,
                 MinWidth = 360, MinHeight = 600, Content = view,
-                Background = Avalonia.Media.Brush.Parse("#101014")
+                Background = Ui.Brush("Background")
             };
             desktop.Exit += (_, _) => AppServices.Player?.Dispose();
         }

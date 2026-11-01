@@ -1,0 +1,34 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Shared values for the dark mobile and desktop interface. -->
+  <x:Double x:Key="PagePadding">16</x:Double>
+  <x:Double x:Key="Space4">4</x:Double>
+  <x:Double x:Key="Space8">8</x:Double>
+  <x:Double x:Key="Space12">12</x:Double>
+  <x:Double x:Key="Space16">16</x:Double>
+  <x:Double x:Key="Space24">24</x:Double>
+  <x:Double x:Key="TouchTarget">48</x:Double>
+  <CornerRadius x:Key="ThumbRadius">8</CornerRadius>
+  <CornerRadius x:Key="CardRadius">16</CornerRadius>
+  <CornerRadius x:Key="CoverRadius">24</CornerRadius>
+  <CornerRadius x:Key="PillRadius">999</CornerRadius>
+  <Thickness x:Key="PageInsets">16,0</Thickness>
+  <Thickness x:Key="ButtonPadding">16,8</Thickness>
+  <Thickness x:Key="SearchPadding">12,8</Thickness>
+  <Thickness x:Key="NoThickness">0</Thickness>
+  <Color x:Key="AccentColor">#BDA2FF</Color>
+  <SolidColorBrush x:Key="Background">#111015</SolidColorBrush>
+  <SolidColorBrush x:Key="Surface">#1C1922</SolidColorBrush>
+  <SolidColorBrush x:Key="SurfaceElevated">#2B2634</SolidColorBrush>
+  <SolidColorBrush x:Key="TextPrimary">#F4F0FA</SolidColorBrush>
+  <SolidColorBrush x:Key="TextSecondary">#C5BDCF</SolidColorBrush>
+  <SolidColorBrush x:Key="TextTertiary">#B2AABA</SolidColorBrush>
+  <SolidColorBrush x:Key="Accent">#BDA2FF</SolidColorBrush>
+  <SolidColorBrush x:Key="OnAccent">#211337</SolidColorBrush>
+  <SolidColorBrush x:Key="Outline">#4B4354</SolidColorBrush>
+  <SolidColorBrush x:Key="TrackRail">#544D5D</SolidColorBrush>
+  <SolidColorBrush x:Key="Hover">#403949</SolidColorBrush>
+  <SolidColorBrush x:Key="Pressed">#50485A</SolidColorBrush>
+  <SolidColorBrush x:Key="Overlay">#BA000000</SolidColorBrush>
+  <Color x:Key="PlaceholderStart">#403949</Color>
+  <Color x:Key="PlaceholderEnd">#24202C</Color>
+</ResourceDictionary>
