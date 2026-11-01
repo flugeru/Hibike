@@ -11,7 +11,7 @@
   <Application.Styles>
     <FluentTheme>
       <FluentTheme.Palettes>
-        <ColorPaletteResources x:Key="Dark" Accent="#BDA2FF"/>
+        <ColorPaletteResources x:Key="Dark" Accent="{StaticResource AccentColor}"/>
       </FluentTheme.Palettes>
     </FluentTheme>
     <Style Selector="TextBlock">
