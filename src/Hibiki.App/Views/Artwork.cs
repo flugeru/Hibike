@@ -9,7 +9,8 @@ namespace Hibiki.App.Views;
 internal sealed class Artwork : Border
 {
     private static readonly HttpClient Client = new() { Timeout = TimeSpan.FromSeconds(12) };
-    private readonly CancellationTokenSource _cancel = new();
+    private CancellationTokenSource? _cancel;
+    private Bitmap? _bitmap;
     public Artwork(Track? track, double size)
     {
         Width = Height = size; CornerRadius = new CornerRadius(size > 100 ? 16 : 8); ClipToBounds = true;
@@ -21,34 +22,38 @@ internal sealed class Artwork : Border
         };
         var panel = new Grid();
         panel.Children.Add(Icons.Make("wave", "#D5BFFF", Math.Max(24, size * 0.4)));
+        var picture = new Image { Stretch = Stretch.UniformToFill }; panel.Children.Add(picture);
         Child = panel;
         if (track?.Thumbnail is { } url)
         {
             AttachedToVisualTree += async (_, _) =>
             {
+                _cancel?.Dispose(); _cancel = new CancellationTokenSource(); var token = _cancel.Token;
                 try
                 {
-                    using var response = await Client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, _cancel.Token);
+                    using var response = await Client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, token);
                     response.EnsureSuccessStatusCode();
                     if (response.Content.Headers.ContentLength is > 4_000_000) return;
-                    using var input = await response.Content.ReadAsStreamAsync(_cancel.Token);
+                    using var input = await response.Content.ReadAsStreamAsync(token);
                     using var memory = new MemoryStream();
                     var buffer = new byte[8192];
                     int read;
-                    while ((read = await input.ReadAsync(buffer, _cancel.Token)) > 0)
+                    while ((read = await input.ReadAsync(buffer, token)) > 0)
                     {
                         if (memory.Length + read > 4_000_000) return;
                         memory.Write(buffer, 0, read);
                     }
                     memory.Position = 0;
                     var bitmap = Bitmap.DecodeToWidth(memory, (int)Math.Max(128, size * 2));
-                    if (_cancel.IsCancellationRequested) { bitmap.Dispose(); return; }
-                    panel.Children.Add(new Image { Source = bitmap, Stretch = Stretch.UniformToFill });
-                    DetachedFromVisualTree += (_, _) => bitmap.Dispose();
+                    if (token.IsCancellationRequested) { bitmap.Dispose(); return; }
+                    _bitmap = bitmap; picture.Source = bitmap;
                 }
                 catch (Exception) { /* Artwork is optional; playback never depends on it. */ }
             };
         }
-        DetachedFromVisualTree += (_, _) => _cancel.Cancel();
+        DetachedFromVisualTree += (_, _) =>
+        {
+            _cancel?.Cancel(); picture.Source = null; _bitmap?.Dispose(); _bitmap = null;
+        };
     }
 }

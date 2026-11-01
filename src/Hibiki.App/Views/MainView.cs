@@ -99,9 +99,13 @@ public sealed class MainView : UserControl
             _bottom.IsVisible = compact && !_showingPlayer;
             _main.Padding = compact ? new Thickness(16, 10, 16, 4) : new Thickness(32, 24, 32, 12);
         };
-        _music.Changed += Refresh; _music.Tick += RefreshPlayback;
         AppServices.BackHandler = HandleBack; AppServices.OpenPlayerView = ShowPlayer;
-        AttachedToVisualTree += async (_, _) => { _music.StartObserving(); await _music.InitializeAsync(); };
+        AttachedToVisualTree += async (_, _) =>
+        {
+            _music.Changed -= Refresh; _music.Tick -= RefreshPlayback;
+            _music.Changed += Refresh; _music.Tick += RefreshPlayback;
+            _music.StartObserving(); Refresh(); await _music.InitializeAsync();
+        };
         DetachedFromVisualTree += (_, _) => { _music.Changed -= Refresh; _music.Tick -= RefreshPlayback; _music.StopObserving(); };
         Refresh();
     }
