@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   windows-x64:
-    name: Test and publish portable Windows x64
+    name: Test and publish complete Windows x64 package
     runs-on: windows-2022
     timeout-minutes: 35
     defaults:
@@ -36,34 +36,56 @@ jobs:
         run: |
           dotnet publish src/Hibiki.Desktop/Hibiki.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishTrimmed=false -p:UseAppHost=true -o artifacts/windows/publish
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Verify executable and native LibVLC files
+      - name: Bundle pinned yt-dlp and Deno (SHA-256 verified)
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ProgressPreference = "SilentlyContinue"
+          $tools = "artifacts/windows/publish/tools"
+          New-Item -ItemType Directory -Force -Path $tools | Out-Null
+
+          $ytDlp = Join-Path $tools "yt-dlp.exe"
+          Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.26/yt-dlp.exe" -OutFile $ytDlp
+          $ytSha = (Get-FileHash $ytDlp -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($ytSha -ne "f5389d3698ecde4ef06f4e6b1ce0294fe9ac1396228c8990b8d3416d6d177a7d") {
+            throw "yt-dlp.exe SHA256 mismatch: $ytSha"
+          }
+
+          $denoZip = Join-Path $env:RUNNER_TEMP "hibiki-deno.zip"
+          Invoke-WebRequest -Uri "https://github.com/denoland/deno/releases/download/v2.9.8/deno-x86_64-pc-windows-msvc.zip" -OutFile $denoZip
+          $denoSha = (Get-FileHash $denoZip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($denoSha -ne "cba84b26e0df5ae7f74fc66b86a95b866872a86292ebd84fa1e959927edd93bf") {
+            throw "Deno ZIP SHA256 mismatch: $denoSha"
+          }
+          Expand-Archive -Path $denoZip -DestinationPath $tools -Force
+
+          if (!(Test-Path (Join-Path $tools "deno.exe"))) { throw "Bundled deno.exe is missing" }
+          & $ytDlp --version
+          if ($LASTEXITCODE -ne 0) { throw "Bundled yt-dlp could not launch" }
+          & (Join-Path $tools "deno.exe") --version
+          if ($LASTEXITCODE -ne 0) { throw "Bundled Deno could not launch" }
+      - name: Verify complete desktop distribution
         run: |
           $publish = "artifacts/windows/publish"
           $exe = Join-Path $publish "Hibiki.Desktop.exe"
-          if (!(Test-Path $exe)) { throw "Windows executable not found: $exe" }
+          if (!(Test-Path $exe)) { throw "Windows executable not found" }
+          foreach ($file in @("tools/yt-dlp.exe", "tools/deno.exe")) {
+            if (!(Test-Path (Join-Path $publish $file))) { throw "Required tool missing: $file" }
+          }
           $vlc = Get-ChildItem -Path $publish -Recurse -File -Filter libvlc.dll | Select-Object -First 1
-          if (!$vlc) { throw "libvlc.dll missing from the portable application" }
           $core = Get-ChildItem -Path $publish -Recurse -File -Filter libvlccore.dll | Select-Object -First 1
-          if (!$core) { throw "libvlccore.dll missing from the portable application" }
           $plugins = Get-ChildItem -Path $publish -Recurse -Directory -Filter plugins | Select-Object -First 1
-          if (!$plugins) { throw "LibVLC plugins directory missing from the portable application" }
-          Write-Host "Desktop executable: $exe"
-          Write-Host "LibVLC: $($vlc.FullName)"
-          Write-Host "LibVLC core: $($core.FullName)"
-          Write-Host "LibVLC plugins: $($plugins.FullName)"
-      - name: Package portable ZIP
-        run: |
-          $archive = "artifacts/windows/Hibiki-Windows-x64.zip"
-          Compress-Archive -Path "artifacts/windows/publish/*" -DestinationPath $archive -CompressionLevel Optimal -Force
-          if (!(Test-Path $archive)) { throw "Portable ZIP was not generated" }
-          Write-Host "Created $archive"
-      - name: Upload Windows portable build
+          if (!$vlc -or !$core -or !$plugins) { throw "Required native LibVLC components missing" }
+          Write-Host "Verified Hibiki.Desktop.exe + bundled yt-dlp, Deno and LibVLC."
+      # GitHub creates one standard ZIP for the artifact automatically.
+      # Upload the folder contents directly to avoid an extra nested ZIP.
+      - name: Upload complete portable Windows build
         uses: actions/upload-artifact@v4
         with:
           name: Hibiki-Windows-x64
-          path: artifacts/windows/Hibiki-Windows-x64.zip
+          path: artifacts/windows/publish/
           if-no-files-found: error
           retention-days: 30
+          compression-level: 6
       - name: Upload core test results
         if: always()
         uses: actions/upload-artifact@v4
