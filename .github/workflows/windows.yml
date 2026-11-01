@@ -1,0 +1,38 @@
+name: Hibike • Windows portable
+
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'tests/**', 'scripts/**', 'Directory.*', 'global.json', 'Hibike.slnx', '.github/**']
+  pull_request:
+    paths: ['src/**', 'tests/**', 'scripts/**', 'Directory.*', 'global.json', 'Hibike.slnx', '.github/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Test core
+        run: dotnet test tests/Hibike.Core.Tests --configuration Release
+      - name: Check Discord payload
+        run: dotnet run --project tests/Hibike.LocalAudio.Checks -- --presence-only
+      - name: Publish portable app
+        shell: powershell
+        run: ./scripts/publish_windows.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Hibike-Windows-x64
+          path: artifacts/Hibike-win-x64.zip
+          if-no-files-found: error

@@ -1,11 +1,11 @@
-name: Hibiki • Android APK
+name: Hibike • Android APK
 
 on:
   push:
     branches: [main]
-    paths: ['src/**', 'tests/**', 'scripts/**', 'Directory.*', 'global.json', 'Hibiki.slnx', '.github/**']
+    paths: ['src/**', 'tests/**', 'scripts/**', 'Directory.*', 'global.json', 'Hibike.slnx', '.github/**']
   pull_request:
-    paths: ['src/**', 'tests/**', 'scripts/**', 'Directory.*', 'global.json', 'Hibiki.slnx', '.github/**']
+    paths: ['src/**', 'tests/**', 'scripts/**', 'Directory.*', 'global.json', 'Hibike.slnx', '.github/**']
   workflow_dispatch:
 
 permissions:
@@ -40,32 +40,32 @@ jobs:
       - name: Verify source structure
         run: python3 scripts/check_source.py
       - name: Run core behavior tests
-        run: dotnet test tests/Hibiki.Core.Tests/Hibiki.Core.Tests.csproj -c Release --logger "trx;LogFileName=core.trx" --results-directory artifacts/tests
+        run: dotnet test tests/Hibike.Core.Tests/Hibike.Core.Tests.csproj -c Release --logger "trx;LogFileName=core.trx" --results-directory artifacts/tests
       - name: Prepare verified Python, QuickJS and YT-DLP
         run: python3 scripts/prepare_android_runtime.py
       - name: Restore development signing key
         uses: actions/cache@v4
         with:
-          path: ~/.local/share/hibiki-signing
-          key: hibiki-development-signing-v1
+          path: ~/.local/share/hibike-signing
+          key: hibike-development-signing-v1
       - name: Prepare runner-owned development signing key
         shell: bash
         run: |
-          mkdir -p "$HOME/.local/share/hibiki-signing"
-          if [ ! -f "$HOME/.local/share/hibiki-signing/development.jks" ]; then
-            keytool -genkeypair -keystore "$HOME/.local/share/hibiki-signing/development.jks" \
+          mkdir -p "$HOME/.local/share/hibike-signing"
+          if [ ! -f "$HOME/.local/share/hibike-signing/development.jks" ]; then
+            keytool -genkeypair -keystore "$HOME/.local/share/hibike-signing/development.jks" \
               -alias androiddebugkey -storepass android -keypass android \
               -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=Hibiki Development, O=Flugel, C=BR" -noprompt
+              -dname "CN=Hibike Development, O=Flugel, C=BR" -noprompt
           fi
       - name: Publish signed development APK
         run: |
-          dotnet publish src/Hibiki.Android/Hibiki.Android.csproj \
+          dotnet publish src/Hibike.Android/Hibike.Android.csproj \
             -f net10.0-android -c Release -r android-arm64 \
             -p:AndroidSdkDirectory="$ANDROID_HOME" \
             -p:ApplicationVersion=$((10000 + GITHUB_RUN_NUMBER)) \
             -p:AndroidKeyStore=true \
-            -p:AndroidSigningKeyStore="$HOME/.local/share/hibiki-signing/development.jks" \
+            -p:AndroidSigningKeyStore="$HOME/.local/share/hibike-signing/development.jks" \
             -p:AndroidSigningKeyAlias=androiddebugkey \
             -p:AndroidSigningKeyPass=android \
             -p:AndroidSigningStorePass=android \
@@ -78,16 +78,16 @@ jobs:
           test -n "$apk"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" | tee artifacts/android/package-info.txt
-          grep -q "package: name='com.flugel.hibiki'" artifacts/android/package-info.txt
+          grep -q "package: name='com.flugel.hibike'" artifacts/android/package-info.txt
           grep -q "sdkVersion:'24'" artifacts/android/package-info.txt
           python3 scripts/check_apk.py "$apk"
           mkdir -p artifacts/release
-          cp "$apk" artifacts/release/Hibiki-Android-arm64.apk
+          cp "$apk" artifacts/release/Hibike-Android-arm64.apk
       - name: Publish Android emulator test APK
         run: >-
-          dotnet publish src/Hibiki.Android/Hibiki.Android.csproj
+          dotnet publish src/Hibike.Android/Hibike.Android.csproj
           -f net10.0-android -c Release -r android-x64
-          -p:HibikiSmokeTests=true
+          -p:HibikeSmokeTests=true
           -p:AndroidSdkDirectory="$ANDROID_HOME"
           -o artifacts/emulator
       - name: Enable emulator hardware acceleration
@@ -109,20 +109,20 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Hibiki-Android-startup-check
+          name: Hibike-Android-startup-check
           path: artifacts/smoke/**
           if-no-files-found: ignore
       - name: Upload installable APK
         uses: actions/upload-artifact@v4
         with:
-          name: Hibiki-Android-arm64
-          path: artifacts/release/Hibiki-Android-arm64.apk
+          name: Hibike-Android-arm64
+          path: artifacts/release/Hibike-Android-arm64.apk
           if-no-files-found: error
           retention-days: 30
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Hibiki-core-tests
+          name: Hibike-core-tests
           path: artifacts/tests/**
           if-no-files-found: ignore

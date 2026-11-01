@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+ <PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+ <PropertyGroup><ApplicationIcon>../Hibike.App/Assets/hibike-desktop.ico</ApplicationIcon></PropertyGroup>
+ <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+  <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+  <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+ </PropertyGroup>
+ <ItemGroup Condition="!$([MSBuild]::IsOSPlatform('Windows'))">
+  <Compile Remove="WindowsMediaSession.cs" />
+  <Compile Remove="WindowsAppIdentity.cs" />
+ </ItemGroup>
+  <ItemGroup>
+   <PackageReference Include="DiscordRichPresence" />
+  <ProjectReference Include="../Hibike.App/Hibike.App.csproj" />
+  <PackageReference Include="Avalonia.Desktop" />
+   <!-- Use platform-neutral binding; Windows-specific LibVLCSharp pulls WinUI packaging into Avalonia. -->
+   <PackageReference Include="LibVLCSharp" ExcludeAssets="all" GeneratePathProperty="true" />
+   <Reference Include="LibVLCSharp"><HintPath>$(PkgLibVLCSharp)/lib/net8.0/LibVLCSharp.dll</HintPath></Reference>
+  <PackageReference Include="VideoLAN.LibVLC.Windows" />
+ </ItemGroup>
+</Project>

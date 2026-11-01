@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Hibike.Core/Hibike.Core.csproj" />
+    <Project Path="src/Hibike.App/Hibike.App.csproj" />
+    <Project Path="src/Hibike.Android/Hibike.Android.csproj" />
+    <Project Path="src/Hibike.Desktop/Hibike.Desktop.csproj" />
+  </Folder>
+  <Folder Name="/tests/"><Project Path="tests/Hibike.Core.Tests/Hibike.Core.Tests.csproj" /></Folder>
+</Solution>

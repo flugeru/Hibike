@@ -7,10 +7,10 @@ import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 lock = json.loads((ROOT / "scripts/runtime-lock.json").read_text())
-android = ROOT / "src/Hibiki.Android"
+android = ROOT / "src/Hibike.Android"
 
 def fetch(url):
-    request = urllib.request.Request(url, headers={"User-Agent": "Hibiki-build/0.1"})
+    request = urllib.request.Request(url, headers={"User-Agent": "Hibike-build/0.1"})
     with urllib.request.urlopen(request, timeout=120) as response:
         return response.read()
 

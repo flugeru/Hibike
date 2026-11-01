@@ -5,7 +5,7 @@
 artifacts/
 *.user
 *.keystore
-src/Hibiki.Android/Native/
-src/Hibiki.Android/Assets/runtime/
+src/Hibike.Android/Native/
+src/Hibike.Android/Assets/runtime/
 __pycache__/
 *.jks

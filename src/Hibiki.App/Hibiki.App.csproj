@@ -1,7 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
- <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
- <ItemGroup>
-  <PackageReference Include="Avalonia" /><PackageReference Include="Avalonia.Themes.Fluent" /><PackageReference Include="Avalonia.Fonts.Inter" />
-  <ProjectReference Include="../Hibiki.Core/Hibiki.Core.csproj" />
- </ItemGroup>
-</Project>
