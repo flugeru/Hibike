@@ -78,9 +78,16 @@ internal static class PlaybackProbe
             var playingTitle = activeNotification.Extras?.GetCharSequence("android.title")?.ToString() ?? "";
             if (!playingTemplate.Contains("MediaStyle", StringComparison.Ordinal))
                 throw new IOException("Playing notification is not MediaStyle: " + playingTemplate);
-            if (playingTitle.Contains("Preparando", StringComparison.OrdinalIgnoreCase))
-                throw new IOException("Stale preparation notification survived playback: " + playingTitle);
-            global::Android.Util.Log.Info("HibikiProbe", "HIBIKI_PROBE_NOTIFICATION_OK MediaStyle=" + playingTemplate + " title=" + playingTitle);
+            // Make sure Media3 has replaced the temporary Cancel button with real
+            // player controls. Just checking the template would let stale cards pass.
+            var actions = activeNotification.Actions;
+            if (actions is null || actions.Count == 0 ||
+                actions.Any(action => string.Equals(action.Title?.ToString(), "Cancelar", StringComparison.OrdinalIgnoreCase)))
+                throw new IOException("Media3 did not replace preparation controls with playback controls.");
+            if (!string.Equals(playingTitle, "Streaming test", StringComparison.Ordinal))
+                throw new IOException("Notification metadata did not update: " + playingTitle);
+            global::Android.Util.Log.Info("HibikiProbe", "HIBIKI_PROBE_NOTIFICATION_OK MediaStyle=" + playingTemplate
+                + " title=" + playingTitle + " actions=" + actions.Count);
             player.Pause();
             // Layout fixture exists only in this CI-only emulator build.
             var controller = AppServices.Controller!;
