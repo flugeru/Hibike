@@ -211,8 +211,8 @@ public sealed class MainView : UserControl
         _mini.IsVisible = displayed is not null && !_showingPlayer;
         foreach (var (id, row) in _rows) row.Background = Brush.Parse(id == displayed?.Id ? "#251E32" : "Transparent");
         if (!Equals(displayed, _shownTrack)) { _shownTrack = displayed; _nowArt.Content = new Artwork(displayed, 40); }
-        _nowTitle.Text = displayed?.Title;
-        _nowArtist.Text = _music.LoadingAudio ? _music.Status : displayed?.Artist;
+        _nowTitle.Text = TrackTextFormatter.Title(displayed?.Title, displayed?.Artist);
+        _nowArtist.Text = _music.LoadingAudio ? _music.Status : TrackTextFormatter.Artist(displayed?.Artist);
         if (_detailPlay is not null && displayed is not null && !Equals(_detailTrack, displayed)) ShowPlayer();
         RefreshPlayback();
     }
@@ -224,8 +224,8 @@ public sealed class MainView : UserControl
         var metadata = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = 12 };
         metadata.Children.Add(new Artwork(track, 46));
         var labels = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
-        var title = Text(track.Title, 13); title.TextTrimming = TextTrimming.CharacterEllipsis; labels.Children.Add(title);
-        var artist = Text(track.Artist + " · " + track.DurationLabel, 11, Muted); artist.TextTrimming = TextTrimming.CharacterEllipsis; labels.Children.Add(artist);
+        var title = Text(TrackTextFormatter.Title(track.Title, track.Artist), UiTheme.Body); title.TextTrimming = TextTrimming.CharacterEllipsis; labels.Children.Add(title);
+        var artist = Text(TrackTextFormatter.Artist(track.Artist) + " · " + track.DurationLabel, UiTheme.Caption, Muted); artist.TextTrimming = TextTrimming.CharacterEllipsis; labels.Children.Add(artist);
         Put(metadata, labels, 0, 1); play.Content = metadata;
         play.SizeChanged += (_, _) => metadata.Width = Math.Max(0, play.Bounds.Width);
         grid.Children.Add(play);
@@ -252,8 +252,8 @@ public sealed class MainView : UserControl
         var art = new Artwork(track, Math.Clamp(Bounds.Height * 0.32, 120, 280)) { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 12, 0, 16) }; panel.Children.Add(art);
         var metadata = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 12 };
         var labels = new StackPanel { Spacing = 7 };
-        var title = Text(track.Title, 20); title.FontWeight = FontWeight.SemiBold; title.TextWrapping = TextWrapping.Wrap; title.MaxLines = 2; labels.Children.Add(title);
-        var artist = Text(track.Artist, 13, Muted); artist.TextTrimming = TextTrimming.CharacterEllipsis; labels.Children.Add(artist); metadata.Children.Add(labels);
+        var title = Text(TrackTextFormatter.Title(track.Title, track.Artist), UiTheme.DialogTitle); title.FontWeight = FontWeight.SemiBold; title.TextWrapping = TextWrapping.Wrap; title.MaxLines = 2; labels.Children.Add(title);
+        var artist = Text(TrackTextFormatter.Artist(track.Artist), UiTheme.Body, Muted); artist.TextTrimming = TextTrimming.CharacterEllipsis; labels.Children.Add(artist); metadata.Children.Add(labels);
         Button? favorite = null;
         favorite = IconButton("heart", "Alternar favorito", async () => { await _music.ToggleFavoriteAsync(track); favorite!.Content = Icons.Make("heart", _music.IsFavorite(track) ? Accent : Muted, 20); }, _music.IsFavorite(track) ? Accent : Muted);
         Put(metadata, favorite, 0, 1); panel.Children.Add(metadata);
@@ -304,7 +304,7 @@ public sealed class MainView : UserControl
         var icon = _music.LoadingAudio ? "close" : _music.Player.IsPlaying ? "pause" : "play";
         _play.Content = Icons.Make(icon, Accent, 20);
         if (_detailPlay is not null) _detailPlay.Content = Icons.Make(icon, "#211337", 20);
-        var duration = _music.Player.Duration; if (duration <= 0) duration = _music.Current?.DurationSeconds ?? 0;
+        var duration = _music.Current?.DurationSeconds ?? 0; if (duration <= 0) duration = _music.Player.Duration;
         _progress.Maximum = Math.Max(1, duration); _progress.Value = Math.Min(_music.Player.Position, _progress.Maximum);
         if (_detailSeek is not null)
         {
@@ -366,7 +366,7 @@ public sealed class MainView : UserControl
         if (_overlay is not null) _root.Children.Remove(_overlay); _overlay = null;
         _detailTrack = null; _detailSeek = null; _detailPlay = null; _detailTime = null; _detailDuration = null; _seeking = false;
     }
-    private static string Time(double seconds) => TimeSpan.FromSeconds(Math.Max(0, seconds)).ToString(seconds >= 3600 ? @"h\:mm\:ss" : @"m\:ss");
+    private static string Time(double seconds) => TrackTextFormatter.Duration(seconds);
     private static TextBlock Text(string text, double size, string color = UiTheme.TextPrimary) => UiTheme.Text(text, size, color);
     private Button ActionButton(string text, Func<Task> action)
     {
