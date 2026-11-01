@@ -30,6 +30,17 @@ internal static class PlaybackProbe
                 for (var i = 0; i < samples; i++) writer.Write((short)(Math.Sin(i * 2 * Math.PI * 440 / rate) * 1000));
             }
             using var localTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+            // A notification merely existing is not enough: it must be a native media card
+            // even during extraction, instead of a generic "Preparando sua música" banner.
+            var preparing = (IAudioPreparation)player;
+            await preparing.BeginPreparationAsync(new("local-probe", "Streaming test", "Hibiki CI", path, 90, IsLocal: true), localTimeout.Token);
+            await Task.Delay(250);
+            var manager = (global::Android.App.NotificationManager)context.GetSystemService(Context.NotificationService)!;
+            var pendingNotification = manager.GetActiveNotifications()?.FirstOrDefault(n => n.Id == 42)?.Notification;
+            var pendingTemplate = pendingNotification?.Extras?.GetString("android.template") ?? "";
+            if (!pendingTemplate.Contains("MediaStyle", StringComparison.Ordinal))
+                throw new IOException("Preparation notification is not MediaStyle: " + pendingTemplate);
+            global::Android.Util.Log.Info("HibikiProbe", "HIBIKI_PROBE_PREPARING_MEDIA_STYLE_OK " + pendingTemplate);
             var watch = System.Diagnostics.Stopwatch.StartNew();
             await AppServices.Controller!.PlayAsync(new("local-probe", "Streaming test", "Hibiki CI", path, 90, IsLocal: true));
             var startupMs = watch.ElapsedMilliseconds;
@@ -61,10 +72,15 @@ internal static class PlaybackProbe
             await Task.Delay(1600);
             if (!player.IsPlaying || player.Position <= before + 0.5) throw new IOException("Playback stopped in background.");
             global::Android.Util.Log.Info("HibikiProbe", "HIBIKI_PROBE_BACKGROUND_OK position=" + player.Position);
-            var manager = (global::Android.App.NotificationManager)context.GetSystemService(Context.NotificationService)!;
-            var notifications = manager.GetActiveNotifications();
-            if (notifications is null || !notifications.Any(n => n.Id == 42)) throw new IOException("Media notification missing.");
-            global::Android.Util.Log.Info("HibikiProbe", "HIBIKI_PROBE_NOTIFICATION_OK");
+            var activeNotification = manager.GetActiveNotifications()?.FirstOrDefault(n => n.Id == 42)?.Notification;
+            if (activeNotification is null) throw new IOException("Media notification missing.");
+            var playingTemplate = activeNotification.Extras?.GetString("android.template") ?? "";
+            var playingTitle = activeNotification.Extras?.GetCharSequence("android.title")?.ToString() ?? "";
+            if (!playingTemplate.Contains("MediaStyle", StringComparison.Ordinal))
+                throw new IOException("Playing notification is not MediaStyle: " + playingTemplate);
+            if (playingTitle.Contains("Preparando", StringComparison.OrdinalIgnoreCase))
+                throw new IOException("Stale preparation notification survived playback: " + playingTitle);
+            global::Android.Util.Log.Info("HibikiProbe", "HIBIKI_PROBE_NOTIFICATION_OK MediaStyle=" + playingTemplate + " title=" + playingTitle);
             player.Pause();
             // Layout fixture exists only in this CI-only emulator build.
             var controller = AppServices.Controller!;
