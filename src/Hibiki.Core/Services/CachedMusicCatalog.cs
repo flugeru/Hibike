@@ -13,16 +13,19 @@ public sealed class CachedMusicCatalog(IMusicCatalog inner) : IMusicCatalog
         if (track.IsLocal) return await inner.ResolveAsync(track, token);
         if (_cache.TryGetValue(track.Source, out var entry) && entry.Expires > DateTimeOffset.UtcNow)
         { PlaybackDiagnostics.Write("Cache", "Link de áudio reutilizado; sem nova extração."); return entry.Source; }
-        var work = _inflight.GetOrAdd(track.Source, _ => new Lazy<Task<AudioSource>>(async () =>
+        var work = _inflight.GetOrAdd(track.Source, key => new Lazy<Task<AudioSource>>(async () =>
         {
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(35));
-            var source = await inner.ResolveAsync(track, timeout.Token);
-            if (_cache.Count > 50) _cache.Clear();
-            _cache[track.Source] = (source, DateTimeOffset.UtcNow.AddMinutes(4));
-            return source;
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(35));
+                var source = await inner.ResolveAsync(track, timeout.Token);
+                if (_cache.Count > 50) _cache.Clear();
+                _cache[track.Source] = (source, DateTimeOffset.UtcNow.AddMinutes(4));
+                return source;
+            }
+            finally { _inflight.TryRemove(track.Source, out _); }
         }));
-        try { return await work.Value.WaitAsync(token); }
-        finally { if (work.IsValueCreated && work.Value.IsCompleted) _inflight.TryRemove(track.Source, out _); }
+        return await work.Value.WaitAsync(token);
     }
     public void Clear() => _cache.Clear();
     public async Task WarmAsync(IEnumerable<Track> tracks)

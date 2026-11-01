@@ -10,9 +10,12 @@ Player de música em **C# / .NET 10 + Avalonia UI 12**, com busca e extração d
 
 - Tema escuro com roxo, ícones vetoriais e tipografia Inter.
 - Layout compacto: cabeçalho e busca, lista de faixas sem cartões grandes e navegação inferior no celular; barra lateral no desktop.
-- Miniplayer aparece ao selecionar uma faixa. Toque nele para abrir capa, progresso e controles completos. Opções de favoritos/fila ficam no menu de cada faixa.
+- Miniplayer aparece ao selecionar uma faixa. Toque nele para abrir a tela dedicada de reprodução, com transições suaves, capa, progresso e controles completos. Opções de favoritos/fila ficam no menu de cada faixa.
 - Busca por música/artista ou link, resultados reais e capas carregadas sob demanda.
-- Streaming de áudio, play/pause, anterior/próxima, progresso e busca na faixa.
+- Streaming de áudio com Media3/ExoPlayer no Android, buffer inicial configurado em 250 ms e buffer máximo de 10 s. Não baixa a faixa inteira antes de tocar.
+- Tentativa inicial com o cliente oficial do YT-DLP que dispensa JavaScript, com fallback para os clientes padrão. Cache em memória de links por 4 minutos e resolução antecipada dos primeiros resultados/próxima faixa; não é cache de arquivos de áudio.
+- Play/pause, anterior/próxima, progresso e busca na faixa.
+- Serviço de reprodução em segundo plano, MediaSession, notificação nativa com capa/metadados e controles de mídia na tela bloqueada.
 - Fila, reprodução aleatória e repetição da faixa atual.
 - Favoritos persistidos localmente; URLs de streaming são resolvidas novamente ao reproduzir, sem salvar links temporários.
 - Importação de áudio local. O arquivo é copiado para o armazenamento privado do app para continuar acessível no Android.
@@ -32,7 +35,7 @@ Abra **[Actions → Hibiki • Android APK](https://github.com/flugeru/Hibiki/ac
 
 ### Escopo desta base
 
-Reprodução **com o app aberto**. Ao ir para segundo plano, o áudio pausa e a preparação pendente é cancelada. Ainda não há serviço em segundo plano, controles na notificação/tela bloqueada, downloads offline, login integrado no navegador, playlists persistentes ou sincronização. Os favoritos são locais. O acesso ao YouTube depende das restrições do serviço e pode exigir futuras atualizações do extrator; conteúdo privado/restrito não é garantido. Se o YouTube pedir verificação de sessão, é possível importar um arquivo de cookies Netscape já obtido pelo usuário; isso não garante acesso quando o próprio serviço restringe o conteúdo ou a rede.
+O serviço Android mantém a reprodução ao minimizar o app. A notificação e os controles da tela bloqueada usam a integração nativa Media3/MediaSession. Ainda não há downloads offline, login integrado no navegador, playlists persistentes ou sincronização. Os favoritos são locais. O acesso ao YouTube depende das restrições do serviço e pode exigir futuras atualizações do extrator; conteúdo privado/restrito não é garantido. Se o YouTube pedir verificação de sessão, é possível importar um arquivo de cookies Netscape já obtido pelo usuário; isso não garante acesso quando o próprio serviço restringe o conteúdo ou a rede.
 
 A biblioteca pode conter arquivos locais importados; removê-los dos favoritos não apaga a cópia de áudio. Ela será removida ao limpar os dados/desinstalar o app. Não há conta nem telemetria do Hibiki. Buscas, streams e capas contatam os provedores do conteúdo.
 
@@ -42,7 +45,7 @@ A biblioteca pode conter arquivos locais importados; removê-los dos favoritos n
 |---|---|
 | `Hibiki.Core` | Catálogo YT-DLP, modelos, contratos e armazenamento |
 | `Hibiki.App` | Interface Avalonia compartilhada, tema e estado de reprodução |
-| `Hibiki.Android` | Host Android, runtime embarcado e áudio nativo MediaPlayer |
+| `Hibiki.Android` | Host Android, runtime embarcado, Media3/ExoPlayer e serviço MediaSession |
 | `Hibiki.Desktop` | Host Windows/Linux e áudio LibVLC |
 | `Hibiki.Core.Tests` | Parser, tratamento de parâmetros, headers, falhas e favoritos |
 
@@ -60,6 +63,6 @@ The compact interface includes search/URL input, real results and artwork, a con
 
 **Only Android ARM64 is built by GitHub Actions for now.** Download the installable APK from the `Hibiki-Android-arm64` workflow artifact. Android 7.0/API 24 or later is required. An Actions-generated development key is cached between builds without committing private keys or requiring personal signing secrets. If that cache expires or is removed, the signature changes and the old APK must be uninstalled before installing the new one, which removes local app data. This is not a production or Play Store signing identity.
 
-Playback is foreground-only in this milestone. Background service, notification/lockscreen controls, offline downloading, browser-based account login, persistent playlists and sync are not implemented. Importing an existing session does not guarantee access when YouTube restricts the content or network. Desktop hosts are scaffolded with LibVLC but have not yet been built or runtime-tested by a desktop workflow. Desktop also requires yt-dlp and a supported JavaScript runtime; Linux requires system LibVLC/audio plugins.
+Android playback runs in a Media3/ExoPlayer foreground service with a MediaSession, system media notification and lockscreen controls. The initial buffer target is 250 ms, with at most 10 seconds buffered; URL extraction/network latency can still delay cold starts. Resolved addresses are cached in memory for four minutes and prefetched without downloading media files. The player uses a dedicated animated page. Offline downloading, browser-based account login, persistent playlists and sync are not implemented. Importing an existing session does not guarantee access when YouTube restricts the content or network. Desktop hosts are scaffolded with LibVLC but have not yet been built or runtime-tested by a desktop workflow. Desktop also requires yt-dlp and a supported JavaScript runtime; Linux requires system LibVLC/audio plugins.
 
 .NET compilation and behavioral tests run in **GitHub Actions**, not locally. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for upstream components and source/build references.

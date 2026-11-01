@@ -28,9 +28,30 @@ internal static class PlaybackProbe
             using var localTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
             var watch = System.Diagnostics.Stopwatch.StartNew();
             await AppServices.Controller!.PlayAsync(new("local-probe", "Streaming test", "Hibiki CI", path, 90, IsLocal: true));
+            var startupMs = watch.ElapsedMilliseconds;
             await Task.Delay(1200);
             if (!player.IsPlaying || player.Position < 0.3) throw new IOException("Native audio position did not advance.");
-            global::Android.Util.Log.Info("HibikiProbe", "HIBIKI_PROBE_LOCAL_OK startup_ms=" + watch.ElapsedMilliseconds + " position=" + player.Position);
+            global::Android.Util.Log.Info("HibikiProbe", "HIBIKI_PROBE_LOCAL_OK startup_ms=" + startupMs + " position=" + player.Position);
+            global::Android.Util.Log.Info("HibikiProbe", $"HIBIKI_PROBE_BUFFER duration={player.Duration:F1}s buffered={PlaybackService.Instance!.BufferedPosition:F1}s position={player.Position:F1}s");
+            using var nativeController = new global::Android.Media.Session.MediaController(context, PlaybackService.Instance!.PlatformToken!);
+            void Key(global::Android.Views.Keycode key)
+            {
+                nativeController.DispatchMediaButtonEvent(new global::Android.Views.KeyEvent(global::Android.Views.KeyEventActions.Down, key));
+                nativeController.DispatchMediaButtonEvent(new global::Android.Views.KeyEvent(global::Android.Views.KeyEventActions.Up, key));
+            }
+            Key(global::Android.Views.Keycode.MediaPause); await Task.Delay(500);
+            if (player.IsPlaying) throw new IOException("Media session pause did not reach the player.");
+            Key(global::Android.Views.Keycode.MediaPlay); await Task.Delay(500);
+            if (!player.IsPlaying) throw new IOException("Media session play did not reach the player.");
+            var queueController = AppServices.Controller!;
+            queueController.Enqueue(new("probe-next", "Next track test", "Hibiki CI", path, 90, IsLocal: true));
+            Key(global::Android.Views.Keycode.MediaNext);
+            for (var i = 0; i < 30 && queueController.Current?.Id != "probe-next"; i++) await Task.Delay(100);
+            if (queueController.Current?.Id != "probe-next") throw new IOException("Media session next did not advance the queue.");
+            Key(global::Android.Views.Keycode.MediaPrevious);
+            for (var i = 0; i < 30 && queueController.Current?.Id != "local-probe"; i++) await Task.Delay(100);
+            if (queueController.Current?.Id != "local-probe") throw new IOException("Media session previous did not return to the queue entry.");
+            global::Android.Util.Log.Info("HibikiProbe", "HIBIKI_PROBE_MEDIA_CONTROLS_OK play/pause/next/previous");
             var before = player.Position;
             context.StartActivity(new Intent(Intent.ActionMain).AddCategory(Intent.CategoryHome)!.AddFlags(ActivityFlags.NewTask));
             await Task.Delay(1600);
@@ -40,8 +61,6 @@ internal static class PlaybackProbe
             var notifications = manager.GetActiveNotifications();
             if (notifications is null || !notifications.Any(n => n.Id == 42)) throw new IOException("Media notification missing.");
             global::Android.Util.Log.Info("HibikiProbe", "HIBIKI_PROBE_NOTIFICATION_OK");
-            context.StartActivity(context.PackageManager!.GetLaunchIntentForPackage(context.PackageName!)!.AddFlags(ActivityFlags.NewTask));
-            await Task.Delay(400);
             player.Pause();
             // Layout fixture exists only in this CI-only emulator build.
             var controller = AppServices.Controller!;

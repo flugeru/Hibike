@@ -36,13 +36,16 @@ for attempt in $(seq 1 70); do
   if adb logcat -d -s HibikiProbe:I '*:S' | grep -Eq 'HIBIKI_PROBE_(LOCAL|RUNTIME)_FAILED'; then break; fi
   sleep 1
 done
+adb logcat -d > artifacts/smoke/playback-logcat.txt
 adb logcat -d -s HibikiProbe:I '*:S' > artifacts/smoke/playback-probe.txt
 cat artifacts/smoke/playback-probe.txt
 grep -q HIBIKI_PROBE_LOCAL_OK artifacts/smoke/playback-probe.txt
+grep -q HIBIKI_PROBE_MEDIA_CONTROLS_OK artifacts/smoke/playback-probe.txt
 grep -q HIBIKI_PROBE_BACKGROUND_OK artifacts/smoke/playback-probe.txt
 grep -q HIBIKI_PROBE_NOTIFICATION_OK artifacts/smoke/playback-probe.txt
 grep -q HIBIKI_PROBE_RUNTIME_OK artifacts/smoke/playback-probe.txt
 grep -q HIBIKI_PROBE_DONE artifacts/smoke/playback-probe.txt
+adb shell am start -W -n "$activity"
 sleep 1
 adb exec-out screencap -p > artifacts/smoke/player.png
 adb shell input keyevent 4

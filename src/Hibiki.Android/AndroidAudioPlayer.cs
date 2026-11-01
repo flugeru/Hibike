@@ -18,7 +18,7 @@ public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPr
     public async Task BeginPreparationAsync(Track track, CancellationToken cancellationToken)
     {
         var intent = new Intent(context, typeof(PlaybackService)).SetAction(PlaybackService.PrepareAction)!.PutExtra("title", track.Title);
-        Main(() => { if (Build.VERSION.SdkInt >= BuildVersionCodes.O) context.StartForegroundService(intent); else context.StartService(intent); });
+        await MainAsync(() => { if (Build.VERSION.SdkInt >= BuildVersionCodes.O) context.StartForegroundService(intent); else context.StartService(intent); }).WaitAsync(cancellationToken);
         while (PlaybackService.Instance is null) await Task.Delay(20, cancellationToken);
         var service = PlaybackService.Instance;
         if (!ReferenceEquals(_service, service))
@@ -32,9 +32,9 @@ public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPr
         if (PlaybackService.Instance is null) await BeginPreparationAsync(new("audio", source.Title ?? "Hibiki", source.Artist ?? "", source.Url), cancellationToken);
         var service = PlaybackService.Instance!;
         var started = System.Diagnostics.Stopwatch.StartNew();
-        Main(() => service.Open(source, _volume));
         try
         {
+            await MainAsync(() => service.Open(source, _volume)).WaitAsync(cancellationToken);
             while (service.State != 3 || !service.Playing)
             {
                 if (service.Error is { } error) throw new IOException(error);
@@ -50,6 +50,12 @@ public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPr
     public void CancelPreparation() => Main(() => PlaybackService.Instance?.CancelPreparation());
     private void OnEnded(object? sender, EventArgs args) => Ended?.Invoke(this, args);
     private void OnFailed(object? sender, string error) => Failed?.Invoke(this, error);
+    private static Task MainAsync(Action action)
+    {
+        var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Main(() => { try { action(); ready.TrySetResult(); } catch (Exception ex) { ready.TrySetException(ex); } });
+        return ready.Task;
+    }
     private static void Main(Action action)
     {
         if (Looper.MyLooper() == Looper.MainLooper) action(); else new Handler(Looper.MainLooper!).Post(action);

@@ -29,9 +29,11 @@ public sealed class PlaybackService : MediaSessionService
     private Action? _poll;
     private int _state;
     private string? _lastError;
+    public global::Android.Media.Session.MediaSession.Token? PlatformToken => _session?.PlatformToken;
     public bool Playing { get; private set; }
     public double Position { get; private set; }
     public double Duration { get; private set; }
+    public double BufferedPosition { get; private set; }
     public int State { get; private set; }
     public string? Error { get; private set; }
     public event EventHandler? Ended;
@@ -46,7 +48,7 @@ public sealed class PlaybackService : MediaSessionService
         _player = new ExoPlayerBuilder(this).SetLooper(Looper.MainLooper)!.SetLoadControl(control)!
             .SetAudioAttributes(attributes, true)!.SetHandleAudioBecomingNoisy(true)!.SetWakeMode(2)!.Build()!;
         _sessionPlayer = new SessionPlayer(_player);
-        var launch = PackageManager!.GetLaunchIntentForPackage(PackageName!)!;
+        var launch = PackageManager!.GetLaunchIntentForPackage(PackageName!)!.PutExtra("open_player", true);
         var pending = PendingIntent.GetActivity(this, 0, launch, PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent);
         _session = new MediaSession.Builder(this, _sessionPlayer).SetSessionActivity(pending)!.Build();
         var provider = new DefaultMediaNotificationProvider.Builder(this).SetNotificationId(42)!
@@ -58,6 +60,7 @@ public sealed class PlaybackService : MediaSessionService
         {
             if (_player is null) return;
             Playing = _player.IsPlaying; Position = Math.Max(0, _player.CurrentPosition) / 1000d;
+            BufferedPosition = Math.Max(0, _player.BufferedPosition) / 1000d;
             Duration = Math.Max(0, _player.Duration) / 1000d; State = _player.PlaybackState;
             Error = _player.PlayerError?.Message;
             if (Error is not null && Error != _lastError) { _lastError = Error; Failed?.Invoke(this, Error); }
@@ -94,7 +97,7 @@ public sealed class PlaybackService : MediaSessionService
         _player!.Volume = (float)volume; _player.SetMediaSource(media); _player.Prepare(); _player.Play();
     }
     public void PauseAudio() => _player?.Pause();
-    public void ResumeAudio() => _player?.Play();
+    public void ResumeAudio() { if (_player?.PlaybackState == 4) _player.SeekTo(0); _player?.Play(); }
     public void Seek(double seconds) => _player?.SeekTo((long)(Math.Max(0, seconds) * 1000));
     public void SetVolume(double volume) { if (_player is not null) _player.Volume = (float)volume; }
     public void CancelPreparation()
@@ -110,6 +113,7 @@ public sealed class PlaybackService : MediaSessionService
     }
     private sealed class SessionPlayer(IPlayer player) : ForwardingPlayer(player)
     {
+        public override bool IsCommandAvailable(int command) => AvailableCommands?.Contains(command) ?? false;
         public override PlayerCommands? AvailableCommands => new PlayerCommands.Builder().AddAll(base.AvailableCommands)!.AddAll(6, 7, 8, 9)!.Build();
         public override void SeekToNext() => Next();
         public override void SeekToNextMediaItem() => Next();
