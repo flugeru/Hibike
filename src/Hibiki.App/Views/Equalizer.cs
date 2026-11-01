@@ -8,7 +8,7 @@ namespace Hibiki.App.Views;
 
 internal sealed class Equalizer : Border
 {
-    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(180) };
+    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(UiTheme.EqualizerMilliseconds) };
     private readonly Border[] _bars;
     private int _frame;
     private bool _playing;

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- Native window tokens mirror UiTheme before Avalonia starts. -->
+  <color name="Background">#0B0F14</color>
+  <color name="Primary">#B9A7FF</color>
+</resources>

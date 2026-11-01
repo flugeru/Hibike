@@ -22,16 +22,18 @@ internal static class UiTheme
         ProgressHeight = 8, ProgressRadius = 4, MiniProgressHeight = 4, SeekHeight = 6,
         SeekThumbSize = 16, SeekThumbPressedSize = 20, PageMaxWidth = 820, PlayerMaxWidth = 440,
         DialogMaxWidth = 520, CompactWidth = 390, DesktopWidth = 800, SidebarWidth = 200,
-        NavHeight = 72, RowHeight = 76, MarkerSize = 7, EqualizerGap = 3, EqualizerBarWidth = 4, EqualizerStep = 5;
+        NavHeight = 72, RowHeight = 76, MarkerSize = 7, EqualizerGap = 3, EqualizerBarWidth = 4, EqualizerStep = 5,
+        PauseStroke = 4, StateTransitionMilliseconds = 160, EqualizerMilliseconds = 180;
     public static readonly Thickness PageMargin = new(14, 14, 14, 18), ButtonPadding = new(16, 13),
         RowPadding = new(4, 8), ChipPadding = new(10, 4), BannerPadding = new(14, 10),
         One = new(1), Zero = new(0), InnerPadding = new(12), DialogMargin = new(14),
-        MiniMargin = new(14, 0, 14, 8), TopBorder = new(0, 1, 0, 0), BottomBorder = new(0, 0, 0, 1);
+        MiniMargin = new(14, 0, 14, 8), TopBorder = new(0, 1, 0, 0), BottomBorder = new(0, 0, 0, 1),
+        RoundInset = new(2), MiniPlayInset = new(4);
     public static readonly FontFamily Inter = new("avares://Avalonia.Fonts.Inter/Assets#Inter");
     public static readonly FontFamily Mono = new("Cascadia Mono, Consolas, monospace");
     public static IBrush Brush(string color) => new SolidColorBrush(Color.Parse(color)).ToImmutable();
     public static TextBlock Text(string? text, double size = Body, string color = TextPrimary,
-        FontWeight weight = default) => new()
+        FontWeight weight = FontWeight.Normal) => new()
     {
         Text = text, FontFamily = Inter, FontSize = Math.Max(Label, size), FontWeight = weight,
         Foreground = Brush(color), VerticalAlignment = VerticalAlignment.Center
@@ -86,13 +88,24 @@ internal static class UiTheme
         Add(new Style(x => x.OfType<Button>().Class("round")), new(Layoutable.WidthProperty, TouchSize),
             new(Layoutable.HeightProperty, TouchSize), new(TemplatedControl.PaddingProperty, Zero),
             new(TemplatedControl.CornerRadiusProperty, new CornerRadius(RoundRadius)));
+        Add(new Style(x => x.OfType<Button>().Class("round").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
+            new Setter(Layoutable.MarginProperty, RoundInset));
+        Add(new Style(x => x.OfType<Button>().Class("miniPlay").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
+            new Setter(Layoutable.MarginProperty, MiniPlayInset));
+        Add(new Style(x => x.OfType<Button>().Class("largePlay").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
+            new Setter(Layoutable.MarginProperty, Zero));
         Add(new Style(x => x.OfType<Button>().Class("nav")), new(TemplatedControl.BorderThicknessProperty, Zero), new(TemplatedControl.PaddingProperty, Zero));
         Add(new Style(x => x.OfType<Button>().Class(":disabled")), new Setter(Visual.OpacityProperty, .4));
         // Target Fluent's presenter so local backgrounds do not suppress pointer states.
         foreach (var state in new[] { ":pointerover", ":pressed" })
+        {
             Add(new Style(x => x.OfType<Button>().Class(state).Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
                 new(ContentPresenter.BackgroundProperty, Brush(SurfaceElevated)), new(ContentPresenter.BorderBrushProperty, Brush(Primary)),
                 new(ContentPresenter.ForegroundProperty, Brush(Primary)));
+            Add(new Style(x => x.OfType<Button>().Class("primary").Class(state).Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
+                new(ContentPresenter.BackgroundProperty, new SolidColorBrush(Color.Parse(Primary), state == ":pressed" ? .75 : .9)),
+                new(ContentPresenter.ForegroundProperty, Brush(OnPrimary)));
+        }
         Add(new Style(x => x.OfType<TextBox>()), new(TemplatedControl.BackgroundProperty, Brush(Surface)),
             new(TemplatedControl.ForegroundProperty, Brush(TextPrimary)), new(TemplatedControl.BorderBrushProperty, Brush(Outline)),
             new(TemplatedControl.BorderThicknessProperty, One), new(TemplatedControl.CornerRadiusProperty, new CornerRadius(ControlRadius)),
@@ -101,5 +114,35 @@ internal static class UiTheme
         Add(new Style(x => x.OfType<TextBox>().Template().OfType<TextBlock>().Name("PART_Watermark")), new Setter(TextBlock.ForegroundProperty, Brush(TextSecondary)));
         Add(new Style(x => x.OfType<ProgressBar>()), new(TemplatedControl.ForegroundProperty, Brush(Primary)),
             new(TemplatedControl.BackgroundProperty, Brush(Outline)), new(TemplatedControl.CornerRadiusProperty, new CornerRadius(ProgressRadius)));
+        Add(new Style(x => x.OfType<Slider>().Template().OfType<Thumb>()),
+            new(Layoutable.WidthProperty, SeekThumbSize), new(Layoutable.HeightProperty, SeekThumbSize),
+            new(TemplatedControl.BackgroundProperty, Brush(Primary)));
+        Add(new Style(x => x.OfType<Slider>().Class(":pressed").Template().OfType<Thumb>()),
+            new(Layoutable.WidthProperty, SeekThumbPressedSize), new(Layoutable.HeightProperty, SeekThumbPressedSize),
+            new(TemplatedControl.BackgroundProperty, Brush(Primary)));
+        Add(new Style(x => x.OfType<Slider>().Template().OfType<RepeatButton>().Name("PART_DecreaseButton")),
+            new Setter(TemplatedControl.BackgroundProperty, Brush(Primary)));
+        Add(new Style(x => x.OfType<Slider>().Template().OfType<RepeatButton>().Name("PART_IncreaseButton")),
+            new Setter(TemplatedControl.BackgroundProperty, Brush(Outline)));
+    }
+    public static void InstallResources(IResourceDictionary resources)
+    {
+        resources["SliderTrackThemeHeight"] = SeekHeight;
+        resources["SliderHorizontalThumbWidth"] = SeekThumbSize;
+        resources["SliderHorizontalThumbHeight"] = SeekThumbSize;
+        resources["SliderThumbBackground"] = Brush(Primary);
+        resources["SliderThumbBackgroundPointerOver"] = Brush(Primary);
+        resources["SliderThumbBackgroundPressed"] = Brush(Primary);
+        resources["SliderTrackValueFillPointerOver"] = Brush(Primary);
+        resources["SliderTrackValueFillPressed"] = Brush(Primary);
+        resources["SliderTrackFillPointerOver"] = Brush(Outline);
+        resources["SliderTrackFillPressed"] = Brush(Outline);
+        resources["ControlCornerRadius"] = new CornerRadius(ControlRadius);
+        resources["SliderThumbCornerRadius"] = new CornerRadius(SeekThumbPressedSize / 2);
+        resources["TextControlBorderBrushFocused"] = Brush(Primary);
+        resources["TextControlBorderBrushPointerOver"] = Brush(Primary);
+        resources["TextControlBackgroundFocused"] = Brush(Surface);
+        resources["TextControlBackgroundPointerOver"] = Brush(Surface);
+        resources["TextControlPlaceholderForeground"] = Brush(TextSecondary);
     }
 }

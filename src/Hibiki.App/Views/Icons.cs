@@ -29,7 +29,7 @@ internal static class Icons
             _ => "M3,9 L3,15 M8,4 L8,20 M13,7 L13,17 M18,2 L18,22 M23,9 L23,15"
         }),
         Width = size, Height = size, Stretch = Stretch.Uniform,
-        Stroke = UiTheme.Brush(color), StrokeThickness = UiTheme.IconStroke,
+        Stroke = UiTheme.Brush(color), StrokeThickness = name == "pause" ? UiTheme.PauseStroke : UiTheme.IconStroke,
         StrokeLineCap = PenLineCap.Round, StrokeJoin = PenLineJoin.Round,
         Fill = name is "play" or "next" or "previous" or "more" ? Brush.Parse(color) : null,
         Margin = UiTheme.Zero

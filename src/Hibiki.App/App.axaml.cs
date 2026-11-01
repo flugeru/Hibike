@@ -10,6 +10,7 @@ public sealed partial class App : Application
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
+        UiTheme.InstallResources(Resources);
         UiTheme.Install(Styles);
     }
     public override void OnFrameworkInitializationCompleted()

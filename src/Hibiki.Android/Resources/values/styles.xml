@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
   <style name="HibikiTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
-    <item name="android:windowBackground">#101014</item>
-    <item name="colorAccent">#BDA2FF</item>
-    <item name="android:statusBarColor">#101014</item>
-    <item name="android:navigationBarColor">#101014</item>
+    <item name="android:windowBackground">@color/Background</item>
+    <item name="colorAccent">@color/Primary</item>
+    <item name="android:statusBarColor">@color/Background</item>
+    <item name="android:navigationBarColor">@color/Background</item>
     <item name="android:windowLightStatusBar">false</item>
     <item name="android:windowLightNavigationBar">false</item>
     <item name="android:windowActionModeOverlay">true</item>
