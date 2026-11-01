@@ -26,7 +26,7 @@ internal static class UiTheme
         PauseStroke = 4, StateTransitionMilliseconds = 160, EqualizerMilliseconds = 180,
         PlayerChromeHeight = 388, PlayerBottomWeight = .15, ListFadeHeight = 18,
         DesktopPlayerGap = 48, DesktopPlayerChromeHeight = 280, ToggleIconHeight = 36,
-        DesktopArtworkMax = 480, DesktopPlayerMaxWidth = 1320;
+        DesktopArtworkMax = 440, DesktopPlayerMaxWidth = 1120, DesktopPlaySize = 56;
     public static readonly Thickness PageMargin = new(14, 14, 14, 18), ButtonPadding = new(16, 13),
         RowPadding = new(4, 8), ChipPadding = new(10, 4), BannerPadding = new(14, 10),
         One = new(1), Zero = new(0), InnerPadding = new(12), DialogMargin = new(14),
@@ -35,6 +35,7 @@ internal static class UiTheme
     public static readonly Thickness SearchIconPadding = new(16, 0, 12, 0);
     public static readonly Thickness ContentPadding = new(14, 14, 14, 8);
     public static readonly Thickness DesktopPlayerMargin = new(32, 20, 32, 24), NavPadding = new(12, 8);
+    public static readonly Thickness DesktopTransportPadding = new(32, 16, 32, 20);
     // Opacity only, not a surface gradient: soften items scrolling beneath fixed chrome.
     public static IBrush ListMask(double height) => new LinearGradientBrush
     {

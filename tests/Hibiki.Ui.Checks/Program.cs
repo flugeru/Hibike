@@ -27,7 +27,7 @@ internal static class Program
             {
                 var window = lifetime.MainWindow!; var view = (MainView)window.Content!;
                 await AppServices.Controller!.SearchAsync("test");
-                foreach (var width in new[] { 360, 390, 430, 1260 })
+                foreach (var width in new[] { 360, 390, 430, 1260, 1920 })
                 {
                     window.Width = width; window.Height = 820;
                     await Task.Delay(150);
@@ -50,6 +50,13 @@ internal static class Program
                     Check(view.GetVisualDescendants().OfType<Slider>().Any(s => s.Bounds.Width > 0 && s.Bounds.Width <= width), "Player slider clipped");
                     var slider = view.GetVisualDescendants().OfType<Slider>().Single();
                     Check(slider.TranslatePoint(default, view)!.Value.Y + slider.Bounds.Height <= view.Bounds.Height, "Player slider below viewport");
+                    if (width >= 1260)
+                    {
+                        var artwork = view.GetVisualDescendants().OfType<Border>().Single(b => b.GetType().Name == "Artwork" && b.Bounds.Width > 100);
+                        Check(artwork.Bounds.Width <= 440, "Desktop artwork exceeds size cap");
+                        var queueHeader = view.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Text == "A seguir");
+                        Check(Math.Abs(artwork.TranslatePoint(default, view)!.Value.Y - queueHeader.TranslatePoint(default, view)!.Value.Y) < 8, "Artwork and queue tops diverge");
+                    }
                     if (width == 1260)
                     {
                         window.Width = 390; await Task.Delay(300); Capture(view, "player-resized-mobile");

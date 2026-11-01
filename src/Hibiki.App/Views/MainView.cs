@@ -335,7 +335,7 @@ public sealed class MainView : UserControl
         var upcomingBox = UiTheme.Inner(upcoming); Put(panel, upcomingBox, 6, 0);
         panel.RowDefinitions[1].Height = new GridLength(1, GridUnitType.Star);
         panel.RowDefinitions[4].Height = new GridLength(UiTheme.PlayerBottomWeight, GridUnitType.Star);
-        var desktopLayout = new Grid { RowDefinitions = new("Auto,*,Auto"), ColumnDefinitions = new("*,*"),
+        var desktopLayout = new Grid { RowDefinitions = new("Auto,*"), ColumnDefinitions = new("*,*"),
             ColumnSpacing = UiTheme.DesktopPlayerGap, RowSpacing = UiTheme.PageGap, Margin = UiTheme.DesktopPlayerMargin,
             MaxWidth = UiTheme.DesktopPlayerMaxWidth, HorizontalAlignment = HorizontalAlignment.Stretch };
         var queuePanel = new Grid { RowDefinitions = new("Auto,*"), RowSpacing = UiTheme.SectionGap };
@@ -346,7 +346,9 @@ public sealed class MainView : UserControl
         Put(queuePanel, new ScrollViewer { Content = queueItems, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }, 1, 0);
         var transport = new Grid { RowDefinitions = new("Auto,Auto"), ColumnDefinitions = new("*,Auto,*"), ColumnSpacing = UiTheme.PageGap,
             Background = UiTheme.Brush(UiTheme.Surface), Margin = UiTheme.Zero };
-        var host = new Grid();
+        var transportFrame = new Border { Child = transport, Background = UiTheme.Brush(UiTheme.Surface),
+            BorderBrush = UiTheme.Brush(UiTheme.Outline), BorderThickness = UiTheme.TopBorder, Padding = UiTheme.DesktopTransportPadding };
+        var host = new Grid { RowDefinitions = new("*,Auto") };
         bool? wideLayout = null;
         void ArrangePlayer()
         {
@@ -356,17 +358,25 @@ public sealed class MainView : UserControl
                 panel.Children.Clear(); desktopLayout.Children.Clear(); transport.Children.Clear(); host.Children.Clear();
                 if (wide)
                 {
+                    desktopLayout.VerticalAlignment = VerticalAlignment.Center;
+                    art.VerticalAlignment = VerticalAlignment.Top; queuePanel.VerticalAlignment = VerticalAlignment.Top;
+                    title.TextWrapping = TextWrapping.NoWrap; title.MaxLines = 1; title.TextTrimming = TextTrimming.CharacterEllipsis;
+                    title.FontSize = UiTheme.Body; artist.FontSize = UiTheme.Caption;
+                    _detailPlay!.Width = _detailPlay.Height = UiTheme.DesktopPlaySize; _detailPlay.CornerRadius = new(UiTheme.DesktopPlaySize / 2);
+                    transport.ColumnDefinitions = new("*,Auto,*");
                     Put(desktopLayout, header, 0, 0); Grid.SetColumnSpan(header, 2);
                     Put(desktopLayout, art, 1, 0); Put(desktopLayout, queuePanel, 1, 1);
                     Put(transport, metadata, 0, 0); metadata.VerticalAlignment = VerticalAlignment.Center;
                     Put(transport, controls, 0, 1);
-                    Put(transport, upcomingBox, 0, 2);
                     Put(transport, seek, 1, 0); Grid.SetColumnSpan(seek, 3);
-                    Put(desktopLayout, transport, 2, 0); Grid.SetColumnSpan(transport, 2);
-                    host.Children.Add(desktopLayout);
+                    transport.MaxWidth = UiTheme.DesktopPlayerMaxWidth;
+                    Put(host, desktopLayout, 0, 0); Put(host, transportFrame, 1, 0);
                 }
                 else
                 {
+                    art.VerticalAlignment = VerticalAlignment.Center;
+                    title.TextWrapping = TextWrapping.Wrap; title.MaxLines = 2; title.FontSize = UiTheme.DialogTitle; artist.FontSize = UiTheme.Body;
+                    _detailPlay!.Width = _detailPlay.Height = UiTheme.PlaySize; _detailPlay.CornerRadius = new(UiTheme.PlaySize / 2);
                     Grid.SetColumnSpan(header, 1); Grid.SetColumnSpan(seek, 1);
                     Put(panel, header, 0, 0); Put(panel, art, 1, 0); Put(panel, metadata, 2, 0);
                     Put(panel, seek, 3, 0); Put(panel, controls, 5, 0); Put(panel, upcomingBox, 6, 0);
@@ -380,6 +390,7 @@ public sealed class MainView : UserControl
                 : Math.Min(UiTheme.PlayerMaxWidth, host.Bounds.Width - UiTheme.PageMargin.Left - UiTheme.PageMargin.Right);
             var height = host.Bounds.Height - (wide ? UiTheme.DesktopPlayerChromeHeight : UiTheme.PlayerChromeHeight);
             art.Width = art.Height = Math.Max(UiTheme.ThumbnailSize, Math.Min(width, height));
+            if (wide) queuePanel.Height = art.Height;
         }
         // Detach initial mobile composition before responsive host takes ownership.
         panel.Children.Clear();
