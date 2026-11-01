@@ -13,12 +13,12 @@ internal sealed class Artwork : Border
     private Bitmap? _bitmap;
     public Artwork(Track? track, double size)
     {
-        Width = Height = size; CornerRadius = new CornerRadius(size > 100 ? 16 : 8); ClipToBounds = true;
+        Width = Height = size; CornerRadius = new CornerRadius(size > 100 ? 30 : 13); ClipToBounds = true;
         Background = new LinearGradientBrush
         {
             StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
             EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-            GradientStops = [new GradientStop(Color.Parse("#69459B"), 0), new GradientStop(Color.Parse("#242031"), 1)]
+            GradientStops = [new GradientStop(Color.Parse("#8659B5"), 0), new GradientStop(Color.Parse("#251A37"), 1)]
         };
         var panel = new Grid();
         panel.Children.Add(Icons.Make("wave", "#D5BFFF", Math.Max(24, size * 0.4)));
