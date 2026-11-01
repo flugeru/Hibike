@@ -32,6 +32,17 @@ jobs:
         run: |
           dotnet test tests/Hibiki.Core.Tests/Hibiki.Core.Tests.csproj -c Release --logger "trx;LogFileName=windows-core.trx" --results-directory artifacts/tests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Exercise Avalonia desktop layout (headless)
+        run: |
+          dotnet run --project tests/Hibiki.Ui.Smoke/Hibiki.Ui.Smoke.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload UI preview screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hibiki-Windows-ui-previews
+          path: artifacts/ui/*.png
+          if-no-files-found: ignore
       - name: Publish Windows x64 (self-contained)
         run: |
           dotnet publish src/Hibiki.Desktop/Hibiki.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishTrimmed=false -p:UseAppHost=true -o artifacts/windows/publish
