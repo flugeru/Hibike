@@ -11,6 +11,7 @@ public sealed class MainActivity : AvaloniaMainActivity
     protected override void OnCreate(global::Android.OS.Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
+        OnBackPressedDispatcher.AddCallback(this, new BackCallback(this));
 #if HIBIKI_SMOKE_TEST
         if (Intent?.GetBooleanExtra("hibiki.smoke.playback", false) == true) { Intent.RemoveExtra("hibiki.smoke.playback"); _ = PlaybackProbe.RunAsync(this); }
 #endif
@@ -25,9 +26,14 @@ public sealed class MainActivity : AvaloniaMainActivity
         if (intent?.GetBooleanExtra("open_player", false) == true)
             Avalonia.Threading.Dispatcher.UIThread.Post(() => AppServices.OpenPlayerView?.Invoke());
     }
-    public override void OnBackPressed()
+    private sealed class BackCallback(MainActivity activity) : AndroidX.Activity.OnBackPressedCallback(true)
     {
-        if (AppServices.BackHandler?.Invoke() == true) return;
-        base.OnBackPressed();
+        public override void HandleOnBackPressed()
+        {
+            if (AppServices.BackHandler?.Invoke() == true) return;
+            Enabled = false;
+            try { activity.OnBackPressedDispatcher.OnBackPressed(); }
+            finally { Enabled = true; }
+        }
     }
 }

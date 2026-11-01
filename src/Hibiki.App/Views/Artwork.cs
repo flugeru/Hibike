@@ -12,7 +12,7 @@ internal sealed class Artwork : Border
     private readonly CancellationTokenSource _cancel = new();
     public Artwork(Track? track, double size)
     {
-        Width = Height = size; CornerRadius = new CornerRadius(Math.Max(12, size / 10)); ClipToBounds = true;
+        Width = Height = size; CornerRadius = new CornerRadius(size > 100 ? 16 : 8); ClipToBounds = true;
         Background = new LinearGradientBrush
         {
             StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),

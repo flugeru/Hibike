@@ -43,6 +43,7 @@ public sealed class MainView : UserControl
     private bool _showingPlayer;
     private Slider? _detailSeek;
     private TextBlock? _detailTime;
+    private TextBlock? _detailDuration;
     private Button? _detailPlay;
     private bool _seeking;
     private Track? _shownTrack;
@@ -233,6 +234,7 @@ public sealed class MainView : UserControl
     private void ShowPlayer()
     {
         var track = _music.Pending ?? _music.Current; if (track is null) return;
+        if (_overlay is not null) CloseSheet();
         _detailTrack = track; _showingPlayer = true;
         if (_playerPage is not null) _root.Children.Remove(_playerPage);
         var panel = new StackPanel { Spacing = 16, MaxWidth = 420, Margin = new Thickness(24, 14, 24, 24), HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -248,11 +250,13 @@ public sealed class MainView : UserControl
         Button? favorite = null;
         favorite = IconButton("heart", "Alternar favorito", async () => { await _music.ToggleFavoriteAsync(track); favorite!.Content = Icons.Make("heart", _music.IsFavorite(track) ? Accent : Muted, 20); }, _music.IsFavorite(track) ? Accent : Muted);
         Put(metadata, favorite, 0, 1); panel.Children.Add(metadata);
-        _detailSeek = new Slider { Minimum = 0, Maximum = 1, Margin = new Thickness(0, 8, 0, 0) };
+        _detailSeek = new Slider { Minimum = 0, Maximum = 1, Margin = new Thickness(10, 8, 10, 0) };
         _detailSeek.AddHandler(PointerPressedEvent, (_, _) => _seeking = true, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         _detailSeek.AddHandler(PointerReleasedEvent, (_, _) => { _seeking = false; _music.Player.Seek(_detailSeek.Value); }, Avalonia.Interactivity.RoutingStrategies.Bubble, true);
         _detailSeek.KeyUp += (_, _) => _music.Player.Seek(_detailSeek.Value); panel.Children.Add(_detailSeek);
-        _detailTime = Text("", 11, Muted); panel.Children.Add(_detailTime);
+        var times = new Grid { ColumnDefinitions = new("*,Auto"), Margin = new Thickness(10, 0) };
+        _detailTime = Text("", 11, Muted); _detailDuration = Text("", 11, Muted);
+        times.Children.Add(_detailTime); Put(times, _detailDuration, 0, 1); panel.Children.Add(times);
         var controls = new Grid { ColumnDefinitions = new("*,Auto,Auto,Auto,*"), ColumnSpacing = 14, Margin = new Thickness(0, 6) };
         Button? shuffle = null;
         shuffle = IconButton("shuffle", "Aleatório", () => { _music.Shuffle = !_music.Shuffle; shuffle!.Content = Icons.Make("shuffle", _music.Shuffle ? Accent : Muted, 20); return Task.CompletedTask; }, _music.Shuffle ? Accent : Muted); shuffle.HorizontalAlignment = HorizontalAlignment.Center; controls.Children.Add(shuffle);
@@ -261,7 +265,9 @@ public sealed class MainView : UserControl
         Put(controls, IconButton("next", "Próxima", _music.NextAsync), 0, 3);
         Button? repeat = null;
         repeat = IconButton("repeat", "Repetir", () => { _music.Repeat = !_music.Repeat; repeat!.Content = Icons.Make("repeat", _music.Repeat ? Accent : Muted, 20); return Task.CompletedTask; }, _music.Repeat ? Accent : Muted); repeat.HorizontalAlignment = HorizontalAlignment.Center; Put(controls, repeat, 0, 4); panel.Children.Add(controls);
-        var queue = ActionButton("Fila de reprodução  ·  " + _music.Queue.Count, () => { ClosePlayer(); _page = "queue"; Refresh(); return Task.CompletedTask; }); queue.Classes.Add("subtle"); queue.HorizontalAlignment = HorizontalAlignment.Center; panel.Children.Add(queue);
+        var queue = ActionButton("Fila de reprodução  ·  " + _music.Queue.Count, () => { ClosePlayer(); _page = "queue"; Refresh(); return Task.CompletedTask; }); var queueLabel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        queueLabel.Children.Add(Icons.Make("queue", Muted, 16)); queueLabel.Children.Add(Text("Fila · " + _music.Queue.Count, 12, Muted)); queue.Content = queueLabel;
+        queue.HorizontalAlignment = HorizontalAlignment.Center; panel.Children.Add(queue);
         var scroll = new ScrollViewer { Content = panel, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         _playerPage = new Border { Background = Brush.Parse("#15111D"), Child = scroll };
         Grid.SetColumn(_playerPage, 1); Grid.SetRowSpan(_playerPage, 3); _root.Children.Add(_playerPage);
@@ -272,7 +278,7 @@ public sealed class MainView : UserControl
     {
         if (_playerPage is not null) _root.Children.Remove(_playerPage);
         _playerPage = null; _showingPlayer = false; _main.IsVisible = true; _bottom.IsVisible = Bounds.Width < 800;
-        _detailTrack = null; _detailSeek = null; _detailPlay = null; _detailTime = null; _seeking = false; Refresh(); Animate(_main);
+        _detailTrack = null; _detailSeek = null; _detailPlay = null; _detailTime = null; _detailDuration = null; _seeking = false; Refresh(); Animate(_main);
     }
     private bool HandleBack()
     {
@@ -298,7 +304,8 @@ public sealed class MainView : UserControl
             _detailSeek.Maximum = Math.Max(1, duration); _detailSeek.IsEnabled = duration > 0 && !_music.LoadingAudio;
             if (!_seeking) _detailSeek.Value = Math.Min(_music.Player.Position, _detailSeek.Maximum);
         }
-        if (_detailTime is not null) _detailTime.Text = Time(_music.Player.Position) + "  /  " + Time(duration);
+        if (_detailTime is not null) _detailTime.Text = Time(_music.Player.Position);
+        if (_detailDuration is not null) _detailDuration.Text = Time(duration);
     }
     private void ShowSettings()
     {
@@ -350,7 +357,7 @@ public sealed class MainView : UserControl
     private void CloseSheet()
     {
         if (_overlay is not null) _root.Children.Remove(_overlay); _overlay = null;
-        _detailTrack = null; _detailSeek = null; _detailPlay = null; _detailTime = null; _seeking = false;
+        _detailTrack = null; _detailSeek = null; _detailPlay = null; _detailTime = null; _detailDuration = null; _seeking = false;
     }
     private static string Time(double seconds) => TimeSpan.FromSeconds(Math.Max(0, seconds)).ToString(seconds >= 3600 ? @"h\:mm\:ss" : @"m\:ss");
     private static TextBlock Text(string text, double size, string color = "#F3EFF8") => new() { Text = text, FontSize = size, Foreground = Brush.Parse(color) };

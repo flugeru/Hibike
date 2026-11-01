@@ -24,6 +24,7 @@
     <AndroidNativeLibrary Include="Native/**/*.so" />
     <AndroidAsset Include="../../THIRD-PARTY-NOTICES.md" Link="licenses/THIRD-PARTY-NOTICES.md" />
     <AndroidAsset Include="../../scripts/LICENSE.youtubedl-android.txt" Link="licenses/GPL-3.0.txt" />
+    <AndroidAsset Include="../../scripts/LICENSE.media3.txt" Link="licenses/Apache-2.0.txt" />
   </ItemGroup>
   <Target Name="RequireBundledRuntime" BeforeTargets="PrepareForBuild">
     <Error Condition="!Exists('Assets/runtime/yt-dlp')" Text="Run python3 scripts/prepare_android_runtime.py before building Android (GitHub Actions does this automatically)." />
