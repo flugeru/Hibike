@@ -33,6 +33,7 @@ public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer
         player.Error += (_, e) =>
         {
             e.Handled = true;
+            _prepared = false;
             var message = $"Falha no áudio ({e.What}/{e.Extra}). Tente reproduzir a faixa novamente.";
             if (!ready.TrySetException(new IOException(message))) Failed?.Invoke(this, message);
         };

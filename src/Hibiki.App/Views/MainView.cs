@@ -6,6 +6,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Hibiki.Core.Models;
+using Track = Hibiki.Core.Models.Track;
 
 namespace Hibiki.App.Views;
 
