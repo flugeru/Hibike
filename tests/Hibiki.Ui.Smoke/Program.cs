@@ -81,6 +81,43 @@ await session.Dispatch(async () =>
         window.Close();
     }
     Console.WriteLine("Search, playback, player and return passed at 360dp and 430dp.");
+
+    // Exercise the separate desktop shell at realistic Windows sizes.
+    foreach (var width in new[] { 1000d, 1360d })
+    {
+        var desktop = new DesktopView(controller);
+        var window = new Window { Width = width, Height = 850, Content = desktop };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        if (desktop.Bounds.Width < width - 1)
+            throw new InvalidOperationException($"Desktop view does not fill the window at {width}dp.");
+
+        var query = desktop.GetVisualDescendants().OfType<TextBox>()
+            .First(x => x.PlaceholderText?.Contains("Música") == true);
+        query.Text = "Desktop query";
+        var submit = desktop.GetVisualDescendants().OfType<Button>()
+            .First(x => x.Content is string caption && caption == "Buscar");
+        submit.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Dispatcher.UIThread.RunJobs();
+        if (controller.Results.Count != 15)
+            throw new InvalidOperationException("Desktop search did not update the controller.");
+
+        var nav = desktop.GetVisualDescendants().OfType<Button>().First(x =>
+            x.Content is StackPanel stack &&
+            stack.Children.OfType<TextBlock>().Any(label => label.Text == "Minha biblioteca"));
+        nav.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Dispatcher.UIThread.RunJobs();
+        if (!desktop.GetVisualDescendants().OfType<TextBlock>()
+            .Any(x => x.Text == "Sua biblioteca"))
+            throw new InvalidOperationException("Desktop library navigation did not change the view.");
+
+        await Task.Delay(100);
+        using (var frame = window.CaptureRenderedFrame() ??
+            throw new InvalidOperationException("Desktop view did not render."))
+            frame.Save($"artifacts/ui/desktop-{width:0}.png", new PngBitmapEncoderOptions());
+        window.Close();
+    }
+    Console.WriteLine("Desktop search, library navigation and layout passed at 1000dp and 1360dp.");
     return 0;
 }, CancellationToken.None);
 Directory.Delete(directory, true);
