@@ -24,5 +24,36 @@
   <Style Selector="Button.chip"><Setter Property="CornerRadius" Value="22" /><Setter Property="Background" Value="#211E29" /></Style>
   <Style Selector="TextBox"><Setter Property="CornerRadius" Value="14" /><Setter Property="MinHeight" Value="48" /><Setter Property="Background" Value="#1D1B24" /><Setter Property="BorderBrush" Value="#34303E" /><Setter Property="Padding" Value="14,10" /></Style>
   <Style Selector="Slider"><Setter Property="MinHeight" Value="24" /></Style>
+
+  <!-- Fluent paints pressed/hover backgrounds on its template's ContentPresenter,
+       not on Button.Background. Bind those visual states to the actual button
+       background so tapping never flashes the theme's grey overlay. -->
+  <Style Selector="Button:pressed">
+   <Setter Property="RenderTransform" Value="scale(1)" />
+  </Style>
+  <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+   <Setter Property="Background" Value="{TemplateBinding Background}" />
+   <Setter Property="BorderBrush" Value="{TemplateBinding BorderBrush}" />
+   <Setter Property="Foreground" Value="{TemplateBinding Foreground}" />
+  </Style>
+  <Style Selector="Button:pressed /template/ ContentPresenter#PART_ContentPresenter">
+   <Setter Property="Background" Value="{TemplateBinding Background}" />
+   <Setter Property="BorderBrush" Value="{TemplateBinding BorderBrush}" />
+   <Setter Property="Foreground" Value="{TemplateBinding Foreground}" />
+  </Style>
+
+  <!-- Music row overflow menus also use Fluent's grey selected/pressed brushes. -->
+  <Style Selector="MenuItem:selected /template/ Border#PART_LayoutRoot">
+   <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="MenuItem:pressed /template/ Border#PART_LayoutRoot:pointerover">
+   <Setter Property="Background" Value="Transparent" />
+  </Style>
+
+  <!-- Hidden retains touch, mouse-wheel and keyboard scrolling; Disabled does not. -->
+  <Style Selector="ScrollViewer">
+   <Setter Property="VerticalScrollBarVisibility" Value="Hidden" />
+   <Setter Property="HorizontalScrollBarVisibility" Value="Hidden" />
+  </Style>
  </Application.Styles>
 </Application>
