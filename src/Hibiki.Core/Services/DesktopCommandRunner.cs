@@ -6,7 +6,8 @@ public sealed class DesktopCommandRunner : ICommandRunner
 {
     public async Task<ProcessResult> RunAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken)
     {
-        var info = new ProcessStartInfo(Environment.GetEnvironmentVariable("HIBIKI_YTDLP") ?? "yt-dlp")
+        var bundled = Path.Combine(AppContext.BaseDirectory, "yt-dlp.exe");
+        var info = new ProcessStartInfo(Environment.GetEnvironmentVariable("HIBIKI_YTDLP") ?? (File.Exists(bundled) ? bundled : "yt-dlp"))
         { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
         foreach (var argument in arguments) info.ArgumentList.Add(argument);
         using var process = new Process { StartInfo = info };
