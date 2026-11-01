@@ -24,6 +24,7 @@ public sealed class PlaybackService : MediaSessionService
     public static PlaybackService? Instance { get; private set; }
     private IExoPlayer? _player;
     private MediaSession? _session;
+    private PendingIntent? _launchIntent;
     private SessionPlayer? _sessionPlayer;
     private Handler? _handler;
     private Action? _poll;
@@ -49,8 +50,8 @@ public sealed class PlaybackService : MediaSessionService
             .SetAudioAttributes(attributes, true)!.SetHandleAudioBecomingNoisy(true)!.SetWakeMode(2)!.Build()!;
         _sessionPlayer = new SessionPlayer(_player);
         var launch = PackageManager!.GetLaunchIntentForPackage(PackageName!)!.PutExtra("open_player", true);
-        var pending = PendingIntent.GetActivity(this, 0, launch, PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent);
-        _session = new MediaSession.Builder(this, _sessionPlayer).SetSessionActivity(pending)!.Build();
+        _launchIntent = PendingIntent.GetActivity(this, 0, launch, PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent);
+        _session = new MediaSession.Builder(this, _sessionPlayer).SetSessionActivity(_launchIntent)!.Build();
         var provider = new DefaultMediaNotificationProvider.Builder(this).SetNotificationId(42)!
             .SetChannelId("hibiki-playback")!.SetChannelName(Resource.String.playback_channel)!.Build()!;
         provider.SetSmallIcon(Resource.Drawable.ic_stat_music);
@@ -75,20 +76,35 @@ public sealed class PlaybackService : MediaSessionService
         if (intent?.Action == PrepareAction)
         {
             if (Build.VERSION.SdkInt >= BuildVersionCodes.O)
-                ((NotificationManager)GetSystemService(NotificationService)!).CreateNotificationChannel(new NotificationChannel("hibiki-playback", "Reprodução de música", NotificationImportance.Low));
+            {
+                var channel = new NotificationChannel("hibiki-playback", GetString(Resource.String.playback_channel), NotificationImportance.Low);
+                channel.Description = GetString(Resource.String.playback_channel_description);
+                channel.SetShowBadge(false);
+                ((NotificationManager)GetSystemService(NotificationService)!).CreateNotificationChannel(channel);
+            }
             var builder = Build.VERSION.SdkInt >= BuildVersionCodes.O ? new Notification.Builder(this, "hibiki-playback") : new Notification.Builder(this);
             var notification = builder.SetContentTitle(intent.GetStringExtra("title") ?? "Hibiki")!
-                .SetContentText("Preparando áudio…")!.SetSmallIcon(Resource.Drawable.ic_stat_music)!.SetOngoing(true)!.Build();
+                .SetContentText(GetString(Resource.String.preparing_audio))!
+                .SetSmallIcon(Resource.Drawable.ic_stat_music)!
+                .SetContentIntent(_launchIntent)!
+                .SetColor(global::Android.Graphics.Color.Rgb(189, 162, 255))!
+                .SetOnlyAlertOnce(true)!
+                .SetShowWhen(false)!
+                .SetOngoing(true)!
+                .Build();
             StartForeground(42, notification);
         }
         return base.OnStartCommand(intent, flags, startId);
     }
     public override MediaSession? OnGetSession(MediaSession.ControllerInfo controllerInfo) => _session;
-    public void Open(AudioSource source, double volume)
+    public void Open(AudioSource source, double volume, byte[]? artwork)
     {
         Error = null; _lastError = null; State = 2;
         var metadata = new MediaMetadata.Builder().SetTitle(source.Title ?? "Hibiki")!.SetArtist(source.Artist ?? "")!;
-        if (source.Artwork is not null) metadata.SetArtworkUri(global::Android.Net.Uri.Parse(source.Artwork));
+        // Passing compressed artwork *data* (not just a remote URL) lets the Android 13+
+        // media card and lock screen reliably show the cover and derive their colors.
+        // Picture type 3 = front cover (ID3/APIC).
+        metadata.MaybeSetArtworkData(artwork ?? NotificationArtwork.Fallback, 3);
         var item = new MediaItem.Builder().SetUri(source.Url)!.SetMediaMetadata(metadata.Build())!.Build();
         var http = new DefaultHttpDataSource.Factory();
         http.SetDefaultRequestProperties(new Dictionary<string, string>(source.Headers));
