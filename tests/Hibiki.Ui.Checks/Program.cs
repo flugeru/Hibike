@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Hibiki.App;
@@ -26,7 +27,7 @@ internal static class Program
             {
                 var window = lifetime.MainWindow!; var view = (MainView)window.Content!;
                 await AppServices.Controller!.SearchAsync("test");
-                foreach (var width in new[] { 360, 390, 430 })
+                foreach (var width in new[] { 360, 390, 430, 1260 })
                 {
                     window.Width = width; window.Height = 820;
                     await Task.Delay(150);
@@ -35,15 +36,25 @@ internal static class Program
                         Check(button.Bounds.Height >= 48, $"Touch target below 48: {button.Content} {button.Classes} {button.Bounds}");
                     var list = view.GetVisualDescendants().OfType<ItemsControl>().First(c => c.ItemsSource is System.Collections.ObjectModel.ObservableCollection<Track>);
                     Check(list.GetVisualDescendants().OfType<Button>().Count() < 100, "List not virtualized");
+                    Capture(view, $"search-{width}");
                     var search = view.GetVisualDescendants().OfType<TextBox>().First();
                     search.Text = "test"; await Task.Delay(30);
-                    Check(((Control)search.InnerRightContent!).IsVisible, "Search clear button missing");
+                    var clear = ((StackPanel)search.InnerRightContent!).Children[0];
+                    Check(clear.IsVisible, "Search clear button missing");
                     search.Text = ""; await Task.Delay(30);
-                    Check(!((Control)search.InnerRightContent!).IsVisible, "Empty search has clear button");
+                    Check(!clear.IsVisible, "Empty search has clear button");
                     await AppServices.Controller.PlayAsync(AppServices.Controller.Results[0]);
-                    AppServices.OpenPlayerView!(); await Task.Delay(100);
+                    await Task.Delay(100); Capture(view, $"mini-{width}");
+                    AppServices.OpenPlayerView!(); await Task.Delay(300);
+                    Capture(view, $"player-{width}");
                     Check(view.GetVisualDescendants().OfType<Slider>().Any(s => s.Bounds.Width > 0 && s.Bounds.Width <= width), "Player slider clipped");
+                    var slider = view.GetVisualDescendants().OfType<Slider>().Single();
+                    Check(slider.TranslatePoint(default, view)!.Value.Y + slider.Bounds.Height <= view.Bounds.Height, "Player slider below viewport");
                     Check(AppServices.BackHandler!(), "Player cannot close");
+                    await Task.Delay(300);
+                    var more = view.GetVisualDescendants().OfType<Button>().First(b => Avalonia.Automation.AutomationProperties.GetName(b)?.StartsWith("Opções de ") == true);
+                    more.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)); await Task.Delay(300);
+                    Capture(view, $"dialog-{width}"); Check(AppServices.BackHandler!(), "Dialog cannot close");
                 }
                 Console.WriteLine("UI checks passed: 360/390/430, typography, touch targets, virtualization, player.");
                 File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "ui-check-result.txt"), "PASS: 360/390/430, typography, touch targets, virtualization, player.");
@@ -57,6 +68,11 @@ internal static class Program
         return result;
     }
     private static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
+    private static void Capture(Control control, string name)
+    {
+        using var bitmap = new RenderTargetBitmap(new PixelSize((int)control.Bounds.Width, (int)control.Bounds.Height));
+        bitmap.Render(control); bitmap.Save(Path.Combine(AppContext.BaseDirectory, name + ".png"));
+    }
     private sealed class Catalog : IMusicCatalog
     {
         public Task<IReadOnlyList<Track>> SearchAsync(string query, CancellationToken cancellationToken) =>

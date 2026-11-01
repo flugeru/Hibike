@@ -22,13 +22,26 @@ internal static class UiTheme
         ProgressHeight = 8, ProgressRadius = 4, MiniProgressHeight = 4, SeekHeight = 6,
         SeekThumbSize = 16, SeekThumbPressedSize = 20, PageMaxWidth = 820, PlayerMaxWidth = 440,
         DialogMaxWidth = 520, CompactWidth = 390, DesktopWidth = 800, SidebarWidth = 200,
-        NavHeight = 72, RowHeight = 76, MarkerSize = 7, EqualizerGap = 3, EqualizerBarWidth = 4, EqualizerStep = 5,
-        PauseStroke = 4, StateTransitionMilliseconds = 160, EqualizerMilliseconds = 180;
+        NavHeight = 72, RowHeight = 76, TrackRowHeight = 70, MarkerSize = 7, EqualizerGap = 3, EqualizerBarWidth = 4, EqualizerStep = 5,
+        PauseStroke = 4, StateTransitionMilliseconds = 160, EqualizerMilliseconds = 180,
+        PlayerChromeHeight = 388, PlayerBottomWeight = .15, ListFadeHeight = 18;
     public static readonly Thickness PageMargin = new(14, 14, 14, 18), ButtonPadding = new(16, 13),
         RowPadding = new(4, 8), ChipPadding = new(10, 4), BannerPadding = new(14, 10),
         One = new(1), Zero = new(0), InnerPadding = new(12), DialogMargin = new(14),
         MiniMargin = new(14, 0, 14, 8), TopBorder = new(0, 1, 0, 0), BottomBorder = new(0, 0, 0, 1),
         RoundInset = new(2), MiniPlayInset = new(4);
+    public static readonly Thickness SearchIconPadding = new(16, 0, 12, 0);
+    public static readonly Thickness ContentPadding = new(14, 14, 14, 8);
+    // Opacity only, not a surface gradient: soften items scrolling beneath fixed chrome.
+    public static IBrush ListMask(double height) => new LinearGradientBrush
+    {
+        StartPoint = new(0, 0, RelativeUnit.Relative), EndPoint = new(0, 1, RelativeUnit.Relative),
+        GradientStops =
+        [
+            new(Colors.Transparent, 0), new(Colors.Black, Math.Min(.5, ProgressRadius / Math.Max(1, height))),
+            new(Colors.Black, Math.Max(.5, 1 - ListFadeHeight / Math.Max(1, height))), new(Colors.Transparent, 1)
+        ]
+    };
     public static readonly FontFamily Inter = new("avares://Avalonia.Fonts.Inter/Assets#Inter");
     public static readonly FontFamily Mono = new("Cascadia Mono, Consolas, monospace");
     public static IBrush Brush(string color) => new SolidColorBrush(Color.Parse(color)).ToImmutable();
@@ -84,6 +97,10 @@ internal static class UiTheme
         Add(new Style(x => x.OfType<Button>().Class("primary")), new(TemplatedControl.BackgroundProperty, Brush(Primary)),
             new(TemplatedControl.ForegroundProperty, Brush(OnPrimary)), new(TemplatedControl.BorderThicknessProperty, Zero),
             new(TemplatedControl.FontWeightProperty, FontWeight.SemiBold));
+        Add(new Style(x => x.OfType<Button>().Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
+            new Setter(ContentPresenter.ForegroundProperty, Brush(Primary)));
+        Add(new Style(x => x.OfType<Button>().Class("primary").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
+            new Setter(ContentPresenter.ForegroundProperty, Brush(OnPrimary)));
         Add(new Style(x => x.OfType<Button>().Class("subtle")), new Setter(TemplatedControl.BorderThicknessProperty, Zero));
         Add(new Style(x => x.OfType<Button>().Class("round")), new(Layoutable.WidthProperty, TouchSize),
             new(Layoutable.HeightProperty, TouchSize), new(TemplatedControl.PaddingProperty, Zero),

@@ -1,11 +1,15 @@
 using Avalonia;
+using Avalonia.Controls;
 using Path = Avalonia.Controls.Shapes.Path;
 using Avalonia.Media;
 namespace Hibiki.App.Views;
 internal static class Icons
 {
-    public static Path Make(string name, string color = UiTheme.Primary, double size = UiTheme.IconSize) => new()
+    public static Control Make(string name, string color = UiTheme.Primary, double size = UiTheme.IconSize, bool filled = false)
     {
+        // Fixed 24-unit viewport: never stretch a narrow path (pause/more) to a square.
+        var path = new Path
+        {
         Data = Geometry.Parse(name switch
         {
             "play" => "M8,4 L20,12 L8,20 Z",
@@ -28,10 +32,15 @@ internal static class Icons
             "close" => "M5,5 L19,19 M19,5 L5,19",
             _ => "M3,9 L3,15 M8,4 L8,20 M13,7 L13,17 M18,2 L18,22 M23,9 L23,15"
         }),
-        Width = size, Height = size, Stretch = Stretch.Uniform,
+        Stretch = Stretch.None,
         Stroke = UiTheme.Brush(color), StrokeThickness = name == "pause" ? UiTheme.PauseStroke : UiTheme.IconStroke,
         StrokeLineCap = PenLineCap.Round, StrokeJoin = PenLineJoin.Round,
-        Fill = name is "play" or "next" or "previous" or "more" ? Brush.Parse(color) : null,
+        Fill = filled || name is "play" or "more" ? UiTheme.Brush(color) : null,
         Margin = UiTheme.Zero
-    };
+        };
+        var canvas = new Canvas { Width = UiTheme.IconSize, Height = UiTheme.IconSize };
+        canvas.Children.Add(path);
+        return new Viewbox { Child = canvas, Width = size, Height = size, Stretch = Stretch.Uniform,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+    }
 }
