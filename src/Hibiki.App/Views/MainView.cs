@@ -40,6 +40,7 @@ public sealed class MainView : UserControl
     private Button? _detailPlay;
     private bool _seeking;
     private Track? _shownTrack;
+    private Track? _detailTrack;
     private string _page = "explore";
     private const string Muted = "#9992A6", Accent = "#BDA2FF";
 
@@ -170,7 +171,7 @@ public sealed class MainView : UserControl
             var (key, label, icon, vertical) = ((string, string, string, bool))button.Tag!;
             var active = key == _page;
             button.Classes.Set("active", active && !vertical);
-            var stack = new StackPanel { Orientation = vertical ? Orientation.Vertical : Orientation.Horizontal, Spacing = vertical ? 3 : 12 };
+            var stack = new StackPanel { Orientation = vertical ? Orientation.Vertical : Orientation.Horizontal, Spacing = vertical ? 3 : 12, HorizontalAlignment = vertical ? HorizontalAlignment.Center : HorizontalAlignment.Left };
             var image = Icons.Make(icon, active ? Accent : Muted, 20); image.HorizontalAlignment = HorizontalAlignment.Center; stack.Children.Add(image);
             stack.Children.Add(Text(label, vertical ? 10 : 13, active ? Accent : Muted)); button.Content = stack;
         }
@@ -192,6 +193,7 @@ public sealed class MainView : UserControl
         if (!Equals(displayed, _shownTrack)) { _shownTrack = displayed; _nowArt.Content = new Artwork(displayed, 40); }
         _nowTitle.Text = displayed?.Title;
         _nowArtist.Text = _music.LoadingAudio ? _music.Status : displayed?.Artist;
+        if (_detailPlay is not null && displayed is not null && !Equals(_detailTrack, displayed)) ShowPlayer();
         RefreshPlayback();
     }
     private Control TrackRow(Track track)
@@ -215,6 +217,7 @@ public sealed class MainView : UserControl
     private void ShowPlayer()
     {
         var track = _music.Pending ?? _music.Current; if (track is null) return;
+        _detailTrack = track;
         var panel = new StackPanel { Spacing = 18 };
         var art = new Artwork(track, 190) { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 8) }; panel.Children.Add(art);
         var title = Text(track.Title, 19); title.TextWrapping = TextWrapping.Wrap; title.TextAlignment = TextAlignment.Center; title.FontWeight = FontWeight.SemiBold; panel.Children.Add(title);
@@ -296,7 +299,7 @@ public sealed class MainView : UserControl
     private void CloseSheet()
     {
         if (_overlay is not null) _root.Children.Remove(_overlay); _overlay = null;
-        _detailSeek = null; _detailPlay = null; _detailTime = null; _seeking = false;
+        _detailTrack = null; _detailSeek = null; _detailPlay = null; _detailTime = null; _seeking = false;
     }
     private static string Time(double seconds) => TimeSpan.FromSeconds(Math.Max(0, seconds)).ToString(seconds >= 3600 ? @"h\:mm\:ss" : @"m\:ss");
     private static TextBlock Text(string text, double size, string color = "#F3EFF8") => new() { Text = text, FontSize = size, Foreground = Brush.Parse(color) };

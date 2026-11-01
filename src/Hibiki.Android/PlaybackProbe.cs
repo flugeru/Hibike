@@ -44,10 +44,23 @@ internal static class PlaybackProbe
             global::Android.Util.Log.Error("HibikiProbe", "HIBIKI_PROBE_LOCAL_FAILED " + ex);
             return;
         }
+        var runner = new AndroidCommandRunner(context);
+        try
+        {
+            using var runtimeTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            var version = await runner.RunAsync(["--version"], runtimeTimeout.Token);
+            if (version.ExitCode != 0) throw new IOException(version.Error);
+            global::Android.Util.Log.Info("HibikiProbe", "HIBIKI_PROBE_RUNTIME_OK " + version.Output.Trim());
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Error("HibikiProbe", "HIBIKI_PROBE_RUNTIME_FAILED " + ex.Message);
+            return;
+        }
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(40));
-            var catalog = new YtDlpCatalog(new AndroidCommandRunner(context), context.FilesDir!.AbsolutePath);
+            var catalog = new YtDlpCatalog(runner, context.FilesDir!.AbsolutePath);
             var source = await catalog.ResolveAsync(new("BaW_jenozKc", "YT-DLP public test video", "YT-DLP", "https://www.youtube.com/watch?v=BaW_jenozKc"), timeout.Token);
             await player.PlayAsync(source, timeout.Token);
             await Task.Delay(1200);

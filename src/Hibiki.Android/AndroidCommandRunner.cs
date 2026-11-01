@@ -18,10 +18,15 @@ public sealed class AndroidCommandRunner(Context context) : ICommandRunner
         try
         {
             if (_pythonHome is not null) return;
-            var baseDir = Path.Combine(context.NoBackupFilesDir!.AbsolutePath, "runtime-v1");
+            var abi = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture switch
+            {
+                System.Runtime.InteropServices.Architecture.Arm64 => "arm64-v8a",
+                System.Runtime.InteropServices.Architecture.X64 => "x86_64",
+                _ => throw new PlatformNotSupportedException("Arquitetura de processo não suportada pelo runtime de áudio.")
+            };
+            var baseDir = Path.Combine(context.NoBackupFilesDir!.AbsolutePath, "runtime-v2-" + abi);
             var python = Path.Combine(baseDir, "python");
             var marker = Path.Combine(python, ".ready");
-            var abi = global::Android.OS.Build.SupportedAbis!.Contains("arm64-v8a") ? "arm64-v8a" : "x86_64";
             if (!File.Exists(marker))
             {
                 if (Directory.Exists(python)) Directory.Delete(python, true);
