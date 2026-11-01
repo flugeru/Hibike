@@ -340,7 +340,7 @@ public sealed class MainView : UserControl
         queue.HorizontalContentAlignment = HorizontalAlignment.Center;
         queue.HorizontalAlignment = HorizontalAlignment.Center; panel.Children.Add(queue);
         var scroll = new ScrollViewer { Content = panel, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+            VerticalScrollBarVisibility = ScrollBarVisibility.Hidden };
         _playerPage = new Border { Background = Brush.Parse("#15111D"), Child = scroll };
         Grid.SetColumn(_playerPage, 1); Grid.SetRowSpan(_playerPage, 3); _root.Children.Add(_playerPage);
         _main.IsVisible = false; _mini.IsVisible = false; _bottom.IsVisible = false;
