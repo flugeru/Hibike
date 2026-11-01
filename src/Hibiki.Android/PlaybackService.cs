@@ -62,10 +62,6 @@ public sealed class PlaybackService : MediaSessionService
             .SetChannelId("hibiki-playback")!.SetChannelName(Resource.String.playback_channel)!.Build()!;
         provider.SetSmallIcon(Resource.Drawable.ic_stat_music);
         SetMediaNotificationProvider(provider);
-        // Playback is driven directly by our UI, so onGetSession() may never be
-        // called by a binding controller. Register explicitly: otherwise Media3
-        // doesn't observe state changes and the preparation card remains forever.
-        AddSession(_session);
         _handler = new Handler(Looper.MainLooper!);
         _poll = () =>
         {
@@ -142,7 +138,15 @@ public sealed class PlaybackService : MediaSessionService
         http.SetDefaultRequestProperties(new Dictionary<string, string>(source.Headers));
         var data = new DefaultDataSource.Factory(this, http);
         var media = new DefaultMediaSourceFactory(data).CreateMediaSource(item);
-        _player!.Volume = (float)volume; _player.SetMediaSource(media); _player.Prepare(); _player.Play();
+        _player!.Volume = (float)volume;
+        _player.SetMediaSource(media);
+        // Register only after a playable item exists. Registering in OnCreate
+        // with an empty playlist lets Media3 remove the preparation notification.
+        // The app controls ExoPlayer directly, so onGetSession() is not guaranteed
+        // to register the session for notification state observation.
+        if (!IsSessionAdded(_session!)) AddSession(_session!);
+        _player.Prepare();
+        _player.Play();
     }
     public void PauseAudio() => _player?.Pause();
     public void ResumeAudio() { if (_player?.PlaybackState == 4) _player.SeekTo(0); _player?.Play(); }
