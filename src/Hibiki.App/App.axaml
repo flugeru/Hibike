@@ -18,11 +18,11 @@
       <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
     </Style>
     <Style Selector="Button">
-      <Setter Property="CornerRadius" Value="{StaticResource RadiusCard}"/>
+      <Setter Property="CornerRadius" Value="{StaticResource CardCornerRadius}"/>
       <Setter Property="MinHeight" Value="{StaticResource TouchTarget}"/>
       <Setter Property="Padding" Value="{StaticResource ButtonInsets}"/>
       <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
-      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="BorderThickness" Value="{StaticResource NoInsets}"/>
       <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
       <Setter Property="FontSize" Value="{StaticResource TypeButton}"/>
     </Style>
@@ -71,14 +71,14 @@
     </Style>
     <Style Selector="Button.track">
       <Setter Property="Background" Value="{StaticResource TransparentBrush}"/>
-      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="BorderThickness" Value="{StaticResource NoInsets}"/>
     </Style>
     <Style Selector="Button.chip">
-      <Setter Property="CornerRadius" Value="{StaticResource RadiusPill}"/>
+      <Setter Property="CornerRadius" Value="{StaticResource PillCornerRadius}"/>
       <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
     </Style>
     <Style Selector="TextBox">
-      <Setter Property="CornerRadius" Value="{StaticResource RadiusCard}"/>
+      <Setter Property="CornerRadius" Value="{StaticResource CardCornerRadius}"/>
       <Setter Property="MinHeight" Value="{StaticResource TouchTarget}"/>
       <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
       <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
@@ -92,7 +92,7 @@
     </Style>
     <Style Selector="ListBox">
       <Setter Property="Background" Value="{StaticResource TransparentBrush}"/>
-      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="BorderThickness" Value="{StaticResource NoInsets}"/>
     </Style>
     <Style Selector="ListBoxItem">
       <Setter Property="Padding" Value="{StaticResource NoInsets}"/>

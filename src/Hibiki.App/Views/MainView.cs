@@ -22,10 +22,10 @@ public sealed class MainView : UserControl
     private readonly Grid _root = new() { ColumnDefinitions = new("200,*"), RowDefinitions = new("*,Auto,Auto") };
     private readonly Border _sidebar;
     private readonly Border _main;
-    private readonly TextBox _search = new() { PlaceholderText = "Música, artista ou link", MinWidth = 0, Height = 48, MinHeight = 48, FontSize = 14 };
+    private readonly TextBox _search = new() { PlaceholderText = "Música, artista ou link", MinWidth = 0, Height = 48, MinHeight = 48, FontSize = Ui.D("TypeBody") };
     private readonly TextBlock _heading = Text("Buscar músicas", 18);
     private readonly TextBlock _count = Text("", 12, "TextTertiaryBrush");
-    private readonly ListBox _trackList = new() { SelectionMode = SelectionMode.Single, Padding = new Thickness(0) };
+    private readonly ListBox _trackList = new() { SelectionMode = SelectionMode.Single, Padding = Ui.Inset("Space0") };
     private readonly StackPanel _empty = new() { Spacing = 12, HorizontalAlignment = HorizontalAlignment.Center };
     private readonly TextBlock _status = Text("", 12, Muted);
     private readonly Border _statusBox;
@@ -61,10 +61,10 @@ public sealed class MainView : UserControl
         TopLevel.SetAutoSafeAreaPadding(this, true);
         TopLevel.SetSystemBarColor(this, (SolidColorBrush)Ui.B("BackgroundBrush"));
         _sidebar = BuildSidebar(); _root.Children.Add(_sidebar); Grid.SetRowSpan(_sidebar, 3);
-        _main = new Border { Padding = new Thickness(16, 10, 16, 4) }; Put(_root, _main, 0, 1);
+        _main = new Border { Padding = Ui.Insets("Space16", "Space8", "Space16", "Space4") }; Put(_root, _main, 0, 1);
         var content = new Grid { RowDefinitions = new("Auto,Auto,Auto,*,Auto"), RowSpacing = 12 }; _main.Child = content;
         // One balanced toolbar: the actions stay grouped, even on narrow phones.
-        var header = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 12, MinHeight = 48, Margin = new Thickness(0, 0, 0, 4) };
+        var header = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 12, MinHeight = 48, Margin = Ui.Insets("Space0", "Space0", "Space0", "Space4") };
         var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 9, VerticalAlignment = VerticalAlignment.Center };
         brand.Children.Add(Icons.Make("wave", Accent, 22));
         var title = Text("Hibiki", 21); title.FontWeight = FontWeight.SemiBold;
@@ -132,7 +132,7 @@ public sealed class MainView : UserControl
         var statusRow = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 8 };
         _status.TextWrapping = TextWrapping.Wrap; _status.MaxLines = 2; _status.VerticalAlignment = VerticalAlignment.Center; statusRow.Children.Add(_status);
         Put(statusRow, IconButton("info", "Ver diagnóstico", () => { ShowDiagnostics(); return Task.CompletedTask; }), 0, 1);
-        _statusBox = new Border { Child = statusRow, Padding = new Thickness(10, 2), Background = Ui.B("SurfaceBrush"), CornerRadius = new CornerRadius(10) }; Put(content, _statusBox, 4, 0);
+        _statusBox = new Border { Child = statusRow, Padding = Ui.Insets("Space8", "Space4"), Background = Ui.B("SurfaceBrush"), CornerRadius = Ui.Radius("RadiusThumb") }; Put(content, _statusBox, 4, 0);
         _play = IconButton("play", "Reproduzir, pausar ou cancelar", _music.ToggleAsync, "OnAccentBrush");
         _play.Classes.Remove("subtle"); _play.Classes.Add("primary");
         _play.CornerRadius = Ui.Radius("RadiusPill");
@@ -152,7 +152,7 @@ public sealed class MainView : UserControl
             _sidebar.IsVisible = !compact; _bottom.IsVisible = compact;
             _main.IsVisible = !_showingPlayer;
             _bottom.IsVisible = compact && !_showingPlayer;
-            _main.Padding = compact ? new Thickness(16, 10, 16, 4) : new Thickness(32, 24, 32, 12);
+            _main.Padding = compact ? Ui.Insets("Space16", "Space8", "Space16", "Space4") : Ui.Insets("Space24", "Space24", "Space24", "Space12");
         };
         AppServices.BackHandler = HandleBack; AppServices.OpenPlayerView = ShowPlayer;
         AttachedToVisualTree += async (_, _) =>
@@ -166,8 +166,8 @@ public sealed class MainView : UserControl
     }
     private Border BuildSidebar()
     {
-        var panel = new StackPanel { Spacing = 8, Margin = new Thickness(14, 30) };
-        var title = Text("Sua música", 18); title.Margin = new Thickness(12, 0, 0, 22); panel.Children.Add(title);
+        var panel = new StackPanel { Spacing = 8, Margin = Ui.Insets("Space16", "Space24") };
+        var title = Text("Sua música", 18); title.Margin = Ui.Insets("Space12", "Space0", "Space0", "Space24"); panel.Children.Add(title);
         panel.Children.Add(NavButton("explore", "Buscar", "search", false));
         panel.Children.Add(NavButton("library", "Biblioteca", "heart", false));
         panel.Children.Add(NavButton("queue", "Fila", "queue", false));
@@ -178,7 +178,7 @@ public sealed class MainView : UserControl
         var button = ActionButton("", () => { _page = key; Refresh(); Animate(_trackList); return Task.CompletedTask; });
         button.Classes.Add("nav"); button.Classes.Add(vertical ? "bottom-nav" : "side-nav");
         button.Tag = (key, label, icon, vertical); _nav.Add(button);
-        button.Padding = vertical ? new Thickness(8, 4) : new Thickness(12, 8);
+        button.Padding = vertical ? Ui.Insets("Space8", "Space4") : Ui.Insets("Space12", "Space8");
         button.HorizontalContentAlignment = vertical ? HorizontalAlignment.Center : HorizontalAlignment.Left;
         return button;
     }
@@ -210,6 +210,7 @@ public sealed class MainView : UserControl
             Child = grid, Margin = Ui.Insets("PagePadding", "Space8"),
             CornerRadius = Ui.Radius("RadiusCard"), ClipToBounds = true,
             Background = Ui.B("SurfaceElevatedBrush"),
+            BoxShadow = Ui.Shadows("MiniShadow"),
             BorderThickness = new Thickness(Ui.D("TrackBorder")), BorderBrush = Ui.B("BorderBrush")
         };
     }
@@ -719,7 +720,7 @@ public sealed class MainView : UserControl
     {
         var panel = new StackPanel { Spacing = 14 };
         var text = PlaybackDiagnostics.Snapshot(); if (string.IsNullOrWhiteSpace(text)) text = "Nenhuma tentativa registrada. Tente reproduzir uma faixa primeiro.";
-        panel.Children.Add(new SelectableTextBlock { Text = text, TextWrapping = TextWrapping.Wrap, FontSize = 11, Foreground = Ui.B(Muted) });
+        panel.Children.Add(new SelectableTextBlock { Text = text, TextWrapping = TextWrapping.Wrap, FontSize = Ui.D("TypeCaption"), Foreground = Ui.B(Muted) });
         panel.Children.Add(ActionButton("Copiar diagnóstico", async () => { var clipboard = TopLevel.GetTopLevel(this)?.Clipboard; if (clipboard is not null) await clipboard.SetTextAsync(PlaybackDiagnostics.Snapshot()); }));
         ShowSheet("Diagnóstico", panel);
     }
@@ -733,9 +734,9 @@ public sealed class MainView : UserControl
         Put(header, IconButton("close", "Fechar painel", () => { CloseSheet(); return Task.CompletedTask; }), 0, 1); layout.Children.Add(header);
         Put(layout, new ScrollViewer { Content = content, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }, 1, 0);
         var sheet = new Border { Width = Math.Max(0, Math.Min(400, Bounds.Width - 40)),
-            MaxHeight = Math.Max(0, Bounds.Height - 48), Padding = new Thickness(20),
-            CornerRadius = new CornerRadius(20), Background = Ui.B("SurfaceBrush"),
-            BorderThickness = new Thickness(1), BorderBrush = Ui.B("BorderBrush"),
+            MaxHeight = Math.Max(0, Bounds.Height - 48), Padding = Ui.Inset("Space24"),
+            CornerRadius = Ui.Radius("RadiusCard"), Background = Ui.B("SurfaceBrush"),
+            BorderThickness = Ui.Inset("TrackBorder"), BorderBrush = Ui.B("BorderBrush"),
             Child = layout, HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center };
         _overlay = new Border { Background = Ui.B("ScrimBrush"), Child = sheet };

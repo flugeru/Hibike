@@ -68,7 +68,7 @@ internal sealed class Artwork : Border
     {
         Width = Height = size;
         CornerRadius = Ui.Radius(size > Ui.D("ThumbSize") ? "RadiusCover" : "RadiusThumb");
-        BorderThickness = size > Ui.D("ThumbSize") ? new Thickness(0) : new Thickness(Ui.D("TrackBorder"));
+        BorderThickness = size > Ui.D("ThumbSize") ? Ui.Inset("Space0") : new Thickness(Ui.D("TrackBorder"));
         BorderBrush = Ui.B("BorderBrush");
         ClipToBounds = true;
         Background = new LinearGradientBrush

@@ -11,6 +11,8 @@
   <x:Double x:Key="RadiusCard">16</x:Double>
   <x:Double x:Key="RadiusCover">24</x:Double>
   <x:Double x:Key="RadiusPill">999</x:Double>
+  <CornerRadius x:Key="CardCornerRadius">16</CornerRadius>
+  <CornerRadius x:Key="PillCornerRadius">999</CornerRadius>
   <x:Double x:Key="RadiusTiny">4</x:Double>
   <x:Double x:Key="TouchTarget">48</x:Double>
   <x:Double x:Key="RowHeight">64</x:Double>
@@ -45,6 +47,7 @@
   <x:Double x:Key="FavoritePressedOpacity">0.70</x:Double>
   <x:Double x:Key="DominantDarken">0.26</x:Double>
   <x:String x:Key="CoverShadow">0 8 24 0 #48000000</x:String>
+  <x:String x:Key="MiniShadow">0 4 12 0 #28000000</x:String>
   <SolidColorBrush x:Key="BackgroundBrush" Color="#100E17"/>
   <SolidColorBrush x:Key="SurfaceBrush" Color="#1D1927"/>
   <SolidColorBrush x:Key="SurfaceElevatedBrush" Color="#30263D"/>
@@ -87,7 +90,7 @@
                 <RepeatButton.Template>
                   <ControlTemplate>
                     <Border Height="{StaticResource SeekHeight}"
-                            CornerRadius="{StaticResource RadiusPill}"
+                            CornerRadius="{StaticResource PillCornerRadius}"
                             Background="{StaticResource AccentBrush}"
                             VerticalAlignment="Center"/>
                   </ControlTemplate>
@@ -99,7 +102,7 @@
                 <RepeatButton.Template>
                   <ControlTemplate>
                     <Border Height="{StaticResource SeekHeight}"
-                            CornerRadius="{StaticResource RadiusPill}"
+                            CornerRadius="{StaticResource PillCornerRadius}"
                             Background="{StaticResource TrackBrush}"
                             VerticalAlignment="Center"/>
                   </ControlTemplate>
@@ -110,7 +113,7 @@
                    Height="{StaticResource SeekThumb}" BorderThickness="0">
               <Thumb.Template>
                 <ControlTemplate>
-                  <Border CornerRadius="{StaticResource RadiusPill}"
+                  <Border CornerRadius="{StaticResource PillCornerRadius}"
                           Background="{StaticResource AccentBrush}"/>
                 </ControlTemplate>
               </Thumb.Template>
