@@ -1,6 +1,7 @@
 <Project>
   <PropertyGroup><ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally></PropertyGroup>
   <ItemGroup>
+    <PackageVersion Include="DiscordRichPresence" Version="1.6.1.70" />
     <PackageVersion Include="Avalonia" Version="12.1.4" />
     <PackageVersion Include="Avalonia.Android" Version="12.1.4" />
     <PackageVersion Include="Avalonia.Desktop" Version="12.1.4" />

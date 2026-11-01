@@ -20,6 +20,7 @@ public sealed class MusicController
     public ObservableCollection<Track> Favorites { get; } = [];
     public ObservableCollection<Track> Queue { get; } = [];
     public Track? Current { get; private set; }
+    public AudioSource? CurrentSource { get; private set; }
     public Track? Pending { get; private set; }
     public bool HasError { get; private set; }
     public string Status { get; private set; } = "Pronto para descobrir seu próximo som.";
@@ -44,7 +45,12 @@ public sealed class MusicController
     {
         if (_initialized) return;
         _initialized = true;
-        try { foreach (var track in await _store.LoadAsync()) Favorites.Add(track); Changed?.Invoke(); }
+        try
+        {
+            foreach (var track in await _store.LoadAsync())
+                Favorites.Add(await Task.Run(() => LocalTrackMetadata.Read(track, Path.Combine(DataDirectory, "artwork"))));
+            Changed?.Invoke();
+        }
         catch (Exception ex) { SetStatus("Não foi possível ler a biblioteca: " + ex.Message); }
     }
     public void SetStatus(string status) { Status = status; Changed?.Invoke(); }
@@ -88,6 +94,15 @@ public sealed class MusicController
         try
         {
             await _playGate.WaitAsync(request.Token); entered = true;
+            if (track.IsLocal)
+            {
+                var original = track;
+                track = await Task.Run(() => LocalTrackMetadata.Read(original, Path.Combine(DataDirectory, "artwork")), request.Token);
+                request.Token.ThrowIfCancellationRequested();
+                var index = Queue.IndexOf(original); if (index >= 0) Queue[index] = track;
+                index = Favorites.IndexOf(original); if (index >= 0) Favorites[index] = track;
+                Pending = track;
+            }
             if (Player is IAudioPreparation preparing) await preparing.BeginPreparationAsync(track, request.Token);
             Player.Pause();
             PlaybackDiagnostics.Write("Reprodução", "Iniciando resolução de " + track.Id);
@@ -108,6 +123,7 @@ public sealed class MusicController
             }
             else _queueIndex = queueIndex.Value;
             Current = track;
+            CurrentSource = Player.PlaybackSource ?? source;
             WarmNext();
             Status = "Tocando agora";
         }

@@ -26,6 +26,9 @@ internal static class Program
             try
             {
                 var window = lifetime.MainWindow!; var view = (MainView)window.Content!;
+                var imageUrl = typeof(MainView).Assembly.GetType("Hibiki.App.Views.Artwork")!.GetMethod("PlayerImageUrl")!;
+                Check((string)imageUrl.Invoke(null, ["https://i.ytimg.com/vi/abc/hqdefault.jpg"])! == "https://i.ytimg.com/vi/abc/maxresdefault.jpg", "Player did not request high-resolution YouTube artwork");
+                Check((string)imageUrl.Invoke(null, ["https://example.org/cover.jpg"])! == "https://example.org/cover.jpg", "Unrelated artwork URL rewritten");
                 await AppServices.Controller!.SearchAsync("test");
                 foreach (var width in new[] { 360, 390, 430, 1260, 1920 })
                 {
@@ -48,14 +51,15 @@ internal static class Program
                     AppServices.OpenPlayerView!(); await Task.Delay(300);
                     Capture(view, $"player-{width}");
                     Check(view.GetVisualDescendants().OfType<Slider>().Any(s => s.Bounds.Width > 0 && s.Bounds.Width <= width), "Player slider clipped");
-                    var slider = view.GetVisualDescendants().OfType<Slider>().Single();
+                    var slider = view.GetVisualDescendants().OfType<Slider>().Single(s => Avalonia.Automation.AutomationProperties.GetName(s) != "Volume");
                     Check(slider.TranslatePoint(default, view)!.Value.Y + slider.Bounds.Height <= view.Bounds.Height, "Player slider below viewport");
                     if (width >= 1260)
                     {
                         var artwork = view.GetVisualDescendants().OfType<Border>().Single(b => b.GetType().Name == "Artwork" && b.Bounds.Width > 100);
-                        Check(artwork.Bounds.Width <= 440, "Desktop artwork exceeds size cap");
-                        var queueHeader = view.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Text == "A seguir");
-                        Check(Math.Abs(artwork.TranslatePoint(default, view)!.Value.Y - queueHeader.TranslatePoint(default, view)!.Value.Y) < 8, "Artwork and queue tops diverge");
+                        Check(artwork.Bounds.Width <= 500, "Desktop artwork exceeds size cap");
+                        var slot = (Grid)artwork.Parent!;
+                        Check(Math.Abs(artwork.Bounds.Center.Y - slot.Bounds.Height / 2) < 1, "Artwork not vertically centered");
+                        Check(Math.Abs(artwork.Bounds.Center.X - slot.Bounds.Width / 2) < 1, "Artwork not horizontally centered");
                     }
                     if (width == 1260)
                     {
@@ -65,6 +69,36 @@ internal static class Program
                         Check(((Avalonia.Media.TranslateTransform)movingTitle.RenderTransform!).X < 0, "Overflow title did not scroll");
                         window.Width = 390; await Task.Delay(300); Capture(view, "player-resized-mobile");
                         window.Width = width; await Task.Delay(300); Capture(view, "player-resized-desktop");
+                        var artwork = view.GetVisualDescendants().OfType<Border>().Single(b => b.GetType().Name == "Artwork" && b.Bounds.Width > 100);
+                        window.Width = width + 1; await Task.Delay(300);
+                        Check(Math.Abs(artwork.Bounds.Width - artwork.Bounds.Height) < 1, "Player artwork not square");
+                        Check(artwork.GetVisualDescendants().OfType<Image>().Single().Stretch == Avalonia.Media.Stretch.UniformToFill, "Player artwork not filling square");
+                        Capture(view, "player-widescreen-artwork");
+                        var longPlay = view.GetVisualDescendants().OfType<Button>().Single(b => b.Classes.Contains("largePlay"));
+                        var longControls = (Grid)longPlay.Parent!;
+                        var longX = longControls.TranslatePoint(default, view)!.Value.X;
+                        Check(AppServices.BackHandler!(), "Long-title player cannot close");
+                        await AppServices.Controller.PlayAsync(AppServices.Controller.Results[1]);
+                        AppServices.OpenPlayerView!(); await Task.Delay(300);
+                        var shortPlay = view.GetVisualDescendants().OfType<Button>().Single(b => b.Classes.Contains("largePlay"));
+                        var shortControls = (Grid)shortPlay.Parent!;
+                        var transport = (Grid)shortControls.Parent!;
+                        Check(Math.Abs(shortControls.Bounds.Center.X - transport.Bounds.Width / 2) < 3, "Short-title controls not centered within pixel rounding");
+                        Check(longX > shortControls.TranslatePoint(default, view)!.Value.X + 20, "Long title did not push controls right");
+                        Capture(view, "player-short-title");
+                        var volumeButton = view.GetVisualDescendants().OfType<Button>().Single(b => Avalonia.Automation.AutomationProperties.GetName(b) == "Ajustar volume");
+                        var volumeSlider = view.GetVisualDescendants().OfType<Slider>().Single(s => Avalonia.Automation.AutomationProperties.GetName(s) == "Volume");
+                        volumeSlider.Value = .35;
+                        Check(Math.Abs(AppServices.Controller.Player.Volume - .35) < .001, "Volume slider not connected to player");
+                        volumeButton.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                        await Task.Delay(150); Check(volumeSlider.IsVisible, "Inline volume did not open");
+                        Check(volumeButton.GetVisualAncestors().Contains(shortControls), "Volume outside transport controls");
+                        Capture(view, "player-inline-volume");
+                        volumeButton.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                        var info = view.GetVisualDescendants().OfType<Button>().Single(b => Avalonia.Automation.AutomationProperties.GetName(b) == "Informações do áudio");
+                        info.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)); await Task.Delay(150);
+                        Check(view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "160 kb/s"), "Audio bitrate missing from details");
+                        Capture(view, "audio-info"); Check(AppServices.BackHandler!(), "Audio details cannot close");
                     }
                     Check(AppServices.BackHandler!(), "Player cannot close");
                     await Task.Delay(300);
@@ -92,8 +126,8 @@ internal static class Program
     private sealed class Catalog : IMusicCatalog
     {
         public Task<IReadOnlyList<Track>> SearchAsync(string query, CancellationToken cancellationToken) =>
-            Task.FromResult<IReadOnlyList<Track>>(Enumerable.Range(0, 1000).Select(i => new Track(i.ToString(), "Artist - Clair Obscur: Expedition 33 (Original Soundtrack) — A deliberately long title for overflow and responsive layout checks (Official Video)", "Artist - Topic", "test", 267.8)).ToArray());
-        public Task<AudioSource> ResolveAsync(Track track, CancellationToken cancellationToken) => Task.FromResult(new AudioSource("test", new Dictionary<string, string>()));
+            Task.FromResult<IReadOnlyList<Track>>(Enumerable.Range(0, 1000).Select(i => new Track(i.ToString(), i == 1 ? "Artist - Short title" : "Artist - Clair Obscur: Expedition 33 (Original Soundtrack) — A deliberately long title for overflow and responsive layout checks (Official Video)", "Artist - Topic", "test", 267.8)).ToArray());
+        public Task<AudioSource> ResolveAsync(Track track, CancellationToken cancellationToken) => Task.FromResult(new AudioSource("test", new Dictionary<string, string>(), BitrateKbps: 160, Codec: "opus", SampleRateHz: 48000, Channels: 2, Format: "251", Container: "webm"));
     }
     private sealed class Player : IAudioPlayer
     {

@@ -25,6 +25,18 @@ public class CatalogTests
         var source = await new YtDlpCatalog(runner).ResolveAsync(new("id","Song","Artist","https://example.org"), default);
         Assert.Equal("Hibiki", source.Headers["User-Agent"]);
     }
+    [Fact] public async Task ResolveSelectsBestAudioAndPreservesQualityMetadata()
+    {
+        var runner = new FakeRunner("""{"url":"https://example.org/audio","abr":159.7,"acodec":"opus","asr":48000,"audio_channels":2,"format_id":"251","ext":"webm"}""");
+        var source = await new YtDlpCatalog(runner).ResolveAsync(new("id", "Song", "Artist", "https://example.org"), default);
+        Assert.Equal("bestaudio", runner.Arguments[runner.Arguments.ToList().IndexOf("-f") + 1]);
+        Assert.Equal(159.7, source.BitrateKbps);
+        Assert.Equal("opus", source.Codec);
+        Assert.Equal(48000, source.SampleRateHz);
+        Assert.Equal(2, source.Channels);
+        Assert.Equal("251", source.Format);
+        Assert.Equal("webm", source.Container);
+    }
     [Fact] public async Task FavoritesRoundTripAtomically()
     {
         var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());

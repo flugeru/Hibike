@@ -182,7 +182,7 @@ public sealed class MainView : UserControl
                 }
                 catch { if (System.IO.File.Exists(path)) System.IO.File.Delete(path); throw; }
                 finally { file.Dispose(); }
-                var track = new Track(id, System.IO.Path.GetFileNameWithoutExtension(fileName), "Áudio local", path, IsLocal: true);
+                var track = await Task.Run(() => LocalTrackMetadata.Read(new Track(id, System.IO.Path.GetFileNameWithoutExtension(fileName), "Áudio local", path, IsLocal: true), System.IO.Path.Combine(_music.DataDirectory, "artwork")));
                 _music.Enqueue(track); await _music.ToggleFavoriteAsync(track); first ??= track;
             }
             _page = "library";
@@ -289,12 +289,12 @@ public sealed class MainView : UserControl
         var panel = new Grid { RowDefinitions = new("Auto,*,Auto,Auto,*,Auto,Auto"),
             RowSpacing = UiTheme.SectionGap, MaxWidth = UiTheme.PlayerMaxWidth,
             Margin = UiTheme.PageMargin, HorizontalAlignment = HorizontalAlignment.Stretch };
-        var header = new Grid { ColumnDefinitions = new("Auto,*,Auto") };
+        var header = new Grid { ColumnDefinitions = new("Auto,*,Auto,Auto") };
         header.Children.Add(IconButton("down", "Recolher player", () => { ClosePlayer(); return Task.CompletedTask; }));
-        // Track has no album metadata; do not invent an album name.
-        var album = Text(TrackTextFormatter.Artist(track.Artist), UiTheme.Caption, Muted); album.TextTrimming = TextTrimming.CharacterEllipsis; album.HorizontalAlignment = HorizontalAlignment.Center; Put(header, album, 0, 1);
+        var album = Text(track.Album ?? TrackTextFormatter.Artist(track.Artist), UiTheme.Caption, Muted); album.TextTrimming = TextTrimming.CharacterEllipsis; album.HorizontalAlignment = HorizontalAlignment.Center; Put(header, album, 0, 1);
         Put(header, IconButton("queue", "Abrir fila", () => { ClosePlayer(); _page = "queue"; Refresh(); return Task.CompletedTask; }), 0, 2); panel.Children.Add(header);
-        var art = new Artwork(track, UiTheme.ThumbnailSize, fullResolution: true) { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        var artworkTrack = track == _music.Current && _music.CurrentSource?.Artwork is { } resolvedArtwork ? track with { Thumbnail = resolvedArtwork } : track;
+        var art = new Artwork(artworkTrack, UiTheme.ThumbnailSize, fullResolution: true) { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         art.CornerRadius = new(UiTheme.CardRadius); Put(panel, art, 1, 0);
         var metadata = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.CompactGap };
         var labels = new StackPanel { Spacing = UiTheme.CompactGap };
@@ -348,35 +348,73 @@ public sealed class MainView : UserControl
             Background = UiTheme.Brush(UiTheme.Surface), Margin = UiTheme.Zero };
         var transportFrame = new Border { Child = transport, Background = UiTheme.Brush(UiTheme.Surface),
             BorderBrush = UiTheme.Brush(UiTheme.Outline), BorderThickness = UiTheme.TopBorder, Padding = UiTheme.DesktopTransportPadding };
-        var host = new Grid { RowDefinitions = new("*,Auto") };
+        var volumeSlider = new Slider { Minimum = 0, Maximum = 1, Value = _music.Player.Volume,
+            Width = 100, MinHeight = UiTheme.TouchSize, SmallChange = .05, LargeChange = .1,
+            IsVisible = false, Foreground = UiTheme.Brush(UiTheme.Primary), Background = UiTheme.Brush(UiTheme.Outline) };
+        Avalonia.Automation.AutomationProperties.SetName(volumeSlider, "Volume");
+        volumeSlider.ValueChanged += (_, _) => _music.Player.Volume = volumeSlider.Value;
+        Button? volumeButton = null;
+        var volumePinned = false;
+        volumeButton = IconButton("volume", "Ajustar volume", () => { volumePinned = !volumePinned; volumeSlider.IsVisible = volumePinned; return Task.CompletedTask; });
+        var volumeGroup = new StackPanel { Orientation = Orientation.Horizontal };
+        volumeGroup.Children.Add(volumeSlider); volumeGroup.Children.Add(volumeButton);
+        volumeGroup.PointerEntered += (_, _) => volumeSlider.IsVisible = true;
+        volumeGroup.PointerExited += (_, _) => { if (!volumePinned && !volumeSlider.IsKeyboardFocusWithin) volumeSlider.IsVisible = false; };
+        var audioTools = new StackPanel { Orientation = Orientation.Horizontal };
+        audioTools.Children.Add(volumeGroup);
+        audioTools.Children.Add(IconButton("more", "Informações do áudio", () => { ShowAudioInfo(); return Task.CompletedTask; }));
+        volumeButton.Classes.Add("subtle"); ((Button)audioTools.Children[1]).Classes.Add("subtle");
+        var artworkSlot = new Grid();
         bool? wideLayout = null;
+        void ArrangeTransport()
+        {
+            if (wideLayout != true || transport.Bounds.Width <= 0) return;
+            var text = new FormattedText(title.Text ?? "", System.Globalization.CultureInfo.CurrentCulture,
+                FlowDirection.LeftToRight, new Typeface(title.FontFamily, title.FontStyle, title.FontWeight), title.FontSize, title.Foreground);
+            var controlsWidth = controls.Bounds.Width;
+            var ideal = (transport.Bounds.Width - controlsWidth) / 2 - transport.ColumnSpacing;
+            var required = text.Width + favorite!.Bounds.Width + UiTheme.CompactGap;
+            var left = Math.Clamp(Math.Max(ideal, required), 0, Math.Max(0,
+                transport.Bounds.Width - controlsWidth - UiTheme.PageGap));
+            if (Math.Abs(transport.ColumnDefinitions[0].Width.Value - left) > .5)
+                transport.ColumnDefinitions[0].Width = new GridLength(left);
+        }
+        var host = new Grid { RowDefinitions = new("*,Auto") };
         void ArrangePlayer()
         {
             var wide = host.Bounds.Width >= UiTheme.DesktopWidth;
             if (wideLayout != wide)
             {
-                panel.Children.Clear(); desktopLayout.Children.Clear(); transport.Children.Clear(); host.Children.Clear();
+                panel.Children.Clear(); artworkSlot.Children.Clear(); desktopLayout.Children.Clear(); transport.Children.Clear(); host.Children.Clear();
+                header.Children.Remove(audioTools);
+                controls.Children.Remove(audioTools);
                 if (wide)
                 {
                     desktopLayout.VerticalAlignment = VerticalAlignment.Stretch;
-                    art.VerticalAlignment = VerticalAlignment.Top; queuePanel.VerticalAlignment = VerticalAlignment.Top;
+                    art.VerticalAlignment = VerticalAlignment.Center; queuePanel.VerticalAlignment = VerticalAlignment.Stretch;
                     title.TextWrapping = TextWrapping.NoWrap; title.MaxLines = 1; title.TextTrimming = TextTrimming.CharacterEllipsis;
                     title.FontSize = UiTheme.Body; artist.FontSize = UiTheme.Caption;
                     labels.Children.Remove(title);
                     title.TextTrimming = TextTrimming.None; title.Width = double.NaN;
                     labels.Children.Insert(0, new ScrollingTitle(title));
                     _detailPlay!.Width = _detailPlay.Height = UiTheme.DesktopPlaySize; _detailPlay.CornerRadius = new(UiTheme.DesktopPlaySize / 2);
-                    transport.ColumnDefinitions = new("*,Auto");
+                    transport.ColumnDefinitions = new("*,Auto,*");
+                    controls.ColumnDefinitions = new("Auto,Auto,Auto,Auto,Auto,Auto");
+                    Put(controls, audioTools, 0, 5);
                     Put(desktopLayout, header, 0, 0); Grid.SetColumnSpan(header, 2);
-                    Put(desktopLayout, art, 1, 0); Put(desktopLayout, queuePanel, 1, 1);
+                    artworkSlot.Children.Add(art);
+                    Put(desktopLayout, artworkSlot, 1, 0); Put(desktopLayout, queuePanel, 1, 1);
                     Put(transport, metadata, 0, 0); metadata.VerticalAlignment = VerticalAlignment.Center;
                     Put(transport, controls, 0, 1);
-                    Put(transport, seek, 1, 0); Grid.SetColumnSpan(seek, 2);
+                    Put(transport, seek, 1, 0); Grid.SetColumnSpan(seek, 3);
                     Put(host, desktopLayout, 0, 0); Put(host, transportFrame, 1, 0);
                 }
                 else
                 {
                     art.VerticalAlignment = VerticalAlignment.Center;
+                    Put(header, audioTools, 0, 3);
+                    Grid.SetRow(audioTools, 0);
+                    controls.ColumnDefinitions = new("*,*,Auto,*,*");
                     if (title.Parent is ScrollingTitle scrolling)
                     {
                         labels.Children.Remove(scrolling); scrolling.Children.Remove(title);
@@ -396,16 +434,17 @@ public sealed class MainView : UserControl
                 - UiTheme.DesktopPlayerMargin.Left - UiTheme.DesktopPlayerMargin.Right - UiTheme.DesktopPlayerGap) / 2))
                 : Math.Min(UiTheme.PlayerMaxWidth, host.Bounds.Width - UiTheme.PageMargin.Left - UiTheme.PageMargin.Right);
             var height = host.Bounds.Height - (wide ? UiTheme.DesktopPlayerChromeHeight : UiTheme.PlayerChromeHeight);
+            height = Math.Max(UiTheme.ThumbnailSize, height);
             art.Width = art.Height = Math.Max(UiTheme.ThumbnailSize, Math.Min(width, height));
             if (wide)
             {
-                desktopLayout.ColumnDefinitions[0].Width = new GridLength(art.Width);
-                queuePanel.Height = Math.Max(art.Height, height);
+                desktopLayout.ColumnDefinitions[0].Width = new GridLength(width);
             }
         }
         // Detach initial mobile composition before responsive host takes ownership.
         panel.Children.Clear();
         host.SizeChanged += (_, _) => ArrangePlayer();
+        transport.LayoutUpdated += (_, _) => ArrangeTransport();
         _playerPage = new Border { Background = UiTheme.Brush(UiTheme.Background), Child = host };
         Grid.SetColumn(_playerPage, 1); Grid.SetRowSpan(_playerPage, 3); _root.Children.Add(_playerPage);
         _main.IsVisible = false; _mini.IsVisible = false; _bottom.IsVisible = false;
@@ -481,6 +520,37 @@ public sealed class MainView : UserControl
         panel.Children.Add(ActionButton("Copiar diagnóstico", async () => { var clipboard = TopLevel.GetTopLevel(this)?.Clipboard; if (clipboard is not null) await clipboard.SetTextAsync(PlaybackDiagnostics.Snapshot()); }));
         ShowSheet("Diagnóstico", panel);
     }
+    private void ShowAudioInfo()
+    {
+        var source = _music.CurrentSource;
+        var panel = new StackPanel { Spacing = UiTheme.SectionGap };
+        panel.Children.Add(Text(TrackTextFormatter.Title(source?.Title ?? _music.Current?.Title ?? "", source?.Artist ?? _music.Current?.Artist), UiTheme.SectionTitle));
+        void Detail(string label, string? value)
+        {
+            var row = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.SectionGap };
+            row.Children.Add(Text(label, UiTheme.Body, Muted));
+            Put(row, Text(string.IsNullOrWhiteSpace(value) ? "Não informado" : value, UiTheme.Body), 0, 1);
+            panel.Children.Add(UiTheme.Inner(row));
+        }
+        Detail(_music.Current?.IsLocal == true ? "Bitrate médio do áudio" : "Bitrate da fonte", source?.BitrateKbps is > 0 ? $"{source.BitrateKbps:0.#} kb/s" : null);
+        Detail("Artista", source?.Artist);
+        if (_music.Current?.Album is { } album) Detail("Álbum", album);
+        if (_music.Current?.TrackNumber is { } number) Detail("Faixa", number);
+        if (_music.Current?.Date is { } date) Detail("Data", date);
+        Detail("Codec", source?.Codec);
+        Detail("Contêiner", source?.Container);
+        Detail("Amostragem", source?.SampleRateHz is > 0 ? $"{source.SampleRateHz / 1000:0.#} kHz" : null);
+        Detail("Canais", source?.Channels?.ToString("0"));
+        if (source?.BitDepth is > 0) Detail("Profundidade", $"{source.BitDepth} bits");
+        if (_music.Current?.IsLocal != true) Detail("Formato", source?.Format);
+        Detail("Volume", $"{_music.Player.Volume:P0}");
+        var note = Text(_music.Current?.IsLocal == true
+            ? "Dados lidos do arquivo. Em FLAC, bitrate médio calculado pelo tamanho do áudio e número de amostras, sem incluir metadados."
+            : "Dados fornecidos pela fonte; bitrate pode ser variável. Valores ausentes não são estimados.", UiTheme.Caption, Muted);
+        note.TextWrapping = TextWrapping.Wrap; panel.Children.Add(note);
+        panel.Children.Add(ActionButton("Abrir diagnóstico", () => { ShowDiagnostics(); return Task.CompletedTask; }));
+        ShowSheet("Informações do áudio", panel);
+    }
     private void ShowSheet(string title, Control content)
     {
         if (_overlay is not null) _root.Children.Remove(_overlay);
@@ -497,7 +567,7 @@ public sealed class MainView : UserControl
     private void CloseSheet()
     {
         if (_overlay is not null) _root.Children.Remove(_overlay); _overlay = null;
-        _detailTrack = null; _detailSeek = null; _detailPlay = null; _detailTime = null; _detailDuration = null; _seeking = false;
+        if (!_showingPlayer) { _detailTrack = null; _detailSeek = null; _detailPlay = null; _detailTime = null; _detailDuration = null; _seeking = false; }
     }
     private static string Time(double seconds) => TrackTextFormatter.Duration(seconds);
     private static Control ToggleIcon(string name, bool active)

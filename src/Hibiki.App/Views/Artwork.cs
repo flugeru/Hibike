@@ -27,7 +27,18 @@ internal sealed class Artwork : Border
                 _cancel?.Dispose(); _cancel = new CancellationTokenSource(); var token = _cancel.Token;
                 try
                 {
-                    using var response = await Client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, token);
+                    if (Uri.TryCreate(url, UriKind.Absolute, out var local) && local.IsFile)
+                    {
+                        _bitmap = new Bitmap(local.LocalPath); picture.Source = _bitmap; return;
+                    }
+                    var imageUrl = fullResolution ? PlayerImageUrl(url) : url;
+                    var fetched = await Client.GetAsync(imageUrl, HttpCompletionOption.ResponseHeadersRead, token);
+                    if (!fetched.IsSuccessStatusCode && imageUrl != url)
+                    {
+                        fetched.Dispose();
+                        fetched = await Client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, token);
+                    }
+                    using var response = fetched;
                     response.EnsureSuccessStatusCode();
                     if (response.Content.Headers.ContentLength is > 4_000_000) return;
                     using var input = await response.Content.ReadAsStreamAsync(token);
@@ -52,5 +63,15 @@ internal sealed class Artwork : Border
         {
             _cancel?.Cancel(); picture.Source = null; _bitmap?.Dispose(); _bitmap = null;
         };
+    }
+    public static string PlayerImageUrl(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != "https") return url;
+        if (uri.Host == "i.ytimg.com" && System.Text.RegularExpressions.Regex.IsMatch(uri.AbsolutePath, @"^/vi(?:_webp)?/[\w-]+/[\w.-]+$"))
+            return uri.GetLeftPart(UriPartial.Authority) + uri.AbsolutePath[..(uri.AbsolutePath.LastIndexOf('/') + 1)]
+                + (uri.AbsolutePath.StartsWith("/vi_webp/") ? "maxresdefault.webp" : "maxresdefault.jpg");
+        if (uri.Host == "lh3.googleusercontent.com" || uri.Host == "lh3.ggpht.com")
+            return System.Text.RegularExpressions.Regex.Replace(url, @"([=\-])([swh])\d+(?=[\-&#?]|$)", "${1}${2}1200");
+        return url;
     }
 }

@@ -36,7 +36,7 @@ public sealed class YtDlpCatalog(ICommandRunner runner, string? dataDirectory = 
     {
         if (track.IsLocal) return new(track.Source, new Dictionary<string, string>(), track.Title, track.Artist, track.Thumbnail);
         var watch = System.Diagnostics.Stopwatch.StartNew();
-        var options = new[] { "-f", "bestaudio[ext=m4a][protocol=https]/bestaudio[protocol=https]/bestaudio", "--skip-download", "--dump-single-json" };
+        var options = new[] { "-f", "bestaudio", "--skip-download", "--dump-single-json" };
         ProcessResult result;
         var hasCookies = dataDirectory is not null && File.Exists(Path.Combine(dataDirectory, "youtube-cookies.txt"));
         if (!hasCookies)
@@ -60,7 +60,8 @@ public sealed class YtDlpCatalog(ICommandRunner runner, string? dataDirectory = 
             foreach (var header in values.EnumerateObject())
                 if (header.Value.ValueKind == JsonValueKind.String) headers[header.Name] = header.Value.GetString()!;
         PlaybackDiagnostics.Write("Extrator", "Áudio resolvido; formato=" + (Text(item, "format_id") ?? "?") + "; protocolo=" + (Text(item, "protocol") ?? "?"));
-        return new(url, headers, track.Title, track.Artist, track.Thumbnail);
+        return new(url, headers, track.Title, track.Artist, Text(item, "thumbnail") ?? track.Thumbnail,
+            Number(item, "abr"), Text(item, "acodec"), Number(item, "asr"), Number(item, "audio_channels"), Text(item, "format_id"), Text(item, "ext"));
     }
 
     public static IReadOnlyList<Track> ParseSearch(string json)
@@ -86,6 +87,9 @@ public sealed class YtDlpCatalog(ICommandRunner runner, string? dataDirectory = 
         }
         return tracks.DistinctBy(t => t.Id).ToArray();
     }
+
+    private static double? Number(JsonElement element, string name) => element.TryGetProperty(name, out var value)
+        && value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number) && double.IsFinite(number) && number > 0 ? number : null;
 
     private static string? Text(JsonElement element, string name) => element.ValueKind == JsonValueKind.Object
         && element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
