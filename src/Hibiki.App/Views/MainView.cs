@@ -267,7 +267,9 @@ public sealed class MainView : UserControl
         else _emptyState.Content = null;
         }
         var displayed = _music.Pending ?? _music.Current;
+        var miniWasVisible = _mini.IsVisible;
         _mini.IsVisible = displayed is not null && !_showingPlayer;
+        if (!miniWasVisible && _mini.IsVisible) Animate(_mini);
         foreach (var row in _rows.ToArray()) UpdateRow(row, displayed);
         if (!Equals(displayed, _shownTrack)) { _shownTrack = displayed; _nowArt.Content = new Artwork(displayed, 40); }
         _nowTitle.Text = displayed is null ? "" : TrackTextFormatter.Title(displayed.Title, displayed.Artist);
@@ -325,7 +327,7 @@ public sealed class MainView : UserControl
         border.DetachedFromVisualTree += (_, _) => _rows.Remove(visual);
         return border;
     }
-    private sealed record RowVisual(Track Track, Border Border, TextBlock Title, Border Shade, PathIcon Indicator);
+    private sealed record RowVisual(Track Track, Border Border, TextBlock Title, Border Shade, Avalonia.Controls.Shapes.Path Indicator);
 
     private void UpdateRow(RowVisual row, Track? displayed)
     {
@@ -356,18 +358,9 @@ public sealed class MainView : UserControl
 
         var page = new Border { Background = Ui.Brush("Background") };
         _playerPage = page;
-        var art = new Artwork(track, Math.Max(1, Math.Min(Ui.Size("PlayerMaxWidth"), Bounds.Width - 2 * Ui.Size("PagePadding"))),
-            color =>
-            {
-                if (!ReferenceEquals(_playerPage, page)) return;
-                page.Background = new LinearGradientBrush
-                {
-                    StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                    EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
-                    GradientStops = [new GradientStop(color, 0), new GradientStop(Ui.Color("BackgroundColor"), 1)]
-                };
-                TopLevel.SetSystemBarColor(this, new SolidColorBrush(color));
-            });
+        // Keep the player and system bars completely black, independent of artwork colors.
+        var art = new Artwork(track,
+            Math.Max(1, Math.Min(Ui.Size("PlayerMaxWidth"), Bounds.Width - 2 * Ui.Size("PagePadding"))));
         _playerArt = art;
         art.Margin = Ui.Insets("PlayerArtMargin"); art.BoxShadow = Ui.Shadow("CardShadow");
         Put(panel, art, 1, 0);
@@ -387,7 +380,7 @@ public sealed class MainView : UserControl
             var active = _music.IsFavorite(track);
             favorite!.Content = Icons.Make(active ? "heart_filled" : "heart", active ? Accent : Muted, 24);
             favorite.Opacity = 0.55;
-            Dispatcher.UIThread.Post(() => favorite.Opacity = 1, DispatcherPriority.Render);
+            DispatcherTimer.RunOnce(() => favorite.Opacity = 1, TimeSpan.FromMilliseconds(35));
         }, _music.IsFavorite(track) ? Accent : Muted);
         favorite.Transitions = new Transitions { new DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(160) } };
         Put(metadata, favorite, 0, 1); Put(panel, metadata, 2, 0);
@@ -490,9 +483,25 @@ public sealed class MainView : UserControl
     }
     private static void Animate(Control control)
     {
-        control.Transitions = null; control.Opacity = 0;
-        control.Transitions = new Transitions { new DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(160) } };
-        Dispatcher.UIThread.Post(() => control.Opacity = 1, DispatcherPriority.Render);
+        // Wait for the first rendered frame; posting at Render priority completed
+        // the old fade before it became visible on Android.
+        control.Transitions = null;
+        control.Opacity = 0;
+        var slide = new TranslateTransform(0, 12);
+        slide.Transitions = new Transitions
+        {
+            new DoubleTransition { Property = TranslateTransform.YProperty, Duration = TimeSpan.FromMilliseconds(280) }
+        };
+        control.RenderTransform = slide;
+        control.Transitions = new Transitions
+        {
+            new DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(280) }
+        };
+        DispatcherTimer.RunOnce(() =>
+        {
+            control.Opacity = 1;
+            slide.Y = 0;
+        }, TimeSpan.FromMilliseconds(45));
     }
     private void RefreshPlayback()
     {
