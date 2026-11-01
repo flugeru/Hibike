@@ -22,7 +22,7 @@ internal static class UiTheme
         ProgressHeight = 8, ProgressRadius = 4, MiniProgressHeight = 4, SeekHeight = 6,
         SeekThumbSize = 16, SeekThumbPressedSize = 20, PageMaxWidth = 820, PlayerMaxWidth = 440,
         DialogMaxWidth = 520, CompactWidth = 390, DesktopWidth = 800, SidebarWidth = 200,
-        NavHeight = 72, RowHeight = 76, MarkerSize = 7;
+        NavHeight = 72, RowHeight = 76, MarkerSize = 7, EqualizerGap = 3, EqualizerBarWidth = 4, EqualizerStep = 5;
     public static readonly Thickness PageMargin = new(14, 14, 14, 18), ButtonPadding = new(16, 13),
         RowPadding = new(4, 8), ChipPadding = new(10, 4), BannerPadding = new(14, 10),
         One = new(1), Zero = new(0), InnerPadding = new(12), DialogMargin = new(14),
