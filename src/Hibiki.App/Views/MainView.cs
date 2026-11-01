@@ -99,7 +99,16 @@ public sealed class MainView : UserControl
         _repeat = IconButton("repeat", "Repetir faixa atual", () => { _music.Repeat = !_music.Repeat; Refresh(); return Task.CompletedTask; });
         var player = BuildPlayer(); Put(_root, player, 1, 1);
         foreach (var (key, label, icon) in new[] { ("explore", "Explorar", "search"), ("library", "Biblioteca", "heart"), ("queue", "Fila", "queue") })
-            _mobileNav.Children.Add(NavButton(key, label, icon));
+        {
+            var nav = NavButton(key, label, icon);
+            var navContent = new StackPanel { Spacing = 4, HorizontalAlignment = HorizontalAlignment.Center };
+            var navIcon = Icons.Make(icon, size: 19); navIcon.HorizontalAlignment = HorizontalAlignment.Center;
+            navContent.Children.Add(navIcon);
+            navContent.Children.Add(Text(label, 11));
+            nav.Content = navContent; nav.Width = 90; nav.Padding = new Thickness(8);
+            nav.HorizontalContentAlignment = HorizontalAlignment.Center;
+            _mobileNav.Children.Add(nav);
+        }
         var bottom = new Border { Child = _mobileNav, Padding = new Thickness(8, 8, 8, 10), Background = Brush.Parse("#15131B") };
         Put(_root, bottom, 2, 1);
         Content = _root;
