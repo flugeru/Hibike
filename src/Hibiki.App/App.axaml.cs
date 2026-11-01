@@ -7,7 +7,11 @@ namespace Hibiki.App;
 
 public sealed partial class App : Application
 {
-    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+    public override void Initialize()
+    {
+        AvaloniaXamlLoader.Load(this);
+        UiTheme.Install(Styles);
+    }
     public override void OnFrameworkInitializationCompleted()
     {
         var view = new MainView(AppServices.CreateController());
@@ -17,7 +21,7 @@ public sealed partial class App : Application
             {
                 Title = "Hibiki • by Flugel", Width = 1260, Height = 820,
                 MinWidth = 360, MinHeight = 600, Content = view,
-                Background = Avalonia.Media.Brush.Parse("#101014")
+                Background = UiTheme.Brush(UiTheme.Background)
             };
             desktop.Exit += (_, _) => AppServices.Player?.Dispose();
         }

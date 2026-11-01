@@ -13,15 +13,11 @@ internal sealed class Artwork : Border
     private Bitmap? _bitmap;
     public Artwork(Track? track, double size)
     {
-        Width = Height = size; CornerRadius = new CornerRadius(size > 100 ? 16 : 8); ClipToBounds = true;
-        Background = new LinearGradientBrush
-        {
-            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-            EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-            GradientStops = [new GradientStop(Color.Parse("#69459B"), 0), new GradientStop(Color.Parse("#242031"), 1)]
-        };
+        Width = Height = size; CornerRadius = new CornerRadius(size > UiTheme.ThumbnailSize ? UiTheme.CardRadius : UiTheme.ThumbRadius); ClipToBounds = true;
+        Background = UiTheme.Brush(UiTheme.SurfaceElevated);
+        BorderBrush = UiTheme.Brush(UiTheme.Outline); BorderThickness = UiTheme.One;
         var panel = new Grid();
-        panel.Children.Add(Icons.Make("wave", "#D5BFFF", Math.Max(24, size * 0.4)));
+        panel.Children.Add(Icons.Make("wave", UiTheme.Primary, UiTheme.IconSize));
         var picture = new Image { Stretch = Stretch.UniformToFill }; panel.Children.Add(picture);
         Child = panel;
         if (track?.Thumbnail is { } url)

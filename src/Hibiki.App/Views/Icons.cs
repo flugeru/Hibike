@@ -4,7 +4,7 @@ using Avalonia.Media;
 namespace Hibiki.App.Views;
 internal static class Icons
 {
-    public static Path Make(string name, string color = "#D8D0E7", double size = 22) => new()
+    public static Path Make(string name, string color = UiTheme.Primary, double size = UiTheme.IconSize) => new()
     {
         Data = Geometry.Parse(name switch
         {
@@ -27,9 +27,9 @@ internal static class Icons
             _ => "M3,9 L3,15 M8,4 L8,20 M13,7 L13,17 M18,2 L18,22 M23,9 L23,15"
         }),
         Width = size, Height = size, Stretch = Stretch.Uniform,
-        Stroke = Brush.Parse(color), StrokeThickness = 1.7,
+        Stroke = UiTheme.Brush(color), StrokeThickness = UiTheme.IconStroke,
         StrokeLineCap = PenLineCap.Round, StrokeJoin = PenLineJoin.Round,
         Fill = name is "play" or "next" or "previous" or "more" ? Brush.Parse(color) : null,
-        Margin = new Thickness(1)
+        Margin = UiTheme.Zero
     };
 }

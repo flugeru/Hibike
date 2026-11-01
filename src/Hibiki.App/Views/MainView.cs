@@ -20,7 +20,7 @@ public sealed class MainView : UserControl
     private readonly Grid _root = new() { ColumnDefinitions = new("200,*"), RowDefinitions = new("*,Auto,Auto") };
     private readonly Border _sidebar;
     private readonly Border _main;
-    private readonly TextBox _search = new() { PlaceholderText = "Música, artista ou link", MinWidth = 0, Height = 44, MinHeight = 44, FontSize = 14 };
+    private readonly TextBox _search = UiTheme.Field("Música, artista ou link");
     private readonly TextBlock _heading = Text("Buscar músicas", 16);
     private readonly TextBlock _count = Text("", 11, Muted);
     private readonly StackPanel _tracks = new() { Spacing = 0 };
@@ -49,11 +49,11 @@ public sealed class MainView : UserControl
     private Track? _shownTrack;
     private Track? _detailTrack;
     private string _page = "explore";
-    private const string Muted = "#9992A6", Accent = "#BDA2FF";
+    private const string Muted = UiTheme.TextSecondary, Accent = UiTheme.Primary;
 
     public MainView(MusicController music)
     {
-        _music = music; Background = Brush.Parse("#111015");
+        _music = music; Background = UiTheme.Brush(UiTheme.Background);
         _sidebar = BuildSidebar(); _root.Children.Add(_sidebar); Grid.SetRowSpan(_sidebar, 3);
         _main = new Border { Padding = new Thickness(18, 12, 18, 4) }; Put(_root, _main, 0, 1);
         var content = new Grid { RowDefinitions = new("Auto,Auto,Auto,*,Auto"), RowSpacing = 12 }; _main.Child = content;
@@ -367,15 +367,15 @@ public sealed class MainView : UserControl
         _detailTrack = null; _detailSeek = null; _detailPlay = null; _detailTime = null; _detailDuration = null; _seeking = false;
     }
     private static string Time(double seconds) => TimeSpan.FromSeconds(Math.Max(0, seconds)).ToString(seconds >= 3600 ? @"h\:mm\:ss" : @"m\:ss");
-    private static TextBlock Text(string text, double size, string color = "#F3EFF8") => new() { Text = text, FontSize = size, Foreground = Brush.Parse(color) };
+    private static TextBlock Text(string text, double size, string color = UiTheme.TextPrimary) => UiTheme.Text(text, size, color);
     private Button ActionButton(string text, Func<Task> action)
     {
-        var button = new Button { Content = text, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var button = UiTheme.OutlinedButton(text);
         button.Click += async (_, _) => { try { await action(); } catch (Exception ex) { PlaybackDiagnostics.Write("Interface", ex.Message); _music.SetStatus(ex.Message); ShowDiagnostics(); } }; return button;
     }
     private Button IconButton(string icon, string label, Func<Task> action, string color = Muted)
     {
-        var button = ActionButton("", action); button.Content = Icons.Make(icon, color, 20); button.Classes.Add("subtle"); button.Padding = new Thickness(10); button.Width = button.Height = 44; button.VerticalAlignment = VerticalAlignment.Center;
+        var button = ActionButton("", action); button.Content = Icons.Make(icon, color); button.Classes.Add("round"); button.VerticalAlignment = VerticalAlignment.Center;
         Avalonia.Automation.AutomationProperties.SetName(button, label); ToolTip.SetTip(button, label); return button;
     }
     private static void Put(Grid grid, Control control, int row, int column) { Grid.SetRow(control, row); Grid.SetColumn(control, column); grid.Children.Add(control); }

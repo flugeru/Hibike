@@ -1,21 +1,6 @@
 <Application xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  x:Class="Hibiki.App.App" RequestedThemeVariant="Dark">
  <Application.Styles>
-  <FluentTheme>
-   <FluentTheme.Palettes><ColorPaletteResources x:Key="Dark" Accent="#BDA2FF" /></FluentTheme.Palettes>
-  </FluentTheme>
-  <Style Selector="TextBlock"><Setter Property="Foreground" Value="#F4F0FA" /></Style>
-  <Style Selector="Button">
-   <Setter Property="CornerRadius" Value="14" /><Setter Property="MinHeight" Value="44" />
-   <Setter Property="Padding" Value="16,10" /><Setter Property="Background" Value="#25232D" />
-   <Setter Property="BorderThickness" Value="0" /><Setter Property="Foreground" Value="#F4F0FA" />
-  </Style>
-  <Style Selector="Button.primary"><Setter Property="Background" Value="#BDA2FF" /><Setter Property="Foreground" Value="#211337" /></Style>
-  <Style Selector="Button.subtle"><Setter Property="Background" Value="Transparent" /></Style>
-  <Style Selector="Button.nav"><Setter Property="HorizontalContentAlignment" Value="Left" /><Setter Property="Background" Value="Transparent" /></Style>
-  <Style Selector="Button.nav.active"><Setter Property="Background" Value="#30243F" /></Style>
-  <Style Selector="Button.chip"><Setter Property="CornerRadius" Value="22" /><Setter Property="Background" Value="#211E29" /></Style>
-  <Style Selector="TextBox"><Setter Property="CornerRadius" Value="14" /><Setter Property="MinHeight" Value="48" /><Setter Property="Background" Value="#1D1B24" /><Setter Property="BorderBrush" Value="#34303E" /><Setter Property="Padding" Value="14,10" /></Style>
-  <Style Selector="Slider"><Setter Property="MinHeight" Value="24" /></Style>
+  <FluentTheme />
  </Application.Styles>
 </Application>
