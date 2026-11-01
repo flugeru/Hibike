@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Media;
+using Avalonia.Styling;
 
 namespace Hibiki.App.Views;
 
@@ -19,4 +20,5 @@ internal static class Ui
     public static CornerRadius Radius(string key) => Resource<CornerRadius>(key);
     public static Thickness Insets(string key) => Resource<Thickness>(key);
     public static BoxShadows Shadow(string key) => BoxShadows.Parse(Resource<string>(key));
+    public static ControlTheme Theme(string key) => Resource<ControlTheme>(key);
 }

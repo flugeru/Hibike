@@ -14,6 +14,12 @@
   <x:Double x:Key="NavigationPillHeight">28</x:Double>
   <x:Double x:Key="MiniPlayVisualSize">40</x:Double>
   <x:Double x:Key="ProgressHeight">3</x:Double>
+  <x:Double x:Key="PlayerMaxWidth">420</x:Double>
+  <x:Double x:Key="PlayerPlaySize">72</x:Double>
+  <x:Double x:Key="PlayerSkipIconSize">32</x:Double>
+  <x:Double x:Key="SliderRailHeight">4</x:Double>
+  <x:Double x:Key="SliderThumbSize">14</x:Double>
+  <x:Double x:Key="SliderThumbPressedSize">18</x:Double>
   <CornerRadius x:Key="ThumbRadius">8</CornerRadius>
   <CornerRadius x:Key="CardRadius">16</CornerRadius>
   <CornerRadius x:Key="CoverRadius">24</CornerRadius>
@@ -26,8 +32,21 @@
   <Thickness x:Key="MiniProgressMargin">8,0,8,8</Thickness>
   <Thickness x:Key="NavInsets">8,4</Thickness>
   <Thickness x:Key="SideNavInsets">12,8</Thickness>
+  <Thickness x:Key="PlayerColumnMargin">0,8,0,16</Thickness>
+  <Thickness x:Key="PlayerArtMargin">0,8,0,16</Thickness>
+  <Thickness x:Key="PlayerMetadataMargin">0,0,0,12</Thickness>
+  <Thickness x:Key="PlayerControlMargin">0,16,0,0</Thickness>
+  <Thickness x:Key="PlayerNextMargin">0,16,0,0</Thickness>
+  <Thickness x:Key="HeaderMargin">0,0,0,4</Thickness>
+  <Thickness x:Key="HeadingMargin">0,8,0,0</Thickness>
+  <Thickness x:Key="StatusInsets">12,4</Thickness>
+  <Thickness x:Key="SidebarMargin">16,24</Thickness>
+  <Thickness x:Key="SidebarHeadingMargin">12,0,0,24</Thickness>
+  <Thickness x:Key="EmptyStateMargin">12,56,12,0</Thickness>
+  <Thickness x:Key="SheetInsets">24</Thickness>
   <Thickness x:Key="ButtonPadding">16,8</Thickness>
   <Thickness x:Key="SearchPadding">12,8</Thickness>
+  <Thickness x:Key="SearchIconMargin">12,0,4,0</Thickness>
   <Thickness x:Key="NoThickness">0</Thickness>
   <Color x:Key="AccentColor">#BDA2FF</Color>
   <SolidColorBrush x:Key="Background">#111015</SolidColorBrush>
@@ -41,11 +60,12 @@
   <SolidColorBrush x:Key="Outline">#4B4354</SolidColorBrush>
   <SolidColorBrush x:Key="TrackRail">#544D5D</SolidColorBrush>
   <SolidColorBrush x:Key="Hover">#403949</SolidColorBrush>
-  <SolidColorBrush x:Key="Pressed">#50485A</SolidColorBrush>
+  <SolidColorBrush x:Key="Pressed">#453D4C</SolidColorBrush>
   <SolidColorBrush x:Key="ActivePill">#433652</SolidColorBrush>
   <SolidColorBrush x:Key="Overlay">#BA000000</SolidColorBrush>
   <Color x:Key="PlaceholderStart">#403949</Color>
   <Color x:Key="PlaceholderEnd">#24202C</Color>
+  <Color x:Key="BackgroundColor">#111015</Color>
   <x:String x:Key="CardShadow">0 3 12 0 #50000000</x:String>
   <LinearGradientBrush x:Key="ListFadeTop" StartPoint="0%,0%" EndPoint="0%,100%">
     <GradientStop Color="#111015" Offset="0" /><GradientStop Color="#00111015" Offset="1" />
@@ -53,4 +73,35 @@
   <LinearGradientBrush x:Key="ListFadeBottom" StartPoint="0%,0%" EndPoint="0%,100%">
     <GradientStop Color="#00111015" Offset="0" /><GradientStop Color="#111015" Offset="1" />
   </LinearGradientBrush>
+  <ControlTheme x:Key="PlayerSliderRailButton" TargetType="RepeatButton">
+    <Setter Property="Template">
+      <ControlTemplate><Border Height="{DynamicResource SliderRailHeight}" Background="{TemplateBinding Background}"
+                               CornerRadius="{DynamicResource PillRadius}" /></ControlTemplate>
+    </Setter>
+  </ControlTheme>
+  <ControlTheme x:Key="PlayerSliderThumb" TargetType="Thumb">
+    <Setter Property="Template">
+      <ControlTemplate><Border Background="{TemplateBinding Background}" CornerRadius="{DynamicResource PillRadius}" /></ControlTemplate>
+    </Setter>
+  </ControlTheme>
+  <ControlTheme x:Key="PlayerSlider" TargetType="Slider">
+    <Setter Property="MinHeight" Value="{DynamicResource TouchTarget}" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Track Name="PART_Track" Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}"
+               Value="{TemplateBinding Value, Mode=TwoWay}" Orientation="Horizontal">
+          <Track.DecreaseButton><RepeatButton Name="PART_DecreaseButton" Background="{DynamicResource Accent}"
+              Theme="{StaticResource PlayerSliderRailButton}" Focusable="False" /></Track.DecreaseButton>
+          <Track.IncreaseButton><RepeatButton Name="PART_IncreaseButton" Background="{DynamicResource TrackRail}"
+              Theme="{StaticResource PlayerSliderRailButton}" Focusable="False" /></Track.IncreaseButton>
+          <Thumb Name="PlayerThumb" Width="{DynamicResource SliderThumbSize}" Height="{DynamicResource SliderThumbSize}"
+                 Background="{DynamicResource Accent}" Theme="{StaticResource PlayerSliderThumb}" />
+        </Track>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pressed /template/ Thumb#PlayerThumb">
+      <Setter Property="Width" Value="{DynamicResource SliderThumbPressedSize}" />
+      <Setter Property="Height" Value="{DynamicResource SliderThumbPressedSize}" />
+    </Style>
+  </ControlTheme>
 </ResourceDictionary>

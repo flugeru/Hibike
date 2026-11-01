@@ -43,6 +43,13 @@ jobs:
         run: dotnet test tests/Hibiki.Core.Tests/Hibiki.Core.Tests.csproj -c Release --logger "trx;LogFileName=core.trx" --results-directory artifacts/tests
       - name: Exercise Avalonia interface without an emulator
         run: timeout 120s dotnet run --project tests/Hibiki.Ui.Smoke/Hibiki.Ui.Smoke.csproj -c Release
+      - name: Upload headless interface previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hibiki-ui-previews
+          path: artifacts/ui/*.png
+          if-no-files-found: ignore
       - name: Prepare verified Python, QuickJS and YT-DLP
         run: python3 scripts/prepare_android_runtime.py
       - name: Restore development signing key
