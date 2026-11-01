@@ -1,0 +1,73 @@
+name: Hibiki • Windows Desktop
+
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'tests/**', 'Directory.*', 'global.json', '.github/workflows/windows.yml']
+  pull_request:
+    paths: ['src/**', 'tests/**', 'Directory.*', 'global.json', '.github/workflows/windows.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-x64:
+    name: Test and publish portable Windows x64
+    runs-on: windows-2022
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Test core
+        run: |
+          dotnet test tests/Hibiki.Core.Tests/Hibiki.Core.Tests.csproj -c Release --logger "trx;LogFileName=windows-core.trx" --results-directory artifacts/tests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Publish Windows x64 (self-contained)
+        run: |
+          dotnet publish src/Hibiki.Desktop/Hibiki.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishTrimmed=false -p:UseAppHost=true -o artifacts/windows/publish
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify executable and native LibVLC files
+        run: |
+          $publish = "artifacts/windows/publish"
+          $exe = Join-Path $publish "Hibiki.Desktop.exe"
+          if (!(Test-Path $exe)) { throw "Windows executable not found: $exe" }
+          $vlc = Get-ChildItem -Path $publish -Recurse -File -Filter libvlc.dll | Select-Object -First 1
+          if (!$vlc) { throw "libvlc.dll missing from the portable application" }
+          $core = Get-ChildItem -Path $publish -Recurse -File -Filter libvlccore.dll | Select-Object -First 1
+          if (!$core) { throw "libvlccore.dll missing from the portable application" }
+          $plugins = Get-ChildItem -Path $publish -Recurse -Directory -Filter plugins | Select-Object -First 1
+          if (!$plugins) { throw "LibVLC plugins directory missing from the portable application" }
+          Write-Host "Desktop executable: $exe"
+          Write-Host "LibVLC: $($vlc.FullName)"
+          Write-Host "LibVLC core: $($core.FullName)"
+          Write-Host "LibVLC plugins: $($plugins.FullName)"
+      - name: Package portable ZIP
+        run: |
+          $archive = "artifacts/windows/Hibiki-Windows-x64.zip"
+          Compress-Archive -Path "artifacts/windows/publish/*" -DestinationPath $archive -CompressionLevel Optimal -Force
+          if (!(Test-Path $archive)) { throw "Portable ZIP was not generated" }
+          Write-Host "Created $archive"
+      - name: Upload Windows portable build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hibiki-Windows-x64
+          path: artifacts/windows/Hibiki-Windows-x64.zip
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload core test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hibiki-Windows-core-tests
+          path: artifacts/tests/**
+          if-no-files-found: ignore
