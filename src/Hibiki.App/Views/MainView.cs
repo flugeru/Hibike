@@ -106,7 +106,7 @@ public sealed class MainView : UserControl
         _cancelSearch = IconButton("close", "Cancelar busca", () => { _music.CancelSearch(); return Task.CompletedTask; });
         Put(statusRow, _cancelSearch, 0, 1);
         Put(statusRow, IconButton("info", "Ver diagnóstico", () => { ShowDiagnostics(); return Task.CompletedTask; }), 0, 2);
-        _statusBox = new Border { Child = statusRow, Padding = Ui.Insets("StatusInsets"), Background = Ui.Brush("Surface"), CornerRadius = Ui.Radius("CardRadius") }; Put(content, _statusBox, 4, 0);
+        _statusBox = new Border { Child = statusRow, Padding = Ui.Insets("StatusInsets"), Background = Ui.Brush("Surface"), CornerRadius = Ui.Radius("CardRadius"), BorderBrush = Ui.Brush("Outline"), BorderThickness = new Thickness(1) }; Put(content, _statusBox, 4, 0);
         _play = IconButton("play", "Reproduzir, pausar ou cancelar", _music.ToggleAsync);
         _mini = BuildMiniPlayer(); Put(_root, _mini, 1, 1);
         _bottom = new Grid { ColumnDefinitions = new("*,*,*"), Height = Ui.Size("NavigationHeight"), Background = Ui.Brush("Surface") };
@@ -176,7 +176,7 @@ public sealed class MainView : UserControl
         _progress.Margin = Ui.Insets("MiniProgressMargin");
         Put(grid, _progress, 1, 0);
         return new Border { Child = grid, Margin = Ui.Insets("MiniMargin"), CornerRadius = Ui.Radius("CardRadius"),
-            ClipToBounds = true, Background = Ui.Brush("SurfaceElevated"), BoxShadow = Ui.Shadow("CardShadow") };
+            ClipToBounds = true, Background = Ui.Brush("SurfaceElevated"), BorderBrush = Ui.Brush("Outline"), BorderThickness = new Thickness(1), BoxShadow = Ui.Shadow("CardShadow") };
     }
     private async Task SearchAsync() { _page = "explore"; await _music.SearchAsync(_search.Text ?? ""); }
     private async Task OpenLocalAsync()
