@@ -64,6 +64,11 @@ internal static class PlaybackProbe
             var manager = (global::Android.App.NotificationManager)context.GetSystemService(Context.NotificationService)!;
             var notifications = manager.GetActiveNotifications();
             if (notifications is null || !notifications.Any(n => n.Id == 42)) throw new IOException("Media notification missing.");
+            var notification = notifications.Single(n => n.Id == 42).Notification!;
+            if (notification.Extras?.ContainsKey("android.mediaSession") != true)
+                throw new IOException("Notification is not linked to media session.");
+            if (notification.Actions is not { Count: > 0 })
+                throw new IOException("Media notification has no playback controls.");
             global::Android.Util.Log.Info("HibikeProbe", "HIBIKE_PROBE_NOTIFICATION_OK");
             player.Pause();
             // Layout fixture exists only in this CI-only emulator build.

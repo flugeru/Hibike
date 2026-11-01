@@ -34,7 +34,8 @@ public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPr
         var started = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            await MainAsync(() => service.Open(source, _volume)).WaitAsync(cancellationToken);
+            var artwork = await NotificationArtwork.LoadAsync(source.Artwork, cancellationToken);
+            await MainAsync(() => service.Open(source, _volume, artwork)).WaitAsync(cancellationToken);
             while (service.State != 3 || !service.Playing)
             {
                 if (service.Error is { } error) throw new IOException(error);

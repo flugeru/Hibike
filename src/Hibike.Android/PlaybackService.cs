@@ -78,23 +78,30 @@ public sealed class PlaybackService : MediaSessionService
                 ((NotificationManager)GetSystemService(NotificationService)!).CreateNotificationChannel(new NotificationChannel("hibike-playback", "Reprodução de música", NotificationImportance.Low));
             var builder = Build.VERSION.SdkInt >= BuildVersionCodes.O ? new Notification.Builder(this, "hibike-playback") : new Notification.Builder(this);
             var notification = builder.SetContentTitle(intent.GetStringExtra("title") ?? "Hibike")!
-                .SetContentText("Preparando áudio…")!.SetSmallIcon(Resource.Drawable.ic_stat_music)!.SetOngoing(true)!.Build();
+                .SetContentText("Preparando áudio…")!.SetSmallIcon(Resource.Drawable.ic_stat_music)!
+                .SetCategory("transport")!.SetVisibility(NotificationVisibility.Public)!
+                .SetStyle(new Notification.MediaStyle().SetMediaSession(_session!.PlatformToken))!
+                .SetOngoing(true)!.Build();
             StartForeground(42, notification);
         }
         return base.OnStartCommand(intent, flags, startId);
     }
     public override MediaSession? OnGetSession(MediaSession.ControllerInfo controllerInfo) => _session;
-    public void Open(AudioSource source, double volume)
+    public void Open(AudioSource source, double volume, byte[]? artwork = null)
     {
         Error = null; _lastError = null; State = 2;
         var metadata = new MediaMetadata.Builder().SetTitle(source.Title ?? "Hibike")!.SetArtist(source.Artist ?? "")!;
-        if (source.Artwork is not null) metadata.SetArtworkUri(global::Android.Net.Uri.Parse(source.Artwork));
+        if (artwork is { Length: > 0 }) metadata.MaybeSetArtworkData(artwork, 3);
+        else if (source.Artwork is not null) metadata.SetArtworkUri(global::Android.Net.Uri.Parse(source.Artwork));
         var item = new MediaItem.Builder().SetUri(source.Url)!.SetMediaMetadata(metadata.Build())!.Build();
         var http = new DefaultHttpDataSource.Factory();
         http.SetDefaultRequestProperties(new Dictionary<string, string>(source.Headers));
         var data = new DefaultDataSource.Factory(this, http);
         var media = new DefaultMediaSourceFactory(data).CreateMediaSource(item);
-        _player!.Volume = (float)volume; _player.SetMediaSource(media); _player.Prepare(); _player.Play();
+        _player!.Volume = (float)volume; _player.SetMediaSource(media);
+        // Register after playable item exists so Media3 replaces preparation notification id 42.
+        if (!IsSessionAdded(_session!)) AddSession(_session!);
+        _player.Prepare(); _player.Play();
     }
     public void PauseAudio() => _player?.Pause();
     public void ResumeAudio() { if (_player?.PlaybackState == 4) _player.SeekTo(0); _player?.Play(); }
