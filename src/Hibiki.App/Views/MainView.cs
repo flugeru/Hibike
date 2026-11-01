@@ -245,8 +245,8 @@ public sealed class MainView : UserControl
             row.BorderBrush = current ? Ui.Brush("Outline") : Brushes.Transparent;
         }
         if (!Equals(displayed, _shownTrack)) { _shownTrack = displayed; _nowArt.Content = new Artwork(displayed, 40); }
-        _nowTitle.Text = displayed?.Title;
-        _nowArtist.Text = _music.LoadingAudio ? _music.Status : displayed?.Artist;
+        _nowTitle.Text = displayed is null ? "" : TrackTextFormatter.Title(displayed.Title, displayed.Artist);
+        _nowArtist.Text = _music.LoadingAudio ? _music.Status : TrackTextFormatter.Artist(displayed?.Artist);
         if (_detailPlay is not null && displayed is not null && !Equals(_detailTrack, displayed)) ShowPlayer();
         RefreshPlayback();
     }
@@ -265,10 +265,10 @@ public sealed class MainView : UserControl
         { VerticalAlignment = VerticalAlignment.Center });
         var labels = new Grid { RowDefinitions = new("Auto,Auto"), RowSpacing = 4, MinWidth = 0,
             VerticalAlignment = VerticalAlignment.Center };
-        var title = Text(track.Title, 13);
+        var title = Text(TrackTextFormatter.Title(track.Title, track.Artist), 13);
         title.TextTrimming = TextTrimming.CharacterEllipsis; title.MaxLines = 1;
         labels.Children.Add(title);
-        var artist = Text(track.Artist + " · " + track.DurationLabel, 11, Muted);
+        var artist = Text(TrackTextFormatter.Artist(track.Artist) + " · " + track.DurationLabel, 12, Muted);
         artist.TextTrimming = TextTrimming.CharacterEllipsis; artist.MaxLines = 1;
         Put(labels, artist, 1, 0);
         Put(metadata, labels, 0, 1);
@@ -309,9 +309,9 @@ public sealed class MainView : UserControl
         panel.Children.Add(art);
         var metadata = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 8, MinWidth = 0 };
         var labels = new StackPanel { Spacing = 6, MinWidth = 0, VerticalAlignment = VerticalAlignment.Center };
-        var title = Text(track.Title, 20); title.FontWeight = FontWeight.SemiBold;
+        var title = Text(TrackTextFormatter.Title(track.Title, track.Artist), 20); title.FontWeight = FontWeight.SemiBold;
         title.TextWrapping = TextWrapping.Wrap; title.MaxLines = 2; labels.Children.Add(title);
-        var artist = Text(track.Artist, 13, Muted);
+        var artist = Text(TrackTextFormatter.Artist(track.Artist), 13, Muted);
         artist.TextTrimming = TextTrimming.CharacterEllipsis; artist.MaxLines = 1;
         labels.Children.Add(artist); metadata.Children.Add(labels);
         Button? favorite = null;
@@ -377,8 +377,12 @@ public sealed class MainView : UserControl
             _detailSeek.Maximum = Math.Max(1, duration); _detailSeek.IsEnabled = duration > 0 && !_music.LoadingAudio;
             if (!_seeking) _detailSeek.Value = Math.Min(_music.Player.Position, _detailSeek.Maximum);
         }
-        if (_detailTime is not null) _detailTime.Text = Time(_music.Player.Position);
-        if (_detailDuration is not null) _detailDuration.Text = Time(duration);
+        if (_detailTime is not null) _detailTime.Text = TrackTextFormatter.Duration(_music.Player.Position);
+        // Prefer the same metadata used by the list; the player can report a
+        // slightly different stream length after decoding starts.
+        var displayDuration = (_detailTrack?.DurationSeconds ?? 0) > 0
+            ? _detailTrack!.DurationSeconds : duration;
+        if (_detailDuration is not null) _detailDuration.Text = TrackTextFormatter.Duration(displayDuration, unknownWhenZero: true);
     }
     private void ShowSettings()
     {
@@ -440,7 +444,6 @@ public sealed class MainView : UserControl
         if (_overlay is not null) _root.Children.Remove(_overlay); _overlay = null;
         _detailTrack = null; _detailSeek = null; _detailPlay = null; _detailTime = null; _detailDuration = null; _seeking = false;
     }
-    private static string Time(double seconds) => TimeSpan.FromSeconds(Math.Max(0, seconds)).ToString(seconds >= 3600 ? @"h\:mm\:ss" : @"m\:ss");
     private static TextBlock Text(string text, double size, IBrush? color = null) => new() { Text = text, FontSize = Math.Max(12, size), Foreground = color ?? Ui.Brush("TextPrimary") };
     private Button ActionButton(string text, Func<Task> action)
     {
