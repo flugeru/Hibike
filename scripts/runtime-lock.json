@@ -1,0 +1,34 @@
+{
+  "runtime_commit": "d725d5c9a18c3a99a13ee0308bf78275dc310760",
+  "files": [
+    {
+      "path": "library/src/main/jniLibs/arm64-v8a/libpython.so",
+      "git_blob": "7254d022d2fcc4aff283bc8c318f658582ea3a96"
+    },
+    {
+      "path": "library/src/main/jniLibs/arm64-v8a/libpython.zip.so",
+      "git_blob": "0296909da7838d374cc9d917b842597c6df29d6b"
+    },
+    {
+      "path": "library/src/main/jniLibs/arm64-v8a/libqjs.so",
+      "git_blob": "0648b0c4528f0af8948318ad7f66325863b37460"
+    },
+    {
+      "path": "library/src/main/jniLibs/x86_64/libpython.so",
+      "git_blob": "58592f576e71599cd86027e48b0c8acd27939005"
+    },
+    {
+      "path": "library/src/main/jniLibs/x86_64/libpython.zip.so",
+      "git_blob": "da0014c2680ba03493f234334a07c77c27333c76"
+    },
+    {
+      "path": "library/src/main/jniLibs/x86_64/libqjs.so",
+      "git_blob": "4834a3bf7d01076d6e17cb0ef5fc06f4cf12a7c6"
+    }
+  ],
+  "yt_dlp": {
+    "version": "2026.10.26",
+    "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.26/yt-dlp",
+    "sha256": "e51e69e89489f199530f13d32a4342da3ddb2cf34842f364603a066db05afbf3"
+  }
+}

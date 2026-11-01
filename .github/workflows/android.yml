@@ -1,0 +1,96 @@
+name: Hibiki • Android APK
+
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'tests/**', 'scripts/**', 'Directory.*', 'global.json', 'Hibiki.slnx', '.github/**']
+  pull_request:
+    paths: ['src/**', 'tests/**', 'scripts/**', 'Directory.*', 'global.json', 'Hibiki.slnx', '.github/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Test core and build Android ARM64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android workload and SDK
+        run: |
+          dotnet workload install android
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+      - name: Verify source structure
+        run: python3 scripts/check_source.py
+      - name: Run core behavior tests
+        run: dotnet test tests/Hibiki.Core.Tests/Hibiki.Core.Tests.csproj -c Release --logger "trx;LogFileName=core.trx" --results-directory artifacts/tests
+      - name: Prepare verified Python, QuickJS and YT-DLP
+        run: python3 scripts/prepare_android_runtime.py
+      - name: Restore development signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/hibiki-signing
+          key: hibiki-development-signing-v1
+      - name: Prepare runner-owned development signing key
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.local/share/hibiki-signing"
+          if [ ! -f "$HOME/.local/share/hibiki-signing/development.jks" ]; then
+            keytool -genkeypair -keystore "$HOME/.local/share/hibiki-signing/development.jks" \
+              -alias androiddebugkey -storepass android -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Hibiki Development, O=Flugel, C=BR" -noprompt
+          fi
+      - name: Publish signed development APK
+        run: |
+          dotnet publish src/Hibiki.Android/Hibiki.Android.csproj \
+            -f net10.0-android -c Release -r android-arm64 \
+            -p:AndroidSdkDirectory="$ANDROID_HOME" \
+            -p:ApplicationVersion=$((10000 + GITHUB_RUN_NUMBER)) \
+            -p:AndroidKeyStore=true \
+            -p:AndroidSigningKeyStore="$HOME/.local/share/hibiki-signing/development.jks" \
+            -p:AndroidSigningKeyAlias=androiddebugkey \
+            -p:AndroidSigningKeyPass=android \
+            -p:AndroidSigningStorePass=android \
+            -o artifacts/android
+      - name: Validate APK and bundled engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="$(find artifacts/android -maxdepth 1 -name '*-Signed.apk' -print -quit)"
+          test -n "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" | tee artifacts/android/package-info.txt
+          grep -q "package: name='com.flugel.hibiki'" artifacts/android/package-info.txt
+          grep -q "sdkVersion:'24'" artifacts/android/package-info.txt
+          python3 scripts/check_apk.py "$apk"
+          mkdir -p artifacts/release
+          cp "$apk" artifacts/release/Hibiki-Android-arm64.apk
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hibiki-Android-arm64
+          path: artifacts/release/Hibiki-Android-arm64.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hibiki-core-tests
+          path: artifacts/tests/**
+          if-no-files-found: ignore

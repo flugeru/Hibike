@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Hibiki.Core/Hibiki.Core.csproj" />
+    <Project Path="src/Hibiki.App/Hibiki.App.csproj" />
+    <Project Path="src/Hibiki.Android/Hibiki.Android.csproj" />
+    <Project Path="src/Hibiki.Desktop/Hibiki.Desktop.csproj" />
+  </Folder>
+  <Folder Name="/tests/"><Project Path="tests/Hibiki.Core.Tests/Hibiki.Core.Tests.csproj" /></Folder>
+</Solution>

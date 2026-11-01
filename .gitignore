@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+.vs/
+.idea/
+artifacts/
+*.user
+*.keystore
+src/Hibiki.Android/Native/
+src/Hibiki.Android/Assets/runtime/
+__pycache__/
+*.jks
