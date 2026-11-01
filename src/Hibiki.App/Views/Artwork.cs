@@ -13,7 +13,8 @@ internal sealed class Artwork : Border
     private Bitmap? _bitmap;
     public Artwork(Track? track, double size)
     {
-        Width = Height = size; CornerRadius = new CornerRadius(size > 100 ? 16 : 8); ClipToBounds = true;
+        Width = Height = size; CornerRadius = Ui.Radius(size > 100 ? "CoverRadius" : "ThumbRadius"); ClipToBounds = true;
+        BorderThickness = new Thickness(1); BorderBrush = Ui.Brush("Outline");
         Background = new LinearGradientBrush
         {
             StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
