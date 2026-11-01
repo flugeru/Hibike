@@ -12,8 +12,6 @@ public sealed class YtDlpCatalog(ICommandRunner runner, string? dataDirectory = 
             if (dataDirectory is not null)
             {
                 args.AddRange(["--cache-dir", Path.Combine(dataDirectory, "extractor-cache")]);
-                var cookies = Path.Combine(dataDirectory, "youtube-cookies.txt");
-                if (File.Exists(cookies)) args.AddRange(["--cookies", cookies]);
             }
             return args.ToArray();
         }
@@ -39,9 +37,8 @@ public sealed class YtDlpCatalog(ICommandRunner runner, string? dataDirectory = 
         var watch = System.Diagnostics.Stopwatch.StartNew();
         var options = new[] { "-f", "bestaudio", "--skip-download", "--dump-single-json" };
         ProcessResult result;
-        var hasCookies = dataDirectory is not null && File.Exists(Path.Combine(dataDirectory, "youtube-cookies.txt"));
         var youtube = Uri.TryCreate(track.Source, UriKind.Absolute, out var provider) && (provider.Host == "youtube.com" || provider.Host.EndsWith(".youtube.com") || provider.Host == "youtu.be");
-        if (!hasCookies && youtube)
+        if (youtube)
         {
             // Official yt-dlp JS-less default client: avoids interpreting the web player on a cold start.
             result = await runner.RunAsync([..Common, ..options, "--extractor-args", "youtube:player_client=visionos", "--", track.Source], cancellationToken);

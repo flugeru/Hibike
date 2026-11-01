@@ -495,16 +495,53 @@ public sealed class MainView : UserControl
     private void ShowSettings()
     {
         var panel = new StackPanel { Spacing = UiTheme.ControlRadius };
-        var session = System.IO.File.Exists(CookiesPath);
-        panel.Children.Add(Text("YouTube", UiTheme.Body));
-        var note = Text(session ? "Sessão importada neste aparelho." : "Sessão não importada. Faixas públicas podem tocar sem login; o YouTube pode pedir verificação.", UiTheme.Label, Muted); note.TextWrapping = TextWrapping.Wrap; panel.Children.Add(note);
-        panel.Children.Add(ActionButton("Importar cookies de sessão", ImportCookiesAsync));
-        if (session) panel.Children.Add(ActionButton("Remover sessão", () => { System.IO.File.Delete(CookiesPath); AppServices.InvalidateCatalog(); ShowSettings(); return Task.CompletedTask; }));
+        panel.Children.Add(ActionButton("Biblioteca da conta YouTube", ShowAccountAsync));
+        var cookies = System.IO.Path.Combine(_music.DataDirectory, "youtube-cookies.txt");
+        if (System.IO.File.Exists(cookies)) panel.Children.Add(ActionButton("Apagar cookies antigos (não utilizados)", () => { System.IO.File.Delete(cookies); ShowSettings(); return Task.CompletedTask; }));
         panel.Children.Add(ActionButton("Diagnóstico de reprodução", () => { ShowDiagnostics(); return Task.CompletedTask; }));
         panel.Children.Add(ActionButton("Laboratório experimental", () => { ShowExperimental(); return Task.CompletedTask; }));
         ShowSheet("Configurações", panel);
     }
-    private string CookiesPath => System.IO.Path.Combine(_music.DataDirectory, "youtube-cookies.txt");
+    private YouTubeAccountLibrary? _account;
+    private async Task ShowAccountAsync()
+    {
+        var panel = new StackPanel { Spacing = UiTheme.CompactGap };
+        var supported = AppServices.ConnectYouTubeAccount is not null;
+        var note = Text(supported
+            ? "API oficial: playlists e vídeos curtidos, somente leitura. Não inclui feed, histórico ou catálogo completo do YT Music. Login abre Google no navegador; sessão fica só na memória e pode expirar. yt-dlp não recebe credenciais. Até 1000 entradas por lista."
+            : "Login Android ainda indisponível: exige autorização nativa Google e configuração do pacote/assinatura. Não usamos fluxo Desktop no Android.", UiTheme.Caption, Muted);
+        note.TextWrapping = TextWrapping.Wrap; panel.Children.Add(note);
+        if (supported && _account is null)
+        {
+            panel.Children.Add(ActionButton("Importar configuração OAuth Desktop", ImportGoogleConfigAsync));
+            panel.Children.Add(ActionButton("Conectar com Google", async () =>
+            {
+                _music.SetStatus("Autorize leitura do YouTube no navegador (até 3 minutos).");
+                _account = await AppServices.ConnectYouTubeAccount!(); await ShowAccountAsync();
+            }));
+        }
+        var configPath = System.IO.Path.Combine(_music.DataDirectory, "google-oauth-desktop.json");
+        if (System.IO.File.Exists(configPath)) panel.Children.Add(ActionButton("Apagar configuração local e desconectar", async () =>
+        { System.IO.File.Delete(configPath); _account = null; await ShowAccountAsync(); }));
+        if (_account is { } account)
+        {
+            panel.Children.Add(ActionButton("Desconectar conta", async () => { _account = null; await ShowAccountAsync(); }));
+            panel.Children.Add(ActionButton("Vídeos curtidos", () => ShowAccountTracksAsync(account, null, "Vídeos curtidos")));
+            foreach (var playlist in await account.PlaylistsAsync(CancellationToken.None))
+                panel.Children.Add(ActionButton(playlist.Title, () => ShowAccountTracksAsync(account, playlist.Id, playlist.Title)));
+        }
+        ShowSheet("Biblioteca YouTube", panel);
+    }
+    private async Task ShowAccountTracksAsync(YouTubeAccountLibrary account, string? id, string title)
+    {
+        var tracks = await account.TracksAsync(id, CancellationToken.None);
+        var panel = new StackPanel { Spacing = UiTheme.CompactGap };
+        panel.Children.Add(Text($"{tracks.Count} faixas. Reprodução anônima; itens privados/restritos podem não tocar.", UiTheme.Caption, Muted));
+        foreach (var track in tracks)
+            panel.Children.Add(ActionButton(track.Artist + " — " + track.Title, async () => { CloseSheet(); await _music.PlayAsync(track); }));
+        panel.Children.Add(ActionButton("Voltar à conta", ShowAccountAsync));
+        ShowSheet(title, panel);
+    }
     private CancellationTokenSource? _download;
     private void ShowExperimental()
     {
@@ -558,21 +595,28 @@ public sealed class MainView : UserControl
         catch (OperationCanceledException) { _music.SetStatus("Download cancelado ou tempo esgotado."); }
         finally { _download = null; }
     }
-    private async Task ImportCookiesAsync()
+    private async Task ImportGoogleConfigAsync()
     {
         var top = TopLevel.GetTopLevel(this); if (top is null) return;
-        var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions { Title = "Cookies no formato Netscape", AllowMultiple = false });
+        var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions { Title = "JSON OAuth Google — aplicativo Desktop", AllowMultiple = false });
         if (files.Count == 0) return;
         using var file = files[0]; await using var input = await file.OpenReadAsync();
         using var reader = new System.IO.StreamReader(input);
         var buffer = new char[1_000_001]; var length = await reader.ReadBlockAsync(buffer, 0, buffer.Length);
-        if (length > 1_000_000) throw new IOException("O arquivo de cookies é muito grande.");
+        if (length > 1_000_000) throw new IOException("Arquivo de configuração muito grande.");
         var text = new string(buffer, 0, length);
-        if (!text.StartsWith("# Netscape HTTP Cookie File") && !text.StartsWith("# HTTP Cookie File")) throw new IOException("Selecione um arquivo de cookies no formato Netscape.");
+        using var json = System.Text.Json.JsonDocument.Parse(text);
+        if (!json.RootElement.TryGetProperty("installed", out var installed)
+            || !installed.TryGetProperty("client_id", out var clientId)
+            || clientId.ValueKind != System.Text.Json.JsonValueKind.String
+            || !clientId.GetString()!.EndsWith(".apps.googleusercontent.com", StringComparison.Ordinal))
+            throw new IOException("Selecione JSON OAuth do tipo Desktop exportado pelo Google Cloud.");
         System.IO.Directory.CreateDirectory(_music.DataDirectory);
-        await System.IO.File.WriteAllTextAsync(CookiesPath, text);
-        AppServices.InvalidateCatalog();
-        _music.SetStatus("Sessão importada neste aparelho."); ShowSettings();
+        var path = System.IO.Path.Combine(_music.DataDirectory, "google-oauth-desktop.json");
+        await System.IO.File.WriteAllTextAsync(path + ".tmp", text);
+        System.IO.File.Move(path + ".tmp", path, true);
+        _account = null;
+        _music.SetStatus("Configuração OAuth importada. Conecte com Google."); await ShowAccountAsync();
     }
     private void ShowDiagnostics()
     {

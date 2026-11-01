@@ -83,7 +83,7 @@ public class CatalogTests
         var runner = new FakeRunner("") { ExitCode = 1 };
         await Assert.ThrowsAsync<InvalidOperationException>(() => new YtDlpCatalog(runner).SearchAsync("music", default));
     }
-    [Fact] public async Task CatalogUsesPrivateCacheAndImportedSession()
+    [Fact] public async Task CatalogUsesPrivateCacheWithoutImportedSession()
     {
         var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         try
@@ -94,7 +94,12 @@ public class CatalogTests
             var runner = new FakeRunner("{\"entries\":[]}");
             await new YtDlpCatalog(runner, directory).SearchAsync("music", default);
             Assert.Contains("--cache-dir", runner.Arguments);
-            Assert.Contains(cookies, runner.Arguments);
+            Assert.DoesNotContain(cookies, runner.Arguments);
+            Assert.DoesNotContain("--cookies", runner.Arguments);
+            runner = new FakeRunner("{\"url\":\"https://example.org/audio\"}");
+            await new YtDlpCatalog(runner, directory).ResolveAsync(new("id", "Song", "Artist", "https://www.youtube.com/watch?v=id"), default);
+            Assert.DoesNotContain(cookies, runner.Arguments);
+            Assert.DoesNotContain("--cookies", runner.Arguments);
             Assert.DoesNotContain("--no-cache-dir", runner.Arguments);
         }
         finally { Directory.Delete(directory, true); }

@@ -17,6 +17,7 @@ internal static class Program
         var legacyDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Hibiki");
         if (!Directory.Exists(directory) && Directory.Exists(legacyDirectory)) directory = legacyDirectory;
         AppServices.Configure(new YtDlpCatalog(new DesktopCommandRunner(), directory), new VlcAudioPlayer(), directory);
+        AppServices.ConnectYouTubeAccount = () => GoogleAccountLogin.ConnectAsync(directory);
         DiscordPresence? presence = null;
         IDisposable? mediaSession = null;
         try
