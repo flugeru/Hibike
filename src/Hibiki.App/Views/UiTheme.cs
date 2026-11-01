@@ -10,10 +10,10 @@ namespace Hibiki.App.Views;
 
 internal static class UiTheme
 {
-    public const string Background = "#0B0F14", Surface = "#151B24", SurfaceElevated = "#1D2530",
-        Outline = "#2B3542", Primary = "#B9A7FF", PrimaryContainer = "#29243B", OnPrimary = "#1A1033",
-        Success = "#71D6A3", Warning = "#FFCC80", Error = "#FF8A8A", TextPrimary = "#F5F7FA",
-        TextSecondary = "#AAB4C3", TextDisabled = "#667181", Scrim = "#CC000000";
+    public const string Background = "#000000", Surface = "#0D0D0D", SurfaceElevated = "#191919",
+        Outline = "#2B2B2B", Primary = "#F2F2F2", PrimaryContainer = "#242424", OnPrimary = "#080808",
+        Success = "#71D6A3", Warning = "#FFCC80", Error = "#FF8A8A", TextPrimary = "#F5F5F5",
+        TextSecondary = "#B0B0B0", TextDisabled = "#686868", Scrim = "#CC000000";
     public const double CardRadius = 18, ControlRadius = 12, ThumbRadius = 8, RoundRadius = 22,
         CompactGap = 8, SectionGap = 14, PageGap = 18, CardGap = 16, CardPadding = 20,
         PageTitle = 28, SectionTitle = 18, DialogTitle = 22, Body = 15, Caption = 13, Label = 12,
@@ -25,7 +25,8 @@ internal static class UiTheme
         NavHeight = 72, RowHeight = 76, TrackRowHeight = 70, MarkerSize = 7, EqualizerGap = 3, EqualizerBarWidth = 4, EqualizerStep = 5,
         PauseStroke = 4, StateTransitionMilliseconds = 160, EqualizerMilliseconds = 180,
         PlayerChromeHeight = 388, PlayerBottomWeight = .15, ListFadeHeight = 18,
-        DesktopPlayerGap = 32, DesktopPlayerChromeHeight = 240, ToggleIconHeight = 36;
+        DesktopPlayerGap = 48, DesktopPlayerChromeHeight = 280, ToggleIconHeight = 36,
+        DesktopArtworkMax = 480, DesktopPlayerMaxWidth = 1320;
     public static readonly Thickness PageMargin = new(14, 14, 14, 18), ButtonPadding = new(16, 13),
         RowPadding = new(4, 8), ChipPadding = new(10, 4), BannerPadding = new(14, 10),
         One = new(1), Zero = new(0), InnerPadding = new(12), DialogMargin = new(14),
@@ -33,6 +34,7 @@ internal static class UiTheme
         RoundInset = new(2), MiniPlayInset = new(4);
     public static readonly Thickness SearchIconPadding = new(16, 0, 12, 0);
     public static readonly Thickness ContentPadding = new(14, 14, 14, 8);
+    public static readonly Thickness DesktopPlayerMargin = new(32, 20, 32, 24), NavPadding = new(12, 8);
     // Opacity only, not a surface gradient: soften items scrolling beneath fixed chrome.
     public static IBrush ListMask(double height) => new LinearGradientBrush
     {

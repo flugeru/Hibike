@@ -201,10 +201,11 @@ public sealed class MainView : UserControl
         {
             var (key, label, icon, vertical) = ((string, string, string, bool))button.Tag!;
             var active = key == _page;
+            button.Background = active ? UiTheme.Brush(UiTheme.PrimaryContainer) : Brushes.Transparent;
+            button.CornerRadius = new(UiTheme.ControlRadius); button.Padding = UiTheme.NavPadding;
             var stack = new StackPanel { Orientation = vertical ? Orientation.Vertical : Orientation.Horizontal, Spacing = UiTheme.ProgressRadius, HorizontalAlignment = vertical ? HorizontalAlignment.Center : HorizontalAlignment.Left };
             var image = Icons.Make(icon, active ? Accent : Muted); image.HorizontalAlignment = HorizontalAlignment.Center;
-            stack.Children.Add(new Border { Child = image, Background = active ? UiTheme.Brush(UiTheme.PrimaryContainer) : Brushes.Transparent,
-                CornerRadius = new(UiTheme.ControlRadius), Padding = UiTheme.ChipPadding, HorizontalAlignment = HorizontalAlignment.Center });
+            stack.Children.Add(image);
             stack.Children.Add(UiTheme.Text(label, UiTheme.Label, active ? UiTheme.TextPrimary : Muted, FontWeight.Medium)); button.Content = stack;
         }
         IReadOnlyList<Track> tracks = _page switch { "library" => _music.Favorites, "queue" => _music.Queue, _ => _music.Results };
@@ -334,8 +335,9 @@ public sealed class MainView : UserControl
         var upcomingBox = UiTheme.Inner(upcoming); Put(panel, upcomingBox, 6, 0);
         panel.RowDefinitions[1].Height = new GridLength(1, GridUnitType.Star);
         panel.RowDefinitions[4].Height = new GridLength(UiTheme.PlayerBottomWeight, GridUnitType.Star);
-        var desktopLayout = new Grid { RowDefinitions = new("Auto,*,Auto"), ColumnDefinitions = new("3*,2*"),
-            ColumnSpacing = UiTheme.DesktopPlayerGap, RowSpacing = UiTheme.PageGap, Margin = UiTheme.PageMargin };
+        var desktopLayout = new Grid { RowDefinitions = new("Auto,*,Auto"), ColumnDefinitions = new("*,*"),
+            ColumnSpacing = UiTheme.DesktopPlayerGap, RowSpacing = UiTheme.PageGap, Margin = UiTheme.DesktopPlayerMargin,
+            MaxWidth = UiTheme.DesktopPlayerMaxWidth, HorizontalAlignment = HorizontalAlignment.Stretch };
         var queuePanel = new Grid { RowDefinitions = new("Auto,*"), RowSpacing = UiTheme.SectionGap };
         var queueHeading = UiTheme.Text("A seguir", UiTheme.SectionTitle, weight: FontWeight.SemiBold); queuePanel.Children.Add(queueHeading);
         var queueItems = new ItemsControl { ItemsSource = _music.Queue,
@@ -372,7 +374,9 @@ public sealed class MainView : UserControl
                 }
                 wideLayout = wide;
             }
-            var width = wide ? Math.Max(UiTheme.ThumbnailSize, (host.Bounds.Width - UiTheme.PageMargin.Left - UiTheme.PageMargin.Right - UiTheme.DesktopPlayerGap) * .6)
+            var width = wide ? Math.Min(UiTheme.DesktopArtworkMax, Math.Max(UiTheme.ThumbnailSize,
+                (Math.Min(host.Bounds.Width, UiTheme.DesktopPlayerMaxWidth + UiTheme.DesktopPlayerMargin.Left + UiTheme.DesktopPlayerMargin.Right)
+                - UiTheme.DesktopPlayerMargin.Left - UiTheme.DesktopPlayerMargin.Right - UiTheme.DesktopPlayerGap) / 2))
                 : Math.Min(UiTheme.PlayerMaxWidth, host.Bounds.Width - UiTheme.PageMargin.Left - UiTheme.PageMargin.Right);
             var height = host.Bounds.Height - (wide ? UiTheme.DesktopPlayerChromeHeight : UiTheme.PlayerChromeHeight);
             art.Width = art.Height = Math.Max(UiTheme.ThumbnailSize, Math.Min(width, height));
