@@ -1,6 +1,7 @@
 #if HIBIKI_SMOKE_TEST
 using System.Text;
 using Avalonia.Controls;
+using Button = Avalonia.Controls.Button;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.VisualTree;
 using Android.Content;
