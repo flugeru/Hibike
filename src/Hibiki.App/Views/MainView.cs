@@ -337,7 +337,7 @@ public sealed class MainView : UserControl
         panel.RowDefinitions[4].Height = new GridLength(UiTheme.PlayerBottomWeight, GridUnitType.Star);
         var desktopLayout = new Grid { RowDefinitions = new("Auto,*"), ColumnDefinitions = new("*,*"),
             ColumnSpacing = UiTheme.DesktopPlayerGap, RowSpacing = UiTheme.PageGap, Margin = UiTheme.DesktopPlayerMargin,
-            MaxWidth = UiTheme.DesktopPlayerMaxWidth, HorizontalAlignment = HorizontalAlignment.Stretch };
+            HorizontalAlignment = HorizontalAlignment.Stretch };
         var queuePanel = new Grid { RowDefinitions = new("Auto,*"), RowSpacing = UiTheme.SectionGap };
         var queueHeading = UiTheme.Text("A seguir", UiTheme.SectionTitle, weight: FontWeight.SemiBold); queuePanel.Children.Add(queueHeading);
         var queueItems = new ItemsControl { ItemsSource = _music.Queue,
@@ -358,23 +358,30 @@ public sealed class MainView : UserControl
                 panel.Children.Clear(); desktopLayout.Children.Clear(); transport.Children.Clear(); host.Children.Clear();
                 if (wide)
                 {
-                    desktopLayout.VerticalAlignment = VerticalAlignment.Center;
+                    desktopLayout.VerticalAlignment = VerticalAlignment.Stretch;
                     art.VerticalAlignment = VerticalAlignment.Top; queuePanel.VerticalAlignment = VerticalAlignment.Top;
                     title.TextWrapping = TextWrapping.NoWrap; title.MaxLines = 1; title.TextTrimming = TextTrimming.CharacterEllipsis;
                     title.FontSize = UiTheme.Body; artist.FontSize = UiTheme.Caption;
+                    labels.Children.Remove(title);
+                    title.TextTrimming = TextTrimming.None; title.Width = double.NaN;
+                    labels.Children.Insert(0, new ScrollingTitle(title));
                     _detailPlay!.Width = _detailPlay.Height = UiTheme.DesktopPlaySize; _detailPlay.CornerRadius = new(UiTheme.DesktopPlaySize / 2);
-                    transport.ColumnDefinitions = new("*,Auto,*");
+                    transport.ColumnDefinitions = new("*,Auto");
                     Put(desktopLayout, header, 0, 0); Grid.SetColumnSpan(header, 2);
                     Put(desktopLayout, art, 1, 0); Put(desktopLayout, queuePanel, 1, 1);
                     Put(transport, metadata, 0, 0); metadata.VerticalAlignment = VerticalAlignment.Center;
                     Put(transport, controls, 0, 1);
-                    Put(transport, seek, 1, 0); Grid.SetColumnSpan(seek, 3);
-                    transport.MaxWidth = UiTheme.DesktopPlayerMaxWidth;
+                    Put(transport, seek, 1, 0); Grid.SetColumnSpan(seek, 2);
                     Put(host, desktopLayout, 0, 0); Put(host, transportFrame, 1, 0);
                 }
                 else
                 {
                     art.VerticalAlignment = VerticalAlignment.Center;
+                    if (title.Parent is ScrollingTitle scrolling)
+                    {
+                        labels.Children.Remove(scrolling); scrolling.Children.Remove(title);
+                        title.RenderTransform = null; title.Width = double.NaN; labels.Children.Insert(0, title);
+                    }
                     title.TextWrapping = TextWrapping.Wrap; title.MaxLines = 2; title.FontSize = UiTheme.DialogTitle; artist.FontSize = UiTheme.Body;
                     _detailPlay!.Width = _detailPlay.Height = UiTheme.PlaySize; _detailPlay.CornerRadius = new(UiTheme.PlaySize / 2);
                     Grid.SetColumnSpan(header, 1); Grid.SetColumnSpan(seek, 1);
@@ -385,12 +392,16 @@ public sealed class MainView : UserControl
                 wideLayout = wide;
             }
             var width = wide ? Math.Min(UiTheme.DesktopArtworkMax, Math.Max(UiTheme.ThumbnailSize,
-                (Math.Min(host.Bounds.Width, UiTheme.DesktopPlayerMaxWidth + UiTheme.DesktopPlayerMargin.Left + UiTheme.DesktopPlayerMargin.Right)
+                (host.Bounds.Width
                 - UiTheme.DesktopPlayerMargin.Left - UiTheme.DesktopPlayerMargin.Right - UiTheme.DesktopPlayerGap) / 2))
                 : Math.Min(UiTheme.PlayerMaxWidth, host.Bounds.Width - UiTheme.PageMargin.Left - UiTheme.PageMargin.Right);
             var height = host.Bounds.Height - (wide ? UiTheme.DesktopPlayerChromeHeight : UiTheme.PlayerChromeHeight);
             art.Width = art.Height = Math.Max(UiTheme.ThumbnailSize, Math.Min(width, height));
-            if (wide) queuePanel.Height = art.Height;
+            if (wide)
+            {
+                desktopLayout.ColumnDefinitions[0].Width = new GridLength(art.Width);
+                queuePanel.Height = Math.Max(art.Height, height);
+            }
         }
         // Detach initial mobile composition before responsive host takes ownership.
         panel.Children.Clear();

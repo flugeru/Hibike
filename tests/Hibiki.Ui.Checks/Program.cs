@@ -59,6 +59,10 @@ internal static class Program
                     }
                     if (width == 1260)
                     {
+                        var marquee = view.GetVisualDescendants().OfType<Canvas>().Single(c => c.GetType().Name == "ScrollingTitle");
+                        var movingTitle = (TextBlock)marquee.Children[0];
+                        await Task.Delay(2300);
+                        Check(((Avalonia.Media.TranslateTransform)movingTitle.RenderTransform!).X < 0, "Overflow title did not scroll");
                         window.Width = 390; await Task.Delay(300); Capture(view, "player-resized-mobile");
                         window.Width = width; await Task.Delay(300); Capture(view, "player-resized-desktop");
                     }
@@ -88,7 +92,7 @@ internal static class Program
     private sealed class Catalog : IMusicCatalog
     {
         public Task<IReadOnlyList<Track>> SearchAsync(string query, CancellationToken cancellationToken) =>
-            Task.FromResult<IReadOnlyList<Track>>(Enumerable.Range(0, 1000).Select(i => new Track(i.ToString(), "Artist - Long song title (Official Video)", "Artist - Topic", "test", 267.8)).ToArray());
+            Task.FromResult<IReadOnlyList<Track>>(Enumerable.Range(0, 1000).Select(i => new Track(i.ToString(), "Artist - Clair Obscur: Expedition 33 (Original Soundtrack) — A deliberately long title for overflow and responsive layout checks (Official Video)", "Artist - Topic", "test", 267.8)).ToArray());
         public Task<AudioSource> ResolveAsync(Track track, CancellationToken cancellationToken) => Task.FromResult(new AudioSource("test", new Dictionary<string, string>()));
     }
     private sealed class Player : IAudioPlayer
