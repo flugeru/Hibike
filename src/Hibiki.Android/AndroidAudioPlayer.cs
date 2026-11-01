@@ -21,7 +21,9 @@ public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPr
         // Prepare the album art while YT-DLP resolves the stream. Never wait for it
         // before starting the foreground service or fetching the audio URL.
         _artworkTask = NotificationArtwork.LoadAsync(track.Thumbnail, cancellationToken);
-        var intent = new Intent(context, typeof(PlaybackService)).SetAction(PlaybackService.PrepareAction)!.PutExtra("title", track.Title);
+        var intent = new Intent(context, typeof(PlaybackService)).SetAction(PlaybackService.PrepareAction)!
+            .PutExtra("title", track.Title)!
+            .PutExtra("artist", track.Artist);
         await MainAsync(() => { if (Build.VERSION.SdkInt >= BuildVersionCodes.O) context.StartForegroundService(intent); else context.StartService(intent); }).WaitAsync(cancellationToken);
         while (PlaybackService.Instance is null) await Task.Delay(20, cancellationToken);
         var service = PlaybackService.Instance;
