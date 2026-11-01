@@ -104,7 +104,7 @@ public sealed class MainView : UserControl
         {
             _music.Changed -= Refresh; _music.Tick -= RefreshPlayback;
             _music.Changed += Refresh; _music.Tick += RefreshPlayback;
-            _music.StartObserving(); Refresh(); await _music.InitializeAsync();
+            _music.StartObserving(); _listFingerprint = null; Refresh(); await _music.InitializeAsync();
         };
         DetachedFromVisualTree += (_, _) => { _music.Changed -= Refresh; _music.Tick -= RefreshPlayback; _music.StopObserving(); };
         Refresh();
@@ -220,12 +220,15 @@ public sealed class MainView : UserControl
     {
         var grid = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 4, Height = 68 };
         var play = ActionButton("", async () => await _music.PlayAsync(track)); play.Classes.Add("subtle"); play.Padding = new Thickness(0, 8); play.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+        Avalonia.Automation.AutomationProperties.SetName(play, track.Title + " — " + track.Artist);
         var metadata = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = 12 };
         metadata.Children.Add(new Artwork(track, 46));
         var labels = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
         var title = Text(track.Title, 13); title.TextTrimming = TextTrimming.CharacterEllipsis; labels.Children.Add(title);
         var artist = Text(track.Artist + " · " + track.DurationLabel, 11, Muted); artist.TextTrimming = TextTrimming.CharacterEllipsis; labels.Children.Add(artist);
-        Put(metadata, labels, 0, 1); play.Content = metadata; grid.Children.Add(play);
+        Put(metadata, labels, 0, 1); play.Content = metadata;
+        play.SizeChanged += (_, _) => metadata.Width = Math.Max(0, play.Bounds.Width);
+        grid.Children.Add(play);
         var more = IconButton("more", "Opções de " + track.Title, () => Task.CompletedTask);
         var favorite = new MenuItem { Header = _music.IsFavorite(track) ? "Remover dos favoritos" : "Salvar nos favoritos" };
         favorite.Click += async (_, _) => await _music.ToggleFavoriteAsync(track);
@@ -271,7 +274,7 @@ public sealed class MainView : UserControl
         repeat = IconButton("repeat", "Repetir", () => { _music.Repeat = !_music.Repeat; repeat!.Content = Icons.Make("repeat", _music.Repeat ? Accent : Muted, 20); return Task.CompletedTask; }, _music.Repeat ? Accent : Muted); repeat.HorizontalAlignment = HorizontalAlignment.Center; Put(controls, repeat, 0, 4); panel.Children.Add(controls);
         var queue = ActionButton("Fila de reprodução  ·  " + _music.Queue.Count, () => { ClosePlayer(); _page = "queue"; Refresh(); return Task.CompletedTask; }); var queueLabel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         queueLabel.Children.Add(Icons.Make("queue", Muted, 16)); queueLabel.Children.Add(Text("Fila · " + _music.Queue.Count, 12, Muted)); queue.Content = queueLabel;
-        queue.HorizontalAlignment = HorizontalAlignment.Center; panel.Children.Add(queue);
+        queue.MinWidth = 140; queue.HorizontalContentAlignment = HorizontalAlignment.Center; queue.HorizontalAlignment = HorizontalAlignment.Center; panel.Children.Add(queue);
         var scroll = new ScrollViewer { Content = panel, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         _playerPage = new Border { Background = Brush.Parse("#15111D"), Child = scroll };
         Grid.SetColumn(_playerPage, 1); Grid.SetRowSpan(_playerPage, 3); _root.Children.Add(_playerPage);
@@ -281,7 +284,7 @@ public sealed class MainView : UserControl
     private void ClosePlayer()
     {
         if (_playerPage is not null) _root.Children.Remove(_playerPage);
-        _playerPage = null; _showingPlayer = false; _main.IsVisible = true; _bottom.IsVisible = Bounds.Width < 800;
+        _playerPage = null; _showingPlayer = false; _listFingerprint = null; _main.IsVisible = true; _bottom.IsVisible = Bounds.Width < 800;
         _detailTrack = null; _detailSeek = null; _detailPlay = null; _detailTime = null; _detailDuration = null; _seeking = false; Refresh(); Animate(_main);
     }
     private bool HandleBack()
@@ -367,7 +370,7 @@ public sealed class MainView : UserControl
     private static TextBlock Text(string text, double size, string color = "#F3EFF8") => new() { Text = text, FontSize = size, Foreground = Brush.Parse(color) };
     private Button ActionButton(string text, Func<Task> action)
     {
-        var button = new Button { Content = text };
+        var button = new Button { Content = text, HorizontalAlignment = HorizontalAlignment.Stretch };
         button.Click += async (_, _) => { try { await action(); } catch (Exception ex) { PlaybackDiagnostics.Write("Interface", ex.Message); _music.SetStatus(ex.Message); ShowDiagnostics(); } }; return button;
     }
     private Button IconButton(string icon, string label, Func<Task> action, string color = Muted)

@@ -45,6 +45,7 @@ grep -q HIBIKI_PROBE_BACKGROUND_OK artifacts/smoke/playback-probe.txt
 grep -q HIBIKI_PROBE_NOTIFICATION_OK artifacts/smoke/playback-probe.txt
 grep -q HIBIKI_PROBE_RUNTIME_OK artifacts/smoke/playback-probe.txt
 grep -q HIBIKI_PROBE_DONE artifacts/smoke/playback-probe.txt
+grep -q HIBIKI_PROBE_LAYOUT_OK artifacts/smoke/playback-probe.txt
 adb shell am start -W -n "$activity"
 sleep 1
 adb exec-out screencap -p > artifacts/smoke/player.png

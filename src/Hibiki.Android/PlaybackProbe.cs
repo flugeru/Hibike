@@ -1,5 +1,8 @@
 #if HIBIKI_SMOKE_TEST
 using System.Text;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.VisualTree;
 using Android.Content;
 using Hibiki.App;
 using Hibiki.Core.Models;
@@ -107,8 +110,29 @@ internal static class PlaybackProbe
         finally
         {
             foreach (var line in PlaybackDiagnostics.Snapshot().Split('\n')) global::Android.Util.Log.Info("HibikiProbe", line);
+            try
+            {
+                context.StartActivity(new Intent(context, typeof(MainActivity)).AddFlags(ActivityFlags.NewTask | ActivityFlags.SingleTop));
+                await Task.Delay(500);
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => AppServices.OpenPlayerView?.Invoke());
+                await Task.Delay(300);
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => { AppServices.BackHandler?.Invoke(); });
+                await Task.Delay(300);
+                var layoutOk = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    var view = (Avalonia.Application.Current?.ApplicationLifetime as ISingleViewApplicationLifetime)?.MainView;
+                    if (view is null) return false;
+                    var title = view.GetVisualDescendants().OfType<TextBlock>().FirstOrDefault(t => t.Text == "Hikari — Clovis Reyes & VDYCD" && t.IsEffectivelyVisible);
+                    var navigation = view.GetVisualDescendants().OfType<Button>().Where(b => b.Tag is ValueTuple<string, string, string, bool> tag && tag.Item4).ToArray();
+                    global::Android.Util.Log.Info("HibikiProbe", "LAYOUT_BOUNDS title=" + title?.Bounds.ToString() + " nav=" + string.Join(",", navigation.Select(b => b.Bounds.Width)) + " view=" + view.Bounds.Width);
+                    return title is not null && title.Bounds.Width > 40 && title.Bounds.Height > 5 && navigation.Length == 3
+                        && navigation.All(b => b.Bounds.Width >= view.Bounds.Width / 3 - 2);
+                });
+                global::Android.Util.Log.Info("HibikiProbe", layoutOk ? "HIBIKI_PROBE_LAYOUT_OK titles/navigation/return" : "HIBIKI_PROBE_LAYOUT_FAILED titles/navigation/return");
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => AppServices.OpenPlayerView?.Invoke());
+            }
+            catch (Exception ex) { global::Android.Util.Log.Error("HibikiProbe", "HIBIKI_PROBE_LAYOUT_FAILED " + ex.Message); }
             global::Android.Util.Log.Info("HibikiProbe", "HIBIKI_PROBE_DONE");
-            Avalonia.Threading.Dispatcher.UIThread.Post(() => AppServices.OpenPlayerView?.Invoke());
         }
     }
 }
