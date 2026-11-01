@@ -111,7 +111,7 @@ public sealed class MainView : UserControl
         _play = IconButton("play", "Reproduzir, pausar ou cancelar", _music.ToggleAsync);
         _mini = BuildMiniPlayer(); Put(_root, _mini, 1, 1);
         _bottom = new Grid { ColumnDefinitions = new("*,*,*"), Height = Ui.Size("NavigationHeight"), Background = Ui.Brush("Surface") };
-        var tabs = new[] { ("explore", "Buscar", "search"), ("library", "Biblioteca", "library"), ("queue", "Fila", "queue") };
+        var tabs = new[] { ("explore", "Buscar", "search"), ("library", "Biblioteca", "heart"), ("queue", "Fila", "queue") };
         for (var index = 0; index < tabs.Length; index++)
         {
             var (key, label, icon) = tabs[index];
@@ -143,7 +143,7 @@ public sealed class MainView : UserControl
         var panel = new StackPanel { Spacing = Ui.Size("Space8"), Margin = Ui.Insets("SidebarMargin") };
         var title = Text("Sua música", 18); title.Margin = Ui.Insets("SidebarHeadingMargin"); panel.Children.Add(title);
         panel.Children.Add(NavButton("explore", "Buscar", "search", false));
-        panel.Children.Add(NavButton("library", "Biblioteca", "library", false));
+        panel.Children.Add(NavButton("library", "Biblioteca", "heart", false));
         panel.Children.Add(NavButton("queue", "Fila", "queue", false));
         return new Border { Child = panel, Background = Ui.Brush("Surface") };
     }
