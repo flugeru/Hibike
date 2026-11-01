@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Animation;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -25,7 +26,16 @@ internal sealed class Artwork : Border
         };
         var panel = new Grid();
         panel.Children.Add(Icons.Make("wave", Ui.Brush("TextTertiary"), Math.Max(24, size * 0.4)));
-        var picture = new Image { Stretch = Stretch.UniformToFill }; panel.Children.Add(picture);
+        var picture = new Image
+        {
+            Stretch = Stretch.UniformToFill,
+            Opacity = 0,
+            Transitions = new Transitions
+            {
+                new DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(260) }
+            }
+        };
+        panel.Children.Add(picture);
         Child = panel;
         if (track?.Thumbnail is { } url)
         {
@@ -50,6 +60,11 @@ internal sealed class Artwork : Border
                     var bitmap = Bitmap.DecodeToWidth(memory, (int)Math.Max(128, size * 2));
                     if (token.IsCancellationRequested) { bitmap.Dispose(); return; }
                     _bitmap = bitmap; picture.Source = bitmap;
+                    // Start after the first frame so new artwork fades in rather than popping.
+                    DispatcherTimer.RunOnce(() =>
+                    {
+                        if (!token.IsCancellationRequested) picture.Opacity = 1;
+                    }, TimeSpan.FromMilliseconds(40));
                     if (onDominantColor is not null)
                     {
                         try { onDominantColor(DominantColor(bitmap)); }
@@ -61,7 +76,7 @@ internal sealed class Artwork : Border
         }
         DetachedFromVisualTree += (_, _) =>
         {
-            _cancel?.Cancel(); picture.Source = null; _bitmap?.Dispose(); _bitmap = null;
+            _cancel?.Cancel(); picture.Opacity = 0; picture.Source = null; _bitmap?.Dispose(); _bitmap = null;
         };
     }
 
