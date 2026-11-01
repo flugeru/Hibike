@@ -35,7 +35,7 @@ public sealed class MainView : UserControl
     private readonly TextBlock _nowTitle = Text("", 13);
     private readonly TextBlock _nowArtist = Text("", 11, Muted);
     private readonly Button _play;
-    private readonly ProgressBar _progress = new() { Height = 2, Minimum = 0, Maximum = 1, Foreground = Accent, Background = Ui.Brush("TrackRail") };
+    private readonly ProgressBar _progress = new() { Height = Ui.Size("ProgressHeight"), Minimum = 0, Maximum = 1, Foreground = Accent, Background = Ui.Brush("TrackRail") };
     private readonly Grid _bottom;
     private readonly List<Button> _nav = [];
     private Border? _overlay;
@@ -57,13 +57,15 @@ public sealed class MainView : UserControl
     public MainView(MusicController music)
     {
         _music = music; Background = Ui.Brush("Background");
+        TopLevel.SetAutoSafeAreaPadding(this, true);
+        TopLevel.SetSystemBarColor(this, (SolidColorBrush)Ui.Brush("Background"));
         _sidebar = BuildSidebar(); _root.Children.Add(_sidebar); Grid.SetRowSpan(_sidebar, 3);
-        _main = new Border { Padding = new Thickness(16, 10, 16, 4) }; Put(_root, _main, 0, 1);
+        _main = new Border { Padding = Ui.Insets("CompactPageInsets") }; Put(_root, _main, 0, 1);
         var content = new Grid { RowDefinitions = new("Auto,Auto,Auto,*,Auto"), RowSpacing = 12 }; _main.Child = content;
         // One balanced toolbar: the actions stay grouped, even on narrow phones.
         var header = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 12, MinHeight = 48, Margin = new Thickness(0, 0, 0, 4) };
         var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 9, VerticalAlignment = VerticalAlignment.Center };
-        brand.Children.Add(Icons.Make("wave", Accent, 22));
+        brand.Children.Add(Icons.Make("wave", Muted, 22));
         var title = Text("Hibiki", 21); title.FontWeight = FontWeight.SemiBold;
         title.VerticalAlignment = VerticalAlignment.Center; brand.Children.Add(title);
         header.Children.Add(brand);
@@ -100,8 +102,8 @@ public sealed class MainView : UserControl
         _statusBox = new Border { Child = statusRow, Padding = new Thickness(10, 2), Background = Ui.Brush("Surface"), CornerRadius = new CornerRadius(10) }; Put(content, _statusBox, 4, 0);
         _play = IconButton("play", "Reproduzir, pausar ou cancelar", _music.ToggleAsync);
         _mini = BuildMiniPlayer(); Put(_root, _mini, 1, 1);
-        _bottom = new Grid { ColumnDefinitions = new("*,*,*"), Height = 66, Background = Ui.Brush("Surface") };
-        var tabs = new[] { ("explore", "Buscar", "search"), ("library", "Biblioteca", "heart"), ("queue", "Fila", "queue") };
+        _bottom = new Grid { ColumnDefinitions = new("*,*,*"), Height = Ui.Size("NavigationHeight"), Background = Ui.Brush("Surface") };
+        var tabs = new[] { ("explore", "Buscar", "search"), ("library", "Biblioteca", "library"), ("queue", "Fila", "queue") };
         for (var index = 0; index < tabs.Length; index++)
         {
             var (key, label, icon) = tabs[index];
@@ -115,7 +117,7 @@ public sealed class MainView : UserControl
             _sidebar.IsVisible = !compact; _bottom.IsVisible = compact;
             _main.IsVisible = !_showingPlayer;
             _bottom.IsVisible = compact && !_showingPlayer;
-            _main.Padding = compact ? new Thickness(16, 10, 16, 4) : new Thickness(32, 24, 32, 12);
+            _main.Padding = Ui.Insets(compact ? "CompactPageInsets" : "DesktopPageInsets");
         };
         AppServices.BackHandler = HandleBack; AppServices.OpenPlayerView = ShowPlayer;
         AttachedToVisualTree += async (_, _) =>
@@ -132,7 +134,7 @@ public sealed class MainView : UserControl
         var panel = new StackPanel { Spacing = 8, Margin = new Thickness(14, 30) };
         var title = Text("Sua música", 18); title.Margin = new Thickness(12, 0, 0, 22); panel.Children.Add(title);
         panel.Children.Add(NavButton("explore", "Buscar", "search", false));
-        panel.Children.Add(NavButton("library", "Biblioteca", "heart", false));
+        panel.Children.Add(NavButton("library", "Biblioteca", "library", false));
         panel.Children.Add(NavButton("queue", "Fila", "queue", false));
         return new Border { Child = panel, Background = Ui.Brush("Surface") };
     }
@@ -141,14 +143,14 @@ public sealed class MainView : UserControl
         var button = ActionButton("", () => { _page = key; Refresh(); Animate(_tracks); return Task.CompletedTask; });
         button.Classes.Add("nav"); button.Classes.Add(vertical ? "bottom-nav" : "side-nav");
         button.Tag = (key, label, icon, vertical); _nav.Add(button);
-        button.Padding = vertical ? new Thickness(8, 4) : new Thickness(12, 8);
+        button.Padding = Ui.Insets(vertical ? "NavInsets" : "SideNavInsets");
         button.HorizontalContentAlignment = vertical ? HorizontalAlignment.Center : HorizontalAlignment.Left;
         return button;
     }
     private Border BuildMiniPlayer()
     {
         var grid = new Grid { RowDefinitions = new("Auto,Auto") };
-        var row = new Grid { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = 2, Margin = new Thickness(10, 6) };
+        var row = new Grid { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = 2, Margin = Ui.Insets("MiniContentInsets") };
         var open = ActionButton("", () => { ShowPlayer(); return Task.CompletedTask; });
         Avalonia.Automation.AutomationProperties.SetName(open, "Abrir player");
         open.Classes.Add("track"); open.Padding = new Thickness(0); open.MinWidth = 0;
@@ -162,8 +164,11 @@ public sealed class MainView : UserControl
         info.Children.Add(_nowTitle); Put(info, _nowArtist, 1, 0);
         Put(metadata, info, 0, 1); open.Content = metadata; row.Children.Add(open);
         Put(row, _play, 0, 1); Put(row, IconButton("next", "Próxima faixa", _music.NextAsync), 0, 2);
-        grid.Children.Add(row); Put(grid, _progress, 1, 0);
-        return new Border { Child = grid, Margin = new Thickness(12, 5, 12, 7), CornerRadius = new CornerRadius(14), ClipToBounds = true, Background = Ui.Brush("SurfaceElevated"), BorderThickness = new Thickness(0, 1, 0, 0), BorderBrush = Ui.Brush("Outline") };
+        grid.Children.Add(row);
+        _progress.Margin = Ui.Insets("MiniProgressMargin");
+        Put(grid, _progress, 1, 0);
+        return new Border { Child = grid, Margin = Ui.Insets("MiniMargin"), CornerRadius = Ui.Radius("CardRadius"),
+            ClipToBounds = true, Background = Ui.Brush("SurfaceElevated"), BoxShadow = Ui.Shadow("CardShadow") };
     }
     private async Task SearchAsync() { _page = "explore"; await _music.SearchAsync(_search.Text ?? ""); }
     private async Task OpenLocalAsync()
@@ -217,15 +222,16 @@ public sealed class MainView : UserControl
                 HorizontalAlignment = vertical ? HorizontalAlignment.Center : HorizontalAlignment.Left,
                 VerticalAlignment = VerticalAlignment.Center };
             var image = Icons.Make(icon, active ? Accent : Muted, 20);
-            image.HorizontalAlignment = HorizontalAlignment.Center; stack.Children.Add(image);
-            var name = Text(label, vertical ? 10 : 13, active ? Accent : Muted);
+            image.HorizontalAlignment = HorizontalAlignment.Center; image.VerticalAlignment = VerticalAlignment.Center;
+            if (vertical)
+                stack.Children.Add(new Border { Width = Ui.Size("NavigationPillWidth"), Height = Ui.Size("NavigationPillHeight"),
+                    CornerRadius = Ui.Radius("PillRadius"), Background = active ? Ui.Brush("ActivePill") : Brushes.Transparent,
+                    Child = image });
+            else stack.Children.Add(image);
+            var name = Text(label, vertical ? 12 : 13, active ? Accent : Muted);
             name.VerticalAlignment = VerticalAlignment.Center;
             if (vertical) name.TextAlignment = TextAlignment.Center;
             stack.Children.Add(name);
-            if (vertical)
-                stack.Children.Add(new Border { Width = 28, Height = 3, CornerRadius = new CornerRadius(2),
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    Background = active ? Accent : Brushes.Transparent });
             button.Content = stack;
         }
         IReadOnlyList<Track> tracks = _page switch { "library" => _music.Favorites, "queue" => _music.Queue, _ => _music.Results };
@@ -242,7 +248,7 @@ public sealed class MainView : UserControl
         {
             var empty = new StackPanel { Spacing = 14, Margin = new Thickness(12, 56, 12, 0),
                 HorizontalAlignment = HorizontalAlignment.Center, MaxWidth = 320 };
-            var icon = Icons.Make(_page == "library" ? "heart" : "wave", Accent, 32); icon.HorizontalAlignment = HorizontalAlignment.Center; empty.Children.Add(icon);
+            var icon = Icons.Make(_page == "library" ? "heart" : "wave", Muted, 32); icon.HorizontalAlignment = HorizontalAlignment.Center; empty.Children.Add(icon);
             var message = Text(_page switch { "library" => "Suas favoritas ficam aqui.", "queue" => "Adicione músicas à fila.", _ => "Busque uma música ou artista\npara começar a ouvir." }, 13, Muted);
             message.TextAlignment = TextAlignment.Center; empty.Children.Add(message);
             var import = ActionButton("Abrir áudio local", OpenLocalAsync);
@@ -398,7 +404,9 @@ public sealed class MainView : UserControl
     {
         foreach (var row in _rows.ToArray()) UpdateRow(row, _music.Pending ?? _music.Current);
         var icon = _music.LoadingAudio ? "close" : _music.Player.IsPlaying ? "pause" : "play";
-        _play.Content = Icons.Make(icon, Accent, 20);
+        _play.Content = new Border { Width = Ui.Size("MiniPlayVisualSize"), Height = Ui.Size("MiniPlayVisualSize"),
+            CornerRadius = Ui.Radius("PillRadius"), Background = Accent,
+            Child = Icons.Make(icon, Ui.Brush("OnAccent"), 20) };
         if (_detailPlay is not null) _detailPlay.Content = Icons.Make(icon, Ui.Brush("OnAccent"), 24);
         var duration = _music.Player.Duration; if (duration <= 0) duration = _music.Current?.DurationSeconds ?? 0;
         _progress.Maximum = Math.Max(1, duration); _progress.Value = Math.Min(_music.Player.Position, _progress.Maximum);

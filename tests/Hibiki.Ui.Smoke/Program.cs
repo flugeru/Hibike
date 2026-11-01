@@ -10,9 +10,11 @@ using Hibiki.Core.Services;
 var directory = Path.Combine(Path.GetTempPath(), "hibiki-ui-smoke-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(directory);
 AppServices.Configure(new FakeCatalog(), new FakePlayer(), directory);
+Console.WriteLine("Starting the Avalonia headless session.");
 using var session = HeadlessUnitTestSession.StartNew(typeof(SmokeAppBuilder));
 await session.Dispatch(() =>
 {
+    Console.WriteLine("Building the Hibiki views.");
     var controller = AppServices.CreateController();
     foreach (var width in new[] { 360d, 430d })
     {

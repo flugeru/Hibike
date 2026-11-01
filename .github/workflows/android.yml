@@ -42,7 +42,7 @@ jobs:
       - name: Run core behavior tests
         run: dotnet test tests/Hibiki.Core.Tests/Hibiki.Core.Tests.csproj -c Release --logger "trx;LogFileName=core.trx" --results-directory artifacts/tests
       - name: Exercise Avalonia interface without an emulator
-        run: dotnet run --project tests/Hibiki.Ui.Smoke/Hibiki.Ui.Smoke.csproj -c Release
+        run: timeout 120s dotnet run --project tests/Hibiki.Ui.Smoke/Hibiki.Ui.Smoke.csproj -c Release
       - name: Prepare verified Python, QuickJS and YT-DLP
         run: python3 scripts/prepare_android_runtime.py
       - name: Restore development signing key

@@ -29,6 +29,7 @@
   <Style Selector="ListBox.music-list ListBoxItem"><Setter Property="Padding" Value="{DynamicResource NoThickness}" /><Setter Property="HorizontalContentAlignment" Value="Stretch" /><Setter Property="Background" Value="Transparent" /></Style>
   <Style Selector="ListBox.music-list ListBoxItem:selected /template/ ContentPresenter"><Setter Property="Background" Value="Transparent" /></Style>
   <Style Selector="Slider"><Setter Property="MinHeight" Value="{DynamicResource Space24}" /></Style>
+  <Style Selector="ProgressBar /template/ Border#PART_Indicator"><Setter Property="CornerRadius" Value="{DynamicResource PillRadius}" /></Style>
   <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
    <Setter Property="Background" Value="{DynamicResource Hover}" />
   </Style>

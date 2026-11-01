@@ -18,4 +18,5 @@ internal static class Ui
     public static double Size(string key) => Resource<double>(key);
     public static CornerRadius Radius(string key) => Resource<CornerRadius>(key);
     public static Thickness Insets(string key) => Resource<Thickness>(key);
+    public static BoxShadows Shadow(string key) => BoxShadows.Parse(Resource<string>(key));
 }
