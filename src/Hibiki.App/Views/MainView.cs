@@ -3,6 +3,7 @@ using Avalonia.Animation;
 using Avalonia.Threading;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Layout;
@@ -21,13 +22,13 @@ public sealed class MainView : UserControl
     private readonly Border _sidebar;
     private readonly Border _main;
     private readonly TextBox _search = new() { PlaceholderText = "Música, artista ou link", MinWidth = 0, Height = 48, MinHeight = 48, FontSize = 14 };
-    private readonly TextBlock _heading = Text("Buscar músicas", 16);
-    private readonly TextBlock _count = Text("", 11, Muted);
-    private readonly StackPanel _tracks = new() { Spacing = 0 };
+    private readonly TextBlock _heading = Text("Buscar músicas", 18);
+    private readonly TextBlock _count = Text("", 12, "TextTertiaryBrush");
+    private readonly ListBox _trackList = new() { SelectionMode = SelectionMode.Single, Padding = new Thickness(0) };
+    private readonly StackPanel _empty = new() { Spacing = 12, HorizontalAlignment = HorizontalAlignment.Center };
     private readonly TextBlock _status = Text("", 12, Muted);
     private readonly Border _statusBox;
-    private readonly Button _searchButton;
-    private readonly Button _cancelSearch;
+    private readonly Button _clearSearch;
     private readonly Border _mini;
     private readonly ContentControl _nowArt = new();
     private readonly TextBlock _nowTitle = Text("", 13);
@@ -38,7 +39,8 @@ public sealed class MainView : UserControl
     private readonly List<Button> _nav = [];
     private Border? _overlay;
     private Border? _playerPage;
-    private readonly Dictionary<string, Border> _rows = new();
+    private readonly Dictionary<string, (Border Surface, TextBlock Title, Border Equalizer)> _rows = new();
+    private int _equalizerFrame;
     private string? _listFingerprint;
     private bool _showingPlayer;
     private Slider? _detailSeek;
@@ -69,17 +71,60 @@ public sealed class MainView : UserControl
         headerActions.Children.Add(IconButton("settings", "Configurações e diagnóstico", () => { ShowSettings(); return Task.CompletedTask; }));
         Put(header, headerActions, 0, 1);
         content.Children.Add(header);
-        var searchRow = new Grid { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = 8 };
-        searchRow.Children.Add(_search);
-        _searchButton = IconButton("search", "Buscar", SearchAsync); _searchButton.Classes.Remove("subtle"); _searchButton.Classes.Add("primary"); _searchButton.Content = Icons.Make("search", "#211337", 19); _searchButton.Width = _searchButton.Height = 48;
-        Put(searchRow, _searchButton, 0, 1);
-        _cancelSearch = IconButton("close", "Cancelar busca", () => { _music.CancelSearch(); return Task.CompletedTask; }); _cancelSearch.Width = _cancelSearch.Height = 48; Put(searchRow, _cancelSearch, 0, 2);
-        _search.KeyDown += async (_, e) => { if (e.Key == Key.Enter) { e.Handled = true; await SearchAsync(); } };
-        Put(content, searchRow, 1, 0);
-        var heading = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 8, Margin = new Thickness(0, 8, 0, 0) };
-        _heading.TextTrimming = TextTrimming.CharacterEllipsis; _heading.FontWeight = FontWeight.SemiBold;
-        _count.VerticalAlignment = VerticalAlignment.Center; heading.Children.Add(_heading); Put(heading, _count, 0, 1); Put(content, heading, 2, 0);
-        Put(content, new ScrollViewer { Content = _tracks, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden }, 3, 0);
+        _search.Height = _search.MinHeight = Ui.D("TouchTarget");
+        _search.VerticalContentAlignment = VerticalAlignment.Center;
+        _search.InnerLeftContent = Icons.Make("search", "TextSecondaryBrush", Ui.D("IconSize"));
+        _clearSearch = IconButton("close", "Limpar pesquisa", () =>
+        {
+            if (_music.Searching) _music.CancelSearch();
+            _search.Text = "";
+            _search.Focus();
+            return Task.CompletedTask;
+        }, "TextSecondaryBrush");
+        _clearSearch.IsVisible = false;
+        _search.InnerRightContent = _clearSearch;
+        _search.TextChanged += (_, _) => _clearSearch.IsVisible = !string.IsNullOrEmpty(_search.Text);
+        _search.KeyDown += async (_, e) =>
+        {
+            if (e.Key == Key.Enter) { e.Handled = true; await SearchAsync(); }
+        };
+        Put(content, _search, 1, 0);
+
+        var heading = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = Ui.D("Space8"),
+            Margin = Ui.Insets("Space0", "Space12", "Space0", "Space0") };
+        _heading.FontSize = Ui.D("TypeHeading"); _heading.TextTrimming = TextTrimming.CharacterEllipsis;
+        _heading.FontWeight = FontWeight.SemiBold;
+        _count.FontSize = Ui.D("TypeCaption");
+        _count.VerticalAlignment = VerticalAlignment.Center;
+        _count.HorizontalAlignment = HorizontalAlignment.Right;
+        heading.Children.Add(_heading); Put(heading, _count, 0, 1);
+        Put(content, heading, 2, 0);
+
+        // ListBox keeps its own constrained viewport and virtualizes off-screen rows.
+        _trackList.ItemTemplate = new FuncDataTemplate<Track>((track, _) => TrackRow(track));
+        _trackList.HorizontalAlignment = HorizontalAlignment.Stretch;
+        _trackList.VerticalAlignment = VerticalAlignment.Stretch;
+        _trackList.MinHeight = 0;
+        var listHost = new Grid { ClipToBounds = true };
+        listHost.Children.Add(_trackList);
+        _empty.Spacing = Ui.D("Space12");
+        _empty.Margin = Ui.Insets("Space16", "Space24", "Space16", "Space0");
+        listHost.Children.Add(_empty);
+        var fade = new Border { IsHitTestVisible = false, Height = Ui.D("Space16"),
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Background = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+                GradientStops =
+                [
+                    new GradientStop(Ui.Color("TransparentBrush"), 0),
+                    new GradientStop(Ui.Color("BackgroundBrush"), 1)
+                ]
+            }
+        };
+        listHost.Children.Add(fade);
+        Put(content, listHost, 3, 0);
         var statusRow = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 8 };
         _status.TextWrapping = TextWrapping.Wrap; _status.MaxLines = 2; _status.VerticalAlignment = VerticalAlignment.Center; statusRow.Children.Add(_status);
         Put(statusRow, IconButton("info", "Ver diagnóstico", () => { ShowDiagnostics(); return Task.CompletedTask; }), 0, 1);
@@ -124,7 +169,7 @@ public sealed class MainView : UserControl
     }
     private Button NavButton(string key, string label, string icon, bool vertical)
     {
-        var button = ActionButton("", () => { _page = key; Refresh(); Animate(_tracks); return Task.CompletedTask; });
+        var button = ActionButton("", () => { _page = key; Refresh(); Animate(_trackList); return Task.CompletedTask; });
         button.Classes.Add("nav"); button.Classes.Add(vertical ? "bottom-nav" : "side-nav");
         button.Tag = (key, label, icon, vertical); _nav.Add(button);
         button.Padding = vertical ? new Thickness(8, 4) : new Thickness(12, 8);
@@ -192,7 +237,8 @@ public sealed class MainView : UserControl
     private void Refresh()
     {
         _statusBox.IsVisible = _music.Searching || _music.LoadingAudio || _music.HasError;
-        _status.Text = _music.Status; _cancelSearch.IsVisible = _music.Searching; _searchButton.IsEnabled = !_music.Searching;
+        _status.Text = _music.Status;
+        _clearSearch.IsVisible = !string.IsNullOrEmpty(_search.Text);
         foreach (var button in _nav)
         {
             var (key, label, icon, vertical) = ((string, string, string, bool))button.Tag!;
@@ -220,75 +266,132 @@ public sealed class MainView : UserControl
         var fingerprint = _page + ":" + string.Join("|", tracks.Select(t => t.Id + _music.IsFavorite(t)));
         if (fingerprint != _listFingerprint)
         {
-        _listFingerprint = fingerprint; _rows.Clear(); _tracks.Children.Clear();
-        if (tracks.Count == 0)
-        {
-            var empty = new StackPanel { Spacing = 14, Margin = new Thickness(12, 56, 12, 0),
-                HorizontalAlignment = HorizontalAlignment.Center, MaxWidth = 320 };
-            var icon = Icons.Make(_page == "library" ? "heart" : "wave", Accent, 32); icon.HorizontalAlignment = HorizontalAlignment.Center; empty.Children.Add(icon);
-            var message = Text(_page switch { "library" => "Suas favoritas ficam aqui.", "queue" => "Adicione músicas à fila.", _ => "Busque uma música ou artista\npara começar a ouvir." }, 13, Muted);
-            message.TextAlignment = TextAlignment.Center; empty.Children.Add(message);
-            var import = ActionButton("Abrir áudio local", OpenLocalAsync);
-            import.Width = 200; import.HorizontalAlignment = HorizontalAlignment.Center;
-            import.Background = Brush.Parse("#211B2B");
-            empty.Children.Add(import); _tracks.Children.Add(empty);
-        }
-        else foreach (var track in tracks) _tracks.Children.Add(TrackRow(track));
+            _listFingerprint = fingerprint;
+            _rows.Clear();
+            _empty.Children.Clear();
+            _trackList.ItemsSource = tracks.Count > 0 ? tracks.ToArray() : null;
+            _trackList.IsVisible = tracks.Count > 0;
+            _empty.IsVisible = tracks.Count == 0;
+            if (tracks.Count == 0)
+            {
+                var icon = Icons.Make(_page == "library" ? "library" : "wave", "TextSecondaryBrush", Ui.D("IconSize"));
+                icon.HorizontalAlignment = HorizontalAlignment.Center;
+                _empty.Children.Add(icon);
+                var message = Text(_page switch
+                {
+                    "library" => "Suas favoritas ficam aqui.",
+                    "queue" => "Adicione músicas à fila.",
+                    _ => "Busque uma música ou artista\npara começar a ouvir."
+                }, Ui.D("TypeBody"), "TextSecondaryBrush");
+                message.TextAlignment = TextAlignment.Center; _empty.Children.Add(message);
+                var import = ActionButton("Abrir áudio local", OpenLocalAsync);
+                import.Width = Ui.D("SidebarWidth");
+                import.HorizontalAlignment = HorizontalAlignment.Center;
+                import.Background = Ui.B("SurfaceBrush");
+                _empty.Children.Add(import);
+            }
         }
         var displayed = _music.Pending ?? _music.Current;
         _mini.IsVisible = displayed is not null && !_showingPlayer;
         foreach (var (id, row) in _rows)
-        {
-            var current = id == displayed?.Id;
-            row.Background = current ? Brush.Parse("#251E32") : Brushes.Transparent;
-            row.BorderBrush = current ? Brush.Parse("#443357") : Brushes.Transparent;
-        }
+            UpdateRowState(id, row, displayed);
         if (!Equals(displayed, _shownTrack)) { _shownTrack = displayed; _nowArt.Content = new Artwork(displayed, 40); }
         _nowTitle.Text = displayed?.Title;
         _nowArtist.Text = _music.LoadingAudio ? _music.Status : displayed?.Artist;
         if (_detailPlay is not null && displayed is not null && !Equals(_detailTrack, displayed)) ShowPlayer();
         RefreshPlayback();
     }
+    private void UpdateRowState(string id, (Border Surface, TextBlock Title, Border Equalizer) row, Track? current)
+    {
+        var active = current?.Id == id;
+        row.Surface.Background = active ? Ui.B("SurfaceElevatedBrush") : Ui.B("TransparentBrush");
+        row.Surface.BorderBrush = active ? Ui.B("BorderBrush") : Ui.B("TransparentBrush");
+        row.Title.Foreground = active ? Ui.B("AccentBrush") : Ui.B("TextPrimaryBrush");
+        row.Equalizer.IsVisible = active;
+        // A subtle pulse while playing; paused keeps the equalizer still.
+        row.Equalizer.Opacity = active && _music.Player.IsPlaying && _equalizerFrame % 2 == 0 ? 0.7 : 1;
+    }
+
     private Control TrackRow(Track track)
     {
-        // Fixed cover/menu columns; text gets only the remaining width and ellipsizes.
-        var grid = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 4,
-            Height = 70, MinWidth = 0 };
+        var row = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = Ui.D("Space4"),
+            Height = Ui.D("RowHeight"), MinWidth = 0 };
         var play = ActionButton("", async () => await _music.PlayAsync(track));
-        play.Classes.Add("track"); play.Padding = new Thickness(4, 8);
+        play.Classes.Add("track"); play.Padding = Ui.Inset("Space0");
         play.MinWidth = 0; play.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-        Avalonia.Automation.AutomationProperties.SetName(play, track.Title + " — " + track.Artist);
+        Avalonia.Automation.AutomationProperties.SetName(play,
+            TrackTextFormatter.Title(track.Title, track.Artist) + " — " + TrackTextFormatter.Artist(track.Artist));
 
-        var metadata = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = 12, MinWidth = 0 };
-        metadata.Children.Add(new Artwork(track, 46)
+        var metadata = new Grid { ColumnDefinitions = new("Auto,*,Auto"),
+            ColumnSpacing = Ui.D("Space8"), MinWidth = 0 };
+        var cover = new Grid { Width = Ui.D("ThumbSize"), Height = Ui.D("ThumbSize") };
+        cover.Children.Add(new Artwork(track, Ui.D("ThumbSize"))
         { VerticalAlignment = VerticalAlignment.Center });
-        var labels = new Grid { RowDefinitions = new("Auto,Auto"), RowSpacing = 4, MinWidth = 0,
-            VerticalAlignment = VerticalAlignment.Center };
-        var title = Text(track.Title, 13);
-        title.TextTrimming = TextTrimming.CharacterEllipsis; title.MaxLines = 1;
-        labels.Children.Add(title);
-        var artist = Text(track.Artist + " · " + track.DurationLabel, 11, Muted);
-        artist.TextTrimming = TextTrimming.CharacterEllipsis; artist.MaxLines = 1;
-        Put(labels, artist, 1, 0);
-        Put(metadata, labels, 0, 1);
-        play.Content = metadata; grid.Children.Add(play);
+        var equalizer = new Border
+        {
+            Child = Icons.Make("equalizer", "AccentBrush", Ui.D("IconSize")),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            CornerRadius = Ui.Radius("RadiusThumb"),
+            Background = Ui.B("SurfaceElevatedBrush"),
+            IsVisible = false
+        };
+        cover.Children.Add(equalizer);
+        metadata.Children.Add(cover);
 
-        var more = IconButton("more", "Opções de " + track.Title, () => Task.CompletedTask);
+        var labels = new Grid { RowDefinitions = new("Auto,Auto"),
+            RowSpacing = Ui.D("Space4"), MinWidth = 0,
+            VerticalAlignment = VerticalAlignment.Center };
+        var title = Text(TrackTextFormatter.Title(track.Title, track.Artist),
+            Ui.D("TypeTitle"), "TextPrimaryBrush");
+        title.TextTrimming = TextTrimming.CharacterEllipsis; title.MaxLines = 1;
+        title.FontWeight = FontWeight.SemiBold;
+        labels.Children.Add(title);
+        var artist = Text(TrackTextFormatter.Artist(track.Artist),
+            Ui.D("TypeCaption"), "TextSecondaryBrush");
+        artist.TextTrimming = TextTrimming.CharacterEllipsis; artist.MaxLines = 1;
+        Put(labels, artist, 1, 0); Put(metadata, labels, 0, 1);
+
+        var duration = Text(track.DurationLabel, Ui.D("TypeCaption"), "TextTertiaryBrush");
+        duration.TextTrimming = TextTrimming.CharacterEllipsis;
+        duration.VerticalAlignment = VerticalAlignment.Center;
+        duration.HorizontalAlignment = HorizontalAlignment.Right;
+        Put(metadata, duration, 0, 2);
+
+        play.Content = metadata; row.Children.Add(play);
+        var more = IconButton("more", "Opções de " + track.Title,
+            () => Task.CompletedTask, "TextSecondaryBrush");
         more.VerticalAlignment = VerticalAlignment.Center;
-        var favorite = new MenuItem { Header = _music.IsFavorite(track) ? "Remover dos favoritos" : "Salvar nos favoritos" };
+        var favorite = new MenuItem { Header = _music.IsFavorite(track)
+            ? "Remover dos favoritos" : "Salvar nos favoritos" };
         favorite.Click += async (_, _) => await _music.ToggleFavoriteAsync(track);
         var queue = new MenuItem { Header = "Adicionar à fila" };
         queue.Click += (_, _) => _music.Enqueue(track);
         var menu = new ContextMenu { ItemsSource = new[] { favorite, queue } };
         more.Click += (_, _) => menu.Open(more);
-        Put(grid, more, 0, 1);
+        Put(row, more, 0, 1);
 
-        var border = new Border { Child = grid, Padding = new Thickness(4, 0),
-            CornerRadius = new CornerRadius(12), Margin = new Thickness(0, 3),
-            BorderThickness = new Thickness(1), BorderBrush = Brushes.Transparent,
-            ClipToBounds = true };
-        _rows[track.Id] = border;
-        return border;
+        var surface = new Border
+        {
+            Child = row,
+            CornerRadius = Ui.Radius("RadiusCard"),
+            Margin = Ui.Insets("Space0", "Space4"),
+            BorderThickness = new Thickness(Ui.D("TrackBorder")),
+            BorderBrush = Ui.B("TransparentBrush"),
+            ClipToBounds = true
+        };
+        var rendered = (surface, title, equalizer);
+        surface.AttachedToVisualTree += (_, _) =>
+        {
+            _rows[track.Id] = rendered;
+            UpdateRowState(track.Id, rendered, _music.Pending ?? _music.Current);
+        };
+        surface.DetachedFromVisualTree += (_, _) =>
+        {
+            if (_rows.TryGetValue(track.Id, out var live) && ReferenceEquals(live.Surface, surface))
+                _rows.Remove(track.Id);
+        };
+        return surface;
     }
     private void ShowPlayer()
     {
@@ -366,6 +469,9 @@ public sealed class MainView : UserControl
     }
     private void RefreshPlayback()
     {
+        _equalizerFrame++;
+        foreach (var (id, row) in _rows)
+            UpdateRowState(id, row, _music.Pending ?? _music.Current);
         var icon = _music.LoadingAudio ? "close" : _music.Player.IsPlaying ? "pause" : "play";
         _play.Content = Icons.Make(icon, Accent, 20);
         if (_detailPlay is not null) _detailPlay.Content = Icons.Make(icon, "#211337", 20);
