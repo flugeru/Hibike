@@ -29,10 +29,11 @@ public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer
         var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         player.SetAudioAttributes(new AudioAttributes.Builder()!.SetUsage(AudioUsageKind.Media)!
             .SetContentType(AudioContentType.Music)!.Build());
-        player.Prepared += (_, _) => ready.TrySetResult();
+        player.Prepared += (_, _) => { PlaybackDiagnostics.Write("Player", "Áudio preparado."); ready.TrySetResult(); };
         player.Error += (_, e) =>
         {
             e.Handled = true;
+            PlaybackDiagnostics.Write("Player", $"Erro nativo: {e.What}/{e.Extra}");
             _prepared = false;
             var message = $"Falha no áudio ({e.What}/{e.Extra}). Tente reproduzir a faixa novamente.";
             if (!ready.TrySetException(new IOException(message))) Failed?.Invoke(this, message);
@@ -45,6 +46,7 @@ public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer
             else if (Uri.TryCreate(source.Url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https")
                 player.SetDataSource(context, global::Android.Net.Uri.Parse(source.Url)!, new Dictionary<string, string>(source.Headers));
             else player.SetDataSource(source.Url);
+            PlaybackDiagnostics.Write("Player", "Iniciando preparação do áudio.");
             player.PrepareAsync();
             await ready.Task.WaitAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();

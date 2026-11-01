@@ -19,6 +19,8 @@ public sealed class MusicController
     public ObservableCollection<Track> Favorites { get; } = [];
     public ObservableCollection<Track> Queue { get; } = [];
     public Track? Current { get; private set; }
+    public Track? Pending { get; private set; }
+    public bool HasError { get; private set; }
     public string Status { get; private set; } = "Pronto para descobrir seu próximo som.";
     public bool Searching { get; private set; }
     public bool LoadingAudio { get; private set; }
@@ -32,7 +34,7 @@ public sealed class MusicController
         _catalog = catalog; Player = player; _store = store; DataDirectory = directory;
         Player.Ended += (_, _) => Dispatcher.UIThread.Post(async () =>
         { if (Repeat && Current is not null) await PlayAsync(Current); else await NextAsync(); });
-        Player.Failed += (_, message) => Dispatcher.UIThread.Post(() => SetStatus(message));
+        Player.Failed += (_, message) => Dispatcher.UIThread.Post(() => Fail(message));
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _timer.Tick += (_, _) => Tick?.Invoke();
         _timer.Start();
@@ -43,13 +45,14 @@ public sealed class MusicController
         catch (Exception ex) { SetStatus("Não foi possível ler a biblioteca: " + ex.Message); }
     }
     public void SetStatus(string status) { Status = status; Changed?.Invoke(); }
+    private void Fail(string message) { HasError = true; PlaybackDiagnostics.Write("Erro", message); SetStatus(message); }
     public async Task SearchAsync(string query)
     {
         if (string.IsNullOrWhiteSpace(query)) { SetStatus("Digite uma música, artista ou link para buscar."); return; }
         _search?.Cancel();
         var request = new CancellationTokenSource(TimeSpan.FromSeconds(90));
         _search = request;
-        Searching = true; SetStatus("Buscando seu som…");
+        HasError = false; Searching = true; SetStatus("Buscando seu som…");
         try
         {
             var tracks = await _catalog.SearchAsync(query, request.Token);
@@ -58,7 +61,7 @@ public sealed class MusicController
             Status = tracks.Count == 0 ? "Nenhuma faixa encontrada. Tente outro nome." : $"{tracks.Count} faixas encontradas.";
         }
         catch (OperationCanceledException) { if (ReferenceEquals(_search, request)) Status = "Busca cancelada ou tempo esgotado. Tente novamente."; }
-        catch (Exception ex) { if (ReferenceEquals(_search, request)) Status = ex.Message; }
+        catch (Exception ex) { if (ReferenceEquals(_search, request)) { HasError = true; Status = ex.Message; } }
         finally
         {
             if (ReferenceEquals(_search, request)) { Searching = false; _search = null; Changed?.Invoke(); }
@@ -73,16 +76,25 @@ public sealed class MusicController
     public async Task PlayAsync(Track track, int? queueIndex = null)
     {
         _play?.Cancel();
-        var request = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        var request = new CancellationTokenSource();
         _play = request;
-        LoadingAudio = true; SetStatus("Preparando: " + track.Title);
+        HasError = false; Pending = track; LoadingAudio = true; SetStatus("Obtendo áudio…");
+        var stage = "YT-DLP";
         var entered = false;
         try
         {
             await _playGate.WaitAsync(request.Token); entered = true;
             Player.Pause();
-            var source = await _catalog.ResolveAsync(track, request.Token);
-            await Player.PlayAsync(source, request.Token);
+            PlaybackDiagnostics.Write("Reprodução", "Iniciando resolução de " + track.Id);
+            using var extractTimeout = CancellationTokenSource.CreateLinkedTokenSource(request.Token);
+            extractTimeout.CancelAfter(TimeSpan.FromSeconds(35));
+            var source = await _catalog.ResolveAsync(track, extractTimeout.Token);
+            stage = "Player";
+            SetStatus("Conectando ao áudio…");
+            using var playerTimeout = CancellationTokenSource.CreateLinkedTokenSource(request.Token);
+            playerTimeout.CancelAfter(TimeSpan.FromSeconds(18));
+            await Player.PlayAsync(source, playerTimeout.Token);
+            PlaybackDiagnostics.Write("Reprodução", "Player iniciou.");
             if (queueIndex is null)
             {
                 var existing = Queue.IndexOf(track);
@@ -93,12 +105,19 @@ public sealed class MusicController
             Current = track;
             Status = "Tocando agora";
         }
-        catch (OperationCanceledException) { if (ReferenceEquals(_play, request)) Status = "Reprodução cancelada ou tempo esgotado."; }
-        catch (Exception ex) { if (ReferenceEquals(_play, request)) Status = ex.Message; }
+        catch (OperationCanceledException)
+        {
+            if (ReferenceEquals(_play, request))
+            {
+                if (request.IsCancellationRequested) Status = "Reprodução cancelada.";
+                else Fail(stage == "YT-DLP" ? "O YT-DLP não respondeu em 35 s. Abra o diagnóstico para ver a última etapa." : "O servidor de áudio não respondeu em 18 s. Tente outra faixa ou abra o diagnóstico.");
+            }
+        }
+        catch (Exception ex) { if (ReferenceEquals(_play, request)) Fail(ex.Message); }
         finally
         {
             if (entered) _playGate.Release();
-            if (ReferenceEquals(_play, request)) { _play = null; LoadingAudio = false; Changed?.Invoke(); }
+            if (ReferenceEquals(_play, request)) { _play = null; Pending = null; LoadingAudio = false; Changed?.Invoke(); }
             request.Dispose();
         }
     }

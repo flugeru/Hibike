@@ -13,7 +13,7 @@ public sealed class Application(nint handle, JniHandleOwnership ownership)
     protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
     {
         var context = global::Android.App.Application.Context;
-        AppServices.Configure(new YtDlpCatalog(new AndroidCommandRunner(context)),
+        AppServices.Configure(new YtDlpCatalog(new AndroidCommandRunner(context), context.FilesDir!.AbsolutePath),
             new AndroidAudioPlayer(context), context.FilesDir!.AbsolutePath);
         return base.CustomizeAppBuilder(builder).WithInterFont();
     }

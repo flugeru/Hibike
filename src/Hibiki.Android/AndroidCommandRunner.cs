@@ -78,7 +78,7 @@ public sealed class AndroidCommandRunner(Context context) : ICommandRunner
         return await Task.Run(async () =>
         {
             var command = new List<string> { Path.Combine(_native, "libpython.so"), _script!,
-                "--js-runtimes", "quickjs:" + Path.Combine(_native, "libqjs.so") };
+                "--verbose", "--js-runtimes", "quickjs:" + Path.Combine(_native, "libqjs.so") };
             command.AddRange(arguments);
             using var builder = new Java.Lang.ProcessBuilder(command.ToArray());
             var env = builder.Environment()!;
@@ -88,11 +88,24 @@ public sealed class AndroidCommandRunner(Context context) : ICommandRunner
             env["SSL_CERT_FILE"] = Path.Combine(_pythonHome!, "etc/tls/cert.pem");
             env["TMPDIR"] = context.CacheDir!.AbsolutePath;
             using var process = builder.Start()!;
-            using var cancel = cancellationToken.Register(() => process.Destroy());
+            using var cancel = cancellationToken.Register(() =>
+            {
+                PlaybackDiagnostics.Write("YT-DLP", "Processo interrompido pelo cancelamento/limite de tempo.");
+                process.Destroy();
+            });
             using var stdout = new StreamReader(process.InputStream!);
             using var stderr = new StreamReader(process.ErrorStream!);
             var output = stdout.ReadToEndAsync(cancellationToken);
-            var error = stderr.ReadToEndAsync(cancellationToken);
+            var error = Task.Run(async () =>
+            {
+                var lines = new System.Text.StringBuilder();
+                while (await stderr.ReadLineAsync(cancellationToken) is { } line)
+                {
+                    PlaybackDiagnostics.Write("YT-DLP", line);
+                    if (lines.Length < 24000) lines.AppendLine(line);
+                }
+                return lines.ToString();
+            }, cancellationToken);
             var exit = await Task.Run(() => process.WaitFor(), cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             return new ProcessResult(exit, await output, await error);

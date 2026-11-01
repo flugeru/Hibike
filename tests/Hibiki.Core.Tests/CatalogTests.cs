@@ -44,6 +44,27 @@ public class CatalogTests
         var runner = new FakeRunner("") { ExitCode = 1 };
         await Assert.ThrowsAsync<InvalidOperationException>(() => new YtDlpCatalog(runner).SearchAsync("music", default));
     }
+    [Fact] public async Task CatalogUsesPrivateCacheAndImportedSession()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        try
+        {
+            Directory.CreateDirectory(directory);
+            var cookies = Path.Combine(directory, "youtube-cookies.txt");
+            await File.WriteAllTextAsync(cookies, "# Netscape HTTP Cookie File");
+            var runner = new FakeRunner("{\"entries\":[]}");
+            await new YtDlpCatalog(runner, directory).SearchAsync("music", default);
+            Assert.Contains("--cache-dir", runner.Arguments);
+            Assert.Contains(cookies, runner.Arguments);
+            Assert.DoesNotContain("--no-cache-dir", runner.Arguments);
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+    [Fact] public void DiagnosticsDoNotRetainSignedUrls()
+    {
+        PlaybackDiagnostics.Write("test", "failed https://example.org/audio?token=secret");
+        Assert.DoesNotContain("token=secret", PlaybackDiagnostics.Snapshot());
+    }
     private sealed class FakeRunner(string output) : ICommandRunner
     {
         public IReadOnlyList<string> Arguments { get; private set; } = [];

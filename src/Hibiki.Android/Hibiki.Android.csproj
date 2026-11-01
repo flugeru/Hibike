@@ -13,6 +13,7 @@
     <RunAOTCompilation>false</RunAOTCompilation>
     <PublishTrimmed>false</PublishTrimmed>
     <AndroidStripNativeLibraries>false</AndroidStripNativeLibraries>
+    <DefineConstants Condition="'$(HibikiSmokeTests)' == 'true'">$(DefineConstants);HIBIKI_SMOKE_TEST</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Hibiki.App/Hibiki.App.csproj" />

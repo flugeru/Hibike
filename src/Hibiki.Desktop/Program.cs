@@ -9,7 +9,7 @@ internal static class Program
     public static void Main(string[] args)
     {
         var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Hibiki");
-        AppServices.Configure(new YtDlpCatalog(new DesktopCommandRunner()), new VlcAudioPlayer(), directory);
+        AppServices.Configure(new YtDlpCatalog(new DesktopCommandRunner(), directory), new VlcAudioPlayer(), directory);
         AppBuilder.Configure<Hibiki.App.App>().UsePlatformDetect().WithInterFont().StartWithClassicDesktopLifetime(args);
     }
 }

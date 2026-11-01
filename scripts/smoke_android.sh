@@ -25,3 +25,18 @@ if ! grep -E '(mResumedActivity|topResumedActivity).*com.flugel.hibiki' artifact
 fi
 adb exec-out screencap -p > artifacts/smoke/startup.png
 echo 'Hibiki stayed open in the foreground for 20 seconds.'
+
+# Exercise native audio, then the real embedded extractor and remote playback.
+adb shell am force-stop com.flugel.hibiki
+adb logcat -c
+adb shell am start -W -n "$activity" --ez hibiki.smoke.playback true
+for attempt in $(seq 1 70); do
+  if adb logcat -d -s HibikiProbe:I '*:S' | grep -q HIBIKI_PROBE_DONE; then break; fi
+  if adb logcat -d -s HibikiProbe:I '*:S' | grep -q HIBIKI_PROBE_LOCAL_FAILED; then break; fi
+  sleep 1
+done
+adb logcat -d -s HibikiProbe:I '*:S' > artifacts/smoke/playback-probe.txt
+cat artifacts/smoke/playback-probe.txt
+grep -q HIBIKI_PROBE_LOCAL_OK artifacts/smoke/playback-probe.txt
+grep -q HIBIKI_PROBE_DONE artifacts/smoke/playback-probe.txt
+adb exec-out screencap -p > artifacts/smoke/results-layout-fixture.png

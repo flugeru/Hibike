@@ -6,6 +6,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Hibiki.Core.Models;
+using Hibiki.Core.Services;
 using Track = Hibiki.Core.Models.Track;
 
 namespace Hibiki.App.Views;
@@ -13,207 +14,115 @@ namespace Hibiki.App.Views;
 public sealed class MainView : UserControl
 {
     private readonly MusicController _music;
-    private readonly Grid _root = new() { ColumnDefinitions = new("224,*"), RowDefinitions = new("*,Auto,Auto") };
+    private readonly Grid _root = new() { ColumnDefinitions = new("200,*"), RowDefinitions = new("*,Auto,Auto") };
     private readonly Border _sidebar;
     private readonly Border _main;
-    private readonly Grid _body = new() { ColumnDefinitions = new("*,300") };
-    private readonly Border _rail;
-    private readonly StackPanel _mobileNav = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 12 };
-    private readonly TextBox _search = new() { Watermark = "Música, artista ou link do YouTube", MinWidth = 0 };
+    private readonly TextBox _search = new() { PlaceholderText = "Música, artista ou link", MinWidth = 0, Height = 44, MinHeight = 44, FontSize = 14 };
+    private readonly TextBlock _heading = Text("Buscar músicas", 16);
+    private readonly TextBlock _count = Text("", 11, Muted);
+    private readonly StackPanel _tracks = new() { Spacing = 0 };
+    private readonly TextBlock _status = Text("", 12, Muted);
+    private readonly Border _statusBox;
     private readonly Button _searchButton;
     private readonly Button _cancelSearch;
-    private readonly TextBlock _status = Text("", 12, "#A9A1B8");
-    private readonly TextBlock _section = Text("Comece pelo que você gosta", 22);
-    private readonly TextBlock _count = Text("", 12, "#A9A1B8");
-    private readonly StackPanel _tracks = new() { Spacing = 8 };
-    private readonly StackPanel _queue = new() { Spacing = 12 };
-    private readonly Border _hero;
-    private readonly StackPanel _genres;
-    private readonly TextBlock _heroTitle;
-    private readonly Grid _mobileBrand;
+    private readonly Border _mini;
     private readonly ContentControl _nowArt = new();
-    private readonly TextBlock _nowTitle = Text("Seu som começa aqui", 14);
-    private readonly TextBlock _nowArtist = Text("Escolha uma faixa para ouvir", 12, "#A9A1B8");
+    private readonly TextBlock _nowTitle = Text("", 13);
+    private readonly TextBlock _nowArtist = Text("", 11, Muted);
     private readonly Button _play;
-    private readonly Button _favorite;
-    private readonly Button _shuffle;
-    private readonly Button _repeat;
-    private readonly Slider _seek = new() { Minimum = 0, Maximum = 1, Value = 0, IsEnabled = false };
-    private readonly TextBlock _position = Text("0:00", 11, "#A9A1B8");
-    private readonly TextBlock _duration = Text("0:00", 11, "#A9A1B8");
-    private readonly List<Button> _navButtons = [];
+    private readonly ProgressBar _progress = new() { Height = 2, Minimum = 0, Maximum = 1, Foreground = Brush.Parse(Accent), Background = Brush.Parse("#26232E") };
+    private readonly Grid _bottom;
+    private readonly List<Button> _nav = [];
+    private Border? _overlay;
+    private Slider? _detailSeek;
+    private TextBlock? _detailTime;
+    private Button? _detailPlay;
+    private bool _seeking;
     private Track? _shownTrack;
     private string _page = "explore";
-    private bool _seeking;
-    private bool _refreshing;
+    private const string Muted = "#9992A6", Accent = "#BDA2FF";
 
     public MainView(MusicController music)
     {
-        _music = music;
-        Background = Brush.Parse("#101014");
-        _sidebar = BuildSidebar();
-        _root.Children.Add(_sidebar); Grid.SetRowSpan(_sidebar, 3);
-
-        _main = new Border { Padding = new Thickness(28, 26, 28, 8) };
-        Grid.SetColumn(_main, 1); _root.Children.Add(_main);
-        var mainGrid = new Grid { RowDefinitions = new("Auto,Auto,*,Auto") };
-        _main.Child = mainGrid;
-        _mobileBrand = Brand(); _mobileBrand.Margin = new Thickness(0, 0, 0, 20);
-        mainGrid.Children.Add(_mobileBrand);
-
-        var searchRow = new Grid { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = 8, Margin = new Thickness(0, 0, 0, 22) };
+        _music = music; Background = Brush.Parse("#111015");
+        _sidebar = BuildSidebar(); _root.Children.Add(_sidebar); Grid.SetRowSpan(_sidebar, 3);
+        _main = new Border { Padding = new Thickness(18, 12, 18, 4) }; Put(_root, _main, 0, 1);
+        var content = new Grid { RowDefinitions = new("Auto,Auto,Auto,*,Auto"), RowSpacing = 12 }; _main.Child = content;
+        var header = new Grid { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = 4, Margin = new Thickness(0, 0, 0, 2) };
+        var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 9, VerticalAlignment = VerticalAlignment.Center };
+        brand.Children.Add(Icons.Make("wave", Accent, 22));
+        var title = Text("hibiki", 22); title.FontWeight = FontWeight.SemiBold; brand.Children.Add(title);
+        var by = Text("by Flugel", 10, Muted); by.VerticalAlignment = VerticalAlignment.Center; brand.Children.Add(by); header.Children.Add(brand);
+        Put(header, IconButton("folder", "Abrir áudio local", OpenLocalAsync), 0, 1);
+        Put(header, IconButton("settings", "Configurações e diagnóstico", () => { ShowSettings(); return Task.CompletedTask; }), 0, 2);
+        content.Children.Add(header);
+        var searchRow = new Grid { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = 8 };
         searchRow.Children.Add(_search);
-        _searchButton = IconButton("search", "Buscar", async () => await SearchAsync());
-        _searchButton.Classes.Remove("subtle"); _searchButton.Classes.Add("primary");
-        _searchButton.Content = Icons.Make("search", "#211337", 20);
+        _searchButton = IconButton("search", "Buscar", SearchAsync); _searchButton.Classes.Remove("subtle"); _searchButton.Classes.Add("primary"); _searchButton.Content = Icons.Make("search", "#211337", 19);
         Put(searchRow, _searchButton, 0, 1);
-        _cancelSearch = IconButton("close", "Cancelar busca", () => { _music.CancelSearch(); return Task.CompletedTask; });
-        Put(searchRow, _cancelSearch, 0, 2);
+        _cancelSearch = IconButton("close", "Cancelar busca", () => { _music.CancelSearch(); return Task.CompletedTask; }); Put(searchRow, _cancelSearch, 0, 2);
         _search.KeyDown += async (_, e) => { if (e.Key == Key.Enter) { e.Handled = true; await SearchAsync(); } };
-        Put(mainGrid, searchRow, 1, 0);
-        Put(mainGrid, _body, 2, 0);
-
-        var scroll = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        var feed = new StackPanel { Spacing = 20, Margin = new Thickness(0, 0, 0, 16) };
-        scroll.Content = feed; _body.Children.Add(scroll);
-        _heroTitle = Text("Dê play no\nseu universo.", 36); _heroTitle.FontWeight = FontWeight.Bold;
-        _hero = BuildHero(); feed.Children.Add(_hero);
-        _genres = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        foreach (var (label, query) in new[] { ("Lo-fi", "lofi chill music"), ("J-pop", "jpop music"), ("Anime", "anime opening music"), ("Rock", "rock music"), ("Eletrônica", "electronic music") })
+        Put(content, searchRow, 1, 0);
+        var heading = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 8, Margin = new Thickness(0, 8, 0, 0) };
+        _heading.TextTrimming = TextTrimming.CharacterEllipsis; _heading.FontWeight = FontWeight.SemiBold;
+        _count.VerticalAlignment = VerticalAlignment.Center; heading.Children.Add(_heading); Put(heading, _count, 0, 1); Put(content, heading, 2, 0);
+        Put(content, new ScrollViewer { Content = _tracks, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden }, 3, 0);
+        var statusRow = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 8 };
+        _status.TextWrapping = TextWrapping.Wrap; _status.MaxLines = 2; _status.VerticalAlignment = VerticalAlignment.Center; statusRow.Children.Add(_status);
+        Put(statusRow, IconButton("info", "Ver diagnóstico", () => { ShowDiagnostics(); return Task.CompletedTask; }), 0, 1);
+        _statusBox = new Border { Child = statusRow, Padding = new Thickness(10, 2), Background = Brush.Parse("#1E1927"), CornerRadius = new CornerRadius(10) }; Put(content, _statusBox, 4, 0);
+        _play = IconButton("play", "Reproduzir, pausar ou cancelar", _music.ToggleAsync);
+        _mini = BuildMiniPlayer(); Put(_root, _mini, 1, 1);
+        _bottom = new Grid { ColumnDefinitions = new("*,*,*"), Height = 60, Background = Brush.Parse("#15131B") };
+        var tabs = new[] { ("explore", "Buscar", "search"), ("library", "Biblioteca", "heart"), ("queue", "Fila", "queue") };
+        for (var index = 0; index < tabs.Length; index++)
         {
-            var chip = ActionButton(label, async () => { _search.Text = query; await SearchAsync(); });
-            chip.Classes.Add("chip"); _genres.Children.Add(chip);
+            var (key, label, icon) = tabs[index];
+            var button = NavButton(key, label, icon, true); Put(_bottom, button, 0, index);
         }
-        feed.Children.Add(new ScrollViewer { Content = _genres, HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled });
-        var heading = new Grid { ColumnDefinitions = new("*,Auto") };
-        heading.Children.Add(_section); Put(heading, _count, 0, 1); _count.VerticalAlignment = VerticalAlignment.Center;
-        feed.Children.Add(heading); feed.Children.Add(_tracks);
-
-        _rail = BuildQueueRail(); Put(_body, _rail, 0, 1);
-        _status.TextWrapping = TextWrapping.Wrap;
-        _status.Margin = new Thickness(0, 10, 0, 8); Put(mainGrid, _status, 3, 0);
-
-        _play = IconButton("play", "Reproduzir ou pausar", _music.ToggleAsync, 24);
-        _play.Classes.Remove("subtle"); _play.Classes.Add("primary"); _play.Width = _play.Height = 50; _play.CornerRadius = new CornerRadius(25);
-        _favorite = IconButton("heart", "Favoritar faixa atual", async () => { if (_music.Current is { } track) await _music.ToggleFavoriteAsync(track); });
-        _shuffle = IconButton("shuffle", "Alternar ordem aleatória", () => { _music.Shuffle = !_music.Shuffle; Refresh(); return Task.CompletedTask; });
-        _repeat = IconButton("repeat", "Repetir faixa atual", () => { _music.Repeat = !_music.Repeat; Refresh(); return Task.CompletedTask; });
-        var player = BuildPlayer(); Put(_root, player, 1, 1);
-        foreach (var (key, label, icon) in new[] { ("explore", "Explorar", "search"), ("library", "Biblioteca", "heart"), ("queue", "Fila", "queue") })
-        {
-            var nav = NavButton(key, label, icon);
-            var navContent = new StackPanel { Spacing = 4, HorizontalAlignment = HorizontalAlignment.Center };
-            var navIcon = Icons.Make(icon, size: 19); navIcon.HorizontalAlignment = HorizontalAlignment.Center;
-            navContent.Children.Add(navIcon);
-            navContent.Children.Add(Text(label, 11));
-            nav.Content = navContent; nav.Width = 90; nav.Padding = new Thickness(8);
-            nav.HorizontalContentAlignment = HorizontalAlignment.Center;
-            _mobileNav.Children.Add(nav);
-        }
-        var bottom = new Border { Child = _mobileNav, Padding = new Thickness(8, 8, 8, 10), Background = Brush.Parse("#15131B") };
-        Put(_root, bottom, 2, 1);
-        Content = _root;
+        Put(_root, _bottom, 2, 1); Content = _root;
         SizeChanged += (_, _) =>
         {
-            var compact = Bounds.Width < 850;
-            var rail = Bounds.Width >= 1180;
-            _root.ColumnDefinitions[0].Width = new GridLength(compact ? 0 : 224);
-            _sidebar.IsVisible = !compact; bottom.IsVisible = compact; _mobileBrand.IsVisible = compact;
-            _body.ColumnDefinitions[1].Width = new GridLength(rail ? 300 : 0);
-            _rail.IsVisible = rail;
-            _main.Padding = compact ? new Thickness(18, 20, 18, 4) : new Thickness(30, 28, 30, 8);
-            _heroTitle.FontSize = compact ? 30 : 36;
+            var compact = Bounds.Width < 800;
+            _root.ColumnDefinitions[0].Width = new GridLength(compact ? 0 : 200);
+            _sidebar.IsVisible = !compact; _bottom.IsVisible = compact;
+            _main.Padding = compact ? new Thickness(16, 10, 16, 4) : new Thickness(32, 24, 32, 12);
         };
         _music.Changed += Refresh; _music.Tick += RefreshPlayback;
         AttachedToVisualTree += async (_, _) => await _music.InitializeAsync();
         DetachedFromVisualTree += (_, _) => _music.StopObserving();
         Refresh();
     }
-
     private Border BuildSidebar()
     {
-        var panel = new StackPanel { Spacing = 8, Margin = new Thickness(20, 30, 16, 20) };
-        var brand = Brand(); brand.Margin = new Thickness(6, 0, 0, 40); panel.Children.Add(brand);
-        panel.Children.Add(Text("SEU ESPAÇO", 10, "#827A93"));
-        panel.Children.Add(NavButton("explore", "Explorar", "search"));
-        panel.Children.Add(NavButton("library", "Sua biblioteca", "heart"));
-        panel.Children.Add(NavButton("queue", "Fila de reprodução", "queue"));
-        var import = ActionButton("Abrir áudio local", OpenLocalAsync); import.Margin = new Thickness(0, 22, 0, 0); panel.Children.Add(import);
-        var bottom = new StackPanel { Spacing = 6, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(26, 20) };
-        bottom.Children.Add(Text("響  HIBIKI", 12, "#BDA2FF"));
-        bottom.Children.Add(Text("Feito por Flugel", 11, "#827A93"));
-        bottom.Children.Add(Text("Sua música. Seu ritmo.", 11, "#827A93"));
-        var grid = new Grid(); grid.Children.Add(panel); grid.Children.Add(bottom);
-        return new Border { Background = Brush.Parse("#15131B"), BorderBrush = Brush.Parse("#25212F"), BorderThickness = new Thickness(0, 0, 1, 0), Child = grid };
+        var panel = new StackPanel { Spacing = 8, Margin = new Thickness(14, 30) };
+        var title = Text("Sua música", 18); title.Margin = new Thickness(12, 0, 0, 22); panel.Children.Add(title);
+        panel.Children.Add(NavButton("explore", "Buscar", "search", false));
+        panel.Children.Add(NavButton("library", "Biblioteca", "heart", false));
+        panel.Children.Add(NavButton("queue", "Fila", "queue", false));
+        return new Border { Child = panel, Background = Brush.Parse("#15131B") };
     }
-    private static Grid Brand()
+    private Button NavButton(string key, string label, string icon, bool vertical)
     {
-        var grid = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = 12 };
-        grid.Children.Add(new Border { Background = Brush.Parse("#30243F"), CornerRadius = new CornerRadius(13), Padding = new Thickness(10), Child = Icons.Make("wave", "#BDA2FF", 24) });
-        var name = new StackPanel { Spacing = 0, VerticalAlignment = VerticalAlignment.Center };
-        var title = Text("hibiki", 25); title.FontWeight = FontWeight.Bold; name.Children.Add(title);
-        name.Children.Add(Text("by Flugel", 10, "#A9A1B8")); Put(grid, name, 0, 1);
-        return grid;
-    }
-    private Border BuildHero()
-    {
-        var text = new StackPanel { Spacing = 12, Margin = new Thickness(24) };
-        var eyebrow = Text("SINTA CADA NOTA", 10, "#D8C4FF"); eyebrow.LetterSpacing = 2;
-        text.Children.Add(eyebrow); text.Children.Add(_heroTitle);
-        var subtitle = Text("Encontre o som que combina com você.", 13, "#D1C5E4"); subtitle.TextWrapping = TextWrapping.Wrap; text.Children.Add(subtitle);
-        var open = ActionButton("Abrir minha música", OpenLocalAsync); open.Classes.Add("primary"); open.HorizontalAlignment = HorizontalAlignment.Left; text.Children.Add(open);
-        var grid = new Grid { ColumnDefinitions = new("*,72") };
-        grid.Children.Add(text);
-        var waves = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Opacity = 0.6, Margin = new Thickness(0, 0, 14, 0) };
-        foreach (var height in new[] { 35d, 72d, 118d, 85d, 48d }) waves.Children.Add(new Border { Width = 6, Height = height, CornerRadius = new CornerRadius(3), Background = Brush.Parse("#BDA2FF"), VerticalAlignment = VerticalAlignment.Center });
-        Put(grid, waves, 0, 1);
-        return new Border
-        {
-            CornerRadius = new CornerRadius(24), ClipToBounds = true, Child = grid,
-            Background = new LinearGradientBrush { StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative), EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-                GradientStops = [new GradientStop(Color.Parse("#48305F"), 0), new GradientStop(Color.Parse("#241D36"), 1)] }
-        };
-    }
-    private Border BuildQueueRail()
-    {
-        var stack = new StackPanel { Spacing = 18 };
-        var title = Text("A seguir", 20); title.FontWeight = FontWeight.SemiBold; stack.Children.Add(title);
-        stack.Children.Add(Text("O próximo capítulo do seu som.", 12, "#A9A1B8")); stack.Children.Add(_queue);
-        var clear = ActionButton("Limpar fila", () => { _music.ClearQueue(); return Task.CompletedTask; }); clear.Classes.Add("subtle"); stack.Children.Add(clear);
-        return new Border { Margin = new Thickness(24, 0, 0, 0), Padding = new Thickness(20), Background = Brush.Parse("#19161F"), CornerRadius = new CornerRadius(22),
-            Child = new ScrollViewer { Content = stack, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled } };
-    }
-    private Border BuildPlayer()
-    {
-        var grid = new Grid { RowDefinitions = new("Auto,Auto,Auto"), RowSpacing = 6, Margin = new Thickness(18, 12, 18, 10) };
-        var song = new Grid { ColumnDefinitions = new("Auto,*,Auto"), ColumnSpacing = 12 };
-        _nowArt.Content = new Artwork(null, 44); song.Children.Add(_nowArt);
-        var metadata = new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center };
-        _nowTitle.TextTrimming = TextTrimming.CharacterEllipsis; _nowArtist.TextTrimming = TextTrimming.CharacterEllipsis;
-        metadata.Children.Add(_nowTitle); metadata.Children.Add(_nowArtist); Put(song, metadata, 0, 1); Put(song, _favorite, 0, 2);
-        grid.Children.Add(song);
-        var timeline = new Grid { ColumnDefinitions = new("Auto,*,Auto"), ColumnSpacing = 10 };
-        _position.VerticalAlignment = _duration.VerticalAlignment = VerticalAlignment.Center;
-        timeline.Children.Add(_position); Put(timeline, _seek, 0, 1); Put(timeline, _duration, 0, 2); Put(grid, timeline, 1, 0);
-        _seek.AddHandler(PointerPressedEvent, (_, _) => _seeking = true, Avalonia.Interactivity.RoutingStrategies.Tunnel);
-        _seek.AddHandler(PointerReleasedEvent, (_, _) => { _seeking = false; _music.Player.Seek(_seek.Value); }, Avalonia.Interactivity.RoutingStrategies.Bubble, true);
-        _seek.KeyUp += (_, _) => _music.Player.Seek(_seek.Value);
-        var controls = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 12 };
-        controls.Children.Add(_shuffle); controls.Children.Add(IconButton("previous", "Faixa anterior", _music.PreviousAsync));
-        controls.Children.Add(_play); controls.Children.Add(IconButton("next", "Próxima faixa", _music.NextAsync)); controls.Children.Add(_repeat);
-        Put(grid, controls, 2, 0);
-        return new Border { Background = Brush.Parse("#1B1723"), BorderBrush = Brush.Parse("#33283F"), BorderThickness = new Thickness(0, 1, 0, 0), Child = grid };
-    }
-    private Button NavButton(string page, string label, string icon)
-    {
-        var button = ActionButton("", () => { _page = page; Refresh(); return Task.CompletedTask; });
-        button.Tag = page; button.Classes.Add("nav"); button.Content = Inline(icon, label, 13); _navButtons.Add(button);
+        var button = ActionButton("", () => { _page = key; Refresh(); return Task.CompletedTask; });
+        button.Classes.Add("nav"); button.Tag = (key, label, icon, vertical); _nav.Add(button);
+        button.Padding = new Thickness(8, 5); button.HorizontalContentAlignment = vertical ? HorizontalAlignment.Center : HorizontalAlignment.Left;
         return button;
     }
-    private async Task SearchAsync()
+    private Border BuildMiniPlayer()
     {
-        _page = "explore"; await _music.SearchAsync(_search.Text ?? "");
+        var grid = new Grid { RowDefinitions = new("Auto,Auto") };
+        var row = new Grid { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = 4, Margin = new Thickness(12, 7) };
+        var open = ActionButton("", () => { ShowPlayer(); return Task.CompletedTask; }); open.Classes.Add("subtle"); open.Padding = new Thickness(0); open.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+        var metadata = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = 10 };
+        _nowArt.Content = new Artwork(null, 40); metadata.Children.Add(_nowArt);
+        var info = new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center };
+        _nowTitle.TextTrimming = _nowArtist.TextTrimming = TextTrimming.CharacterEllipsis; info.Children.Add(_nowTitle); info.Children.Add(_nowArtist); Put(metadata, info, 0, 1);
+        open.Content = metadata; row.Children.Add(open); Put(row, _play, 0, 1); Put(row, IconButton("next", "Próxima faixa", _music.NextAsync), 0, 2);
+        grid.Children.Add(row); Put(grid, _progress, 1, 0);
+        return new Border { Child = grid, Background = Brush.Parse("#211B2B"), BorderThickness = new Thickness(0, 1, 0, 0), BorderBrush = Brush.Parse("#32263F") };
     }
+    private async Task SearchAsync() { _page = "explore"; await _music.SearchAsync(_search.Text ?? ""); }
     private async Task OpenLocalAsync()
     {
         try
@@ -250,101 +159,155 @@ public sealed class MainView : UserControl
         }
         catch (Exception ex) { _music.SetStatus("Não foi possível abrir o áudio: " + ex.Message); }
     }
+
     private void Refresh()
     {
-        _status.Text = _music.Status;
-        _cancelSearch.IsVisible = _music.Searching;
-        _searchButton.IsEnabled = !_music.Searching;
-        foreach (var nav in _navButtons) nav.Classes.Set("active", Equals(nav.Tag, _page));
-        _hero.IsVisible = _page == "explore" && _music.Results.Count == 0;
-        _genres.IsVisible = _page == "explore";
-        _section.Text = _page switch { "library" => "Sua biblioteca", "queue" => "Fila de reprodução", _ => _music.Results.Count > 0 ? "Encontre seu próximo som" : "Comece pelo que você gosta" };
+        _statusBox.IsVisible = _music.Searching || _music.LoadingAudio || _music.HasError;
+        _status.Text = _music.Status; _cancelSearch.IsVisible = _music.Searching; _searchButton.IsEnabled = !_music.Searching;
+        foreach (var button in _nav)
+        {
+            var (key, label, icon, vertical) = ((string, string, string, bool))button.Tag!;
+            var active = key == _page;
+            button.Classes.Set("active", active && !vertical);
+            var stack = new StackPanel { Orientation = vertical ? Orientation.Vertical : Orientation.Horizontal, Spacing = vertical ? 3 : 12 };
+            var image = Icons.Make(icon, active ? Accent : Muted, 20); image.HorizontalAlignment = HorizontalAlignment.Center; stack.Children.Add(image);
+            stack.Children.Add(Text(label, vertical ? 10 : 13, active ? Accent : Muted)); button.Content = stack;
+        }
         IReadOnlyList<Track> tracks = _page switch { "library" => _music.Favorites, "queue" => _music.Queue, _ => _music.Results };
-        _count.Text = tracks.Count == 0 ? "" : tracks.Count + " faixas";
+        _heading.Text = _page switch { "library" => "Biblioteca", "queue" => "Fila de reprodução", _ => tracks.Count > 0 ? "Resultados" : "Encontre sua música" };
+        _count.Text = tracks.Count > 0 ? tracks.Count + " faixas" : "";
         _tracks.Children.Clear();
         if (tracks.Count == 0)
         {
-            var empty = new StackPanel { Spacing = 14, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(16, 24) };
-            empty.Children.Add(Icons.Make(_page == "library" ? "heart" : "wave", "#BDA2FF", 32));
-            var text = Text(_page switch { "library" => "As músicas que você ama ficam aqui.", "queue" => "Adicione faixas para continuar ouvindo.", _ => "Busque uma música ou escolha um estilo acima." }, 13, "#A9A1B8");
-            text.TextWrapping = TextWrapping.Wrap; text.TextAlignment = TextAlignment.Center; empty.Children.Add(text);
-            if (_page == "library") empty.Children.Add(ActionButton("Importar áudio", OpenLocalAsync));
-            _tracks.Children.Add(empty);
+            var empty = new StackPanel { Spacing = 12, Margin = new Thickness(12, 46), HorizontalAlignment = HorizontalAlignment.Center };
+            var icon = Icons.Make(_page == "library" ? "heart" : "wave", Accent, 32); icon.HorizontalAlignment = HorizontalAlignment.Center; empty.Children.Add(icon);
+            var message = Text(_page switch { "library" => "Suas favoritas ficam aqui.", "queue" => "Adicione músicas à fila.", _ => "Busque uma música ou artista\npara começar a ouvir." }, 13, Muted);
+            message.TextAlignment = TextAlignment.Center; empty.Children.Add(message);
+            var import = ActionButton("Abrir áudio local", OpenLocalAsync); import.Classes.Add("subtle"); empty.Children.Add(import); _tracks.Children.Add(empty);
         }
         else foreach (var track in tracks) _tracks.Children.Add(TrackRow(track));
-        _queue.Children.Clear();
-        if (_music.Queue.Count == 0) _queue.Children.Add(Text("Sua fila está esperando\npela primeira faixa.", 13, "#827A93"));
-        foreach (var track in _music.Queue.Take(8))
-        {
-            var button = ActionButton("", async () => await _music.PlayAsync(track)); button.Classes.Add("subtle"); button.Padding = new Thickness(0, 6);
-            var row = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = 10 };
-            row.Children.Add(new Artwork(track, 42)); var info = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
-            var title = Text(track.Title, 12); title.TextTrimming = TextTrimming.CharacterEllipsis; info.Children.Add(title);
-            var artist = Text(track.Artist, 11, "#827A93"); artist.TextTrimming = TextTrimming.CharacterEllipsis; info.Children.Add(artist); Put(row, info, 0, 1);
-            button.Content = row; button.HorizontalContentAlignment = HorizontalAlignment.Stretch; _queue.Children.Add(button);
-        }
-        if (!Equals(_shownTrack, _music.Current))
-        {
-            _shownTrack = _music.Current; _nowArt.Content = new Artwork(_shownTrack, 44);
-        }
-        _nowTitle.Text = _music.Current?.Title ?? "Seu som começa aqui";
-        _nowArtist.Text = _music.LoadingAudio ? "Preparando áudio…" : _music.Current?.Artist ?? "Escolha uma faixa para ouvir";
-        _favorite.Content = Icons.Make("heart", _music.Current is { } current && _music.IsFavorite(current) ? "#BDA2FF" : "#A9A1B8");
-        _shuffle.Content = Icons.Make("shuffle", _music.Shuffle ? "#BDA2FF" : "#827A93");
-        _repeat.Content = Icons.Make("repeat", _music.Repeat ? "#BDA2FF" : "#827A93");
+        var displayed = _music.Pending ?? _music.Current;
+        _mini.IsVisible = displayed is not null;
+        if (!Equals(displayed, _shownTrack)) { _shownTrack = displayed; _nowArt.Content = new Artwork(displayed, 40); }
+        _nowTitle.Text = displayed?.Title;
+        _nowArtist.Text = _music.LoadingAudio ? _music.Status : displayed?.Artist;
         RefreshPlayback();
     }
     private Control TrackRow(Track track)
     {
-        var grid = new Grid { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = 2 };
-        var play = ActionButton("", async () => await _music.PlayAsync(track)); play.Classes.Add("subtle"); play.Padding = new Thickness(8); play.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-        var row = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = 12 };
-        row.Children.Add(new Artwork(track, 48));
-        var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 4 };
-        var title = Text(track.Title, 13); title.TextTrimming = TextTrimming.CharacterEllipsis; info.Children.Add(title);
-        var artist = Text(track.Artist + "  ·  " + track.DurationLabel, 11, "#A9A1B8"); artist.TextTrimming = TextTrimming.CharacterEllipsis; info.Children.Add(artist);
-        Put(row, info, 0, 1); play.Content = row; grid.Children.Add(play);
-        var favorite = IconButton("heart", "Favoritar " + track.Title, async () => await _music.ToggleFavoriteAsync(track));
-        favorite.Content = Icons.Make("heart", _music.IsFavorite(track) ? "#BDA2FF" : "#827A93", 18); Put(grid, favorite, 0, 1);
-        var add = IconButton("plus", "Adicionar à fila: " + track.Title, () => { _music.Enqueue(track); return Task.CompletedTask; }, 18); Put(grid, add, 0, 2);
-        return new Border { Background = Brush.Parse("#19171F"), CornerRadius = new CornerRadius(14), Child = grid };
+        var grid = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 4, Height = 68 };
+        var play = ActionButton("", async () => await _music.PlayAsync(track)); play.Classes.Add("subtle"); play.Padding = new Thickness(0, 8); play.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+        var metadata = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = 12 };
+        metadata.Children.Add(new Artwork(track, 46));
+        var labels = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
+        var title = Text(track.Title, 13); title.TextTrimming = TextTrimming.CharacterEllipsis; labels.Children.Add(title);
+        var artist = Text(track.Artist + " · " + track.DurationLabel, 11, Muted); artist.TextTrimming = TextTrimming.CharacterEllipsis; labels.Children.Add(artist);
+        Put(metadata, labels, 0, 1); play.Content = metadata; grid.Children.Add(play);
+        var more = IconButton("more", "Opções de " + track.Title, () => Task.CompletedTask);
+        var favorite = new MenuItem { Header = _music.IsFavorite(track) ? "Remover dos favoritos" : "Salvar nos favoritos" };
+        favorite.Click += async (_, _) => await _music.ToggleFavoriteAsync(track);
+        var queue = new MenuItem { Header = "Adicionar à fila" }; queue.Click += (_, _) => _music.Enqueue(track);
+        var menu = new ContextMenu { ItemsSource = new[] { favorite, queue } };
+        more.Click += (_, _) => menu.Open(more); Put(grid, more, 0, 1);
+        return new Border { Child = grid, BorderBrush = Brush.Parse("#211E28"), BorderThickness = new Thickness(0, 0, 0, 1) };
+    }
+    private void ShowPlayer()
+    {
+        var track = _music.Pending ?? _music.Current; if (track is null) return;
+        var panel = new StackPanel { Spacing = 18 };
+        var art = new Artwork(track, 190) { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 8) }; panel.Children.Add(art);
+        var title = Text(track.Title, 19); title.TextWrapping = TextWrapping.Wrap; title.TextAlignment = TextAlignment.Center; title.FontWeight = FontWeight.SemiBold; panel.Children.Add(title);
+        var artist = Text(track.Artist, 13, Muted); artist.TextAlignment = TextAlignment.Center; panel.Children.Add(artist);
+        _detailSeek = new Slider { Minimum = 0, Maximum = 1 };
+        _detailSeek.AddHandler(PointerPressedEvent, (_, _) => _seeking = true, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        _detailSeek.AddHandler(PointerReleasedEvent, (_, _) => { _seeking = false; _music.Player.Seek(_detailSeek.Value); }, Avalonia.Interactivity.RoutingStrategies.Bubble, true);
+        _detailSeek.KeyUp += (_, _) => _music.Player.Seek(_detailSeek.Value); panel.Children.Add(_detailSeek);
+        _detailTime = Text("", 11, Muted); _detailTime.TextAlignment = TextAlignment.Center; panel.Children.Add(_detailTime);
+        var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, HorizontalAlignment = HorizontalAlignment.Center };
+        controls.Children.Add(IconButton("shuffle", "Aleatório", () => { _music.Shuffle = !_music.Shuffle; ShowPlayer(); return Task.CompletedTask; }, color: _music.Shuffle ? Accent : Muted));
+        controls.Children.Add(IconButton("previous", "Anterior", _music.PreviousAsync));
+        _detailPlay = IconButton("play", "Reproduzir ou pausar", _music.ToggleAsync); _detailPlay.Classes.Remove("subtle"); _detailPlay.Classes.Add("primary"); controls.Children.Add(_detailPlay);
+        controls.Children.Add(IconButton("next", "Próxima", _music.NextAsync));
+        controls.Children.Add(IconButton("repeat", "Repetir", () => { _music.Repeat = !_music.Repeat; ShowPlayer(); return Task.CompletedTask; }, color: _music.Repeat ? Accent : Muted)); panel.Children.Add(controls);
+        var favorite = ActionButton(_music.IsFavorite(track) ? "Remover dos favoritos" : "Salvar nos favoritos", async () => { await _music.ToggleFavoriteAsync(track); ShowPlayer(); }); favorite.Classes.Add("subtle"); panel.Children.Add(favorite);
+        ShowSheet("Tocando agora", panel); RefreshPlayback();
     }
     private void RefreshPlayback()
     {
-        _play.Content = Icons.Make(_music.LoadingAudio ? "close" : _music.Player.IsPlaying ? "pause" : "play", "#211337", 23);
-        if (_refreshing) return;
-        _refreshing = true;
-        try
+        var icon = _music.LoadingAudio ? "close" : _music.Player.IsPlaying ? "pause" : "play";
+        _play.Content = Icons.Make(icon, Accent, 20);
+        if (_detailPlay is not null) _detailPlay.Content = Icons.Make(icon, "#211337", 20);
+        var duration = _music.Player.Duration; if (duration <= 0) duration = _music.Current?.DurationSeconds ?? 0;
+        _progress.Maximum = Math.Max(1, duration); _progress.Value = Math.Min(_music.Player.Position, _progress.Maximum);
+        if (_detailSeek is not null)
         {
-            var duration = _music.Player.Duration;
-            if (duration <= 0) duration = _music.Current?.DurationSeconds ?? 0;
-            _seek.IsEnabled = duration > 0 && !_music.LoadingAudio;
-            _seek.Maximum = Math.Max(1, duration);
-            if (!_seeking) _seek.Value = Math.Min(_music.Player.Position, _seek.Maximum);
-            _position.Text = Time(_music.Player.Position); _duration.Text = Time(duration);
+            _detailSeek.Maximum = Math.Max(1, duration); _detailSeek.IsEnabled = duration > 0 && !_music.LoadingAudio;
+            if (!_seeking) _detailSeek.Value = Math.Min(_music.Player.Position, _detailSeek.Maximum);
         }
-        finally { _refreshing = false; }
+        if (_detailTime is not null) _detailTime.Text = Time(_music.Player.Position) + "  /  " + Time(duration);
+    }
+    private void ShowSettings()
+    {
+        var panel = new StackPanel { Spacing = 12 };
+        var session = System.IO.File.Exists(CookiesPath);
+        panel.Children.Add(Text("YouTube", 15));
+        var note = Text(session ? "Sessão importada neste aparelho." : "Sessão não importada. Faixas públicas podem tocar sem login; o YouTube pode pedir verificação.", 12, Muted); note.TextWrapping = TextWrapping.Wrap; panel.Children.Add(note);
+        panel.Children.Add(ActionButton("Importar cookies de sessão", ImportCookiesAsync));
+        if (session) panel.Children.Add(ActionButton("Remover sessão", () => { System.IO.File.Delete(CookiesPath); ShowSettings(); return Task.CompletedTask; }));
+        panel.Children.Add(ActionButton("Diagnóstico de reprodução", () => { ShowDiagnostics(); return Task.CompletedTask; }));
+        ShowSheet("Configurações", panel);
+    }
+    private string CookiesPath => System.IO.Path.Combine(_music.DataDirectory, "youtube-cookies.txt");
+    private async Task ImportCookiesAsync()
+    {
+        var top = TopLevel.GetTopLevel(this); if (top is null) return;
+        var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions { Title = "Cookies no formato Netscape", AllowMultiple = false });
+        if (files.Count == 0) return;
+        using var file = files[0]; await using var input = await file.OpenReadAsync();
+        using var reader = new System.IO.StreamReader(input);
+        var buffer = new char[1_000_001]; var length = await reader.ReadBlockAsync(buffer, 0, buffer.Length);
+        if (length > 1_000_000) throw new IOException("O arquivo de cookies é muito grande.");
+        var text = new string(buffer, 0, length);
+        if (!text.StartsWith("# Netscape HTTP Cookie File") && !text.StartsWith("# HTTP Cookie File")) throw new IOException("Selecione um arquivo de cookies no formato Netscape.");
+        System.IO.Directory.CreateDirectory(_music.DataDirectory);
+        await System.IO.File.WriteAllTextAsync(CookiesPath, text);
+        _music.SetStatus("Sessão importada neste aparelho."); ShowSettings();
+    }
+    private void ShowDiagnostics()
+    {
+        var panel = new StackPanel { Spacing = 14 };
+        var text = PlaybackDiagnostics.Snapshot(); if (string.IsNullOrWhiteSpace(text)) text = "Nenhuma tentativa registrada. Tente reproduzir uma faixa primeiro.";
+        panel.Children.Add(new SelectableTextBlock { Text = text, TextWrapping = TextWrapping.Wrap, FontSize = 11, Foreground = Brush.Parse(Muted) });
+        panel.Children.Add(ActionButton("Copiar diagnóstico", async () => { var clipboard = TopLevel.GetTopLevel(this)?.Clipboard; if (clipboard is not null) await clipboard.SetTextAsync(PlaybackDiagnostics.Snapshot()); }));
+        ShowSheet("Diagnóstico", panel);
+    }
+    private void ShowSheet(string title, Control content)
+    {
+        if (_overlay is not null) _root.Children.Remove(_overlay);
+        var layout = new Grid { RowDefinitions = new("Auto,*"), RowSpacing = 16 };
+        var header = new Grid { ColumnDefinitions = new("*,Auto") }; var label = Text(title, 17); label.VerticalAlignment = VerticalAlignment.Center; header.Children.Add(label);
+        Put(header, IconButton("close", "Fechar painel", () => { CloseSheet(); return Task.CompletedTask; }), 0, 1); layout.Children.Add(header);
+        Put(layout, new ScrollViewer { Content = content, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }, 1, 0);
+        var sheet = new Border { Width = Math.Max(280, Math.Min(440, Bounds.Width - 24)), MaxHeight = Math.Max(320, Bounds.Height - 32), Padding = new Thickness(20), CornerRadius = new CornerRadius(20), Background = Brush.Parse("#1B1722"), Child = layout, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        _overlay = new Border { Background = Brush.Parse("#BA000000"), Child = sheet };
+        Grid.SetColumnSpan(_overlay, 2); Grid.SetRowSpan(_overlay, 3); _root.Children.Add(_overlay);
+    }
+    private void CloseSheet()
+    {
+        if (_overlay is not null) _root.Children.Remove(_overlay); _overlay = null;
+        _detailSeek = null; _detailPlay = null; _detailTime = null; _seeking = false;
     }
     private static string Time(double seconds) => TimeSpan.FromSeconds(Math.Max(0, seconds)).ToString(seconds >= 3600 ? @"h\:mm\:ss" : @"m\:ss");
-    private static TextBlock Text(string text, double size, string color = "#F4F0FA") => new() { Text = text, FontSize = size, Foreground = Brush.Parse(color) };
+    private static TextBlock Text(string text, double size, string color = "#F3EFF8") => new() { Text = text, FontSize = size, Foreground = Brush.Parse(color) };
     private Button ActionButton(string text, Func<Task> action)
     {
         var button = new Button { Content = text };
-        button.Click += async (_, _) => { try { await action(); } catch (Exception ex) { _music.SetStatus(ex.Message); } };
-        return button;
+        button.Click += async (_, _) => { try { await action(); } catch (Exception ex) { PlaybackDiagnostics.Write("Interface", ex.Message); _music.SetStatus(ex.Message); ShowDiagnostics(); } }; return button;
     }
-    private Button IconButton(string icon, string label, Func<Task> action, double size = 20)
+    private Button IconButton(string icon, string label, Func<Task> action, string color = Muted)
     {
-        var button = ActionButton("", action); button.Content = Icons.Make(icon, size: size); button.Padding = new Thickness(10); button.Classes.Add("subtle");
-        button.MinWidth = 44; button.VerticalAlignment = VerticalAlignment.Center;
-        Avalonia.Automation.AutomationProperties.SetName(button, label); ToolTip.SetTip(button, label);
-        return button;
+        var button = ActionButton("", action); button.Content = Icons.Make(icon, color, 20); button.Classes.Add("subtle"); button.Padding = new Thickness(10); button.Width = button.Height = 44; button.VerticalAlignment = VerticalAlignment.Center;
+        Avalonia.Automation.AutomationProperties.SetName(button, label); ToolTip.SetTip(button, label); return button;
     }
-    private static Control Inline(string icon, string label, double size)
-    {
-        var stack = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
-        stack.Children.Add(Icons.Make(icon, size: 19)); stack.Children.Add(Text(label, size)); return stack;
-    }
-    private static void Put(Grid grid, Control control, int row, int column)
-    { Grid.SetRow(control, row); Grid.SetColumn(control, column); grid.Children.Add(control); }
+    private static void Put(Grid grid, Control control, int row, int column) { Grid.SetRow(control, row); Grid.SetColumn(control, column); grid.Children.Add(control); }
 }

@@ -2,9 +2,22 @@ using System.Text.Json;
 using Hibiki.Core.Models;
 namespace Hibiki.Core.Services;
 
-public sealed class YtDlpCatalog(ICommandRunner runner) : IMusicCatalog
+public sealed class YtDlpCatalog(ICommandRunner runner, string? dataDirectory = null) : IMusicCatalog
 {
-    private static readonly string[] Common = ["--ignore-config", "--no-warnings", "--no-cache-dir", "--socket-timeout", "20", "--no-playlist"];
+    private string[] Common
+    {
+        get
+        {
+            var args = new List<string> { "--ignore-config", "--socket-timeout", "10", "--retries", "1", "--extractor-retries", "0", "--no-playlist" };
+            if (dataDirectory is not null)
+            {
+                args.AddRange(["--cache-dir", Path.Combine(dataDirectory, "extractor-cache")]);
+                var cookies = Path.Combine(dataDirectory, "youtube-cookies.txt");
+                if (File.Exists(cookies)) args.AddRange(["--cookies", cookies]);
+            }
+            return args.ToArray();
+        }
+    }
 
     public async Task<IReadOnlyList<Track>> SearchAsync(string query, CancellationToken cancellationToken)
     {
@@ -14,6 +27,7 @@ public sealed class YtDlpCatalog(ICommandRunner runner) : IMusicCatalog
         var target = Uri.TryCreate(query, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http"
             ? query : "ytsearch15:" + query;
         var result = await runner.RunAsync([..Common, "--flat-playlist", "--dump-single-json", "--", target], cancellationToken);
+        PlaybackDiagnostics.Write("Busca", result.Error);
         EnsureSuccess(result);
         return ParseSearch(result.Output);
     }
@@ -21,7 +35,8 @@ public sealed class YtDlpCatalog(ICommandRunner runner) : IMusicCatalog
     public async Task<AudioSource> ResolveAsync(Track track, CancellationToken cancellationToken)
     {
         if (track.IsLocal) return new(track.Source, new Dictionary<string, string>());
-        var result = await runner.RunAsync([..Common, "-f", "bestaudio[ext=m4a]/bestaudio", "--dump-single-json", "--", track.Source], cancellationToken);
+        var result = await runner.RunAsync([..Common, "-f", "bestaudio[ext=m4a][protocol=https]/bestaudio[protocol=https]/bestaudio", "--skip-download", "--dump-single-json", "--", track.Source], cancellationToken);
+        PlaybackDiagnostics.Write("Extrator", result.Error);
         EnsureSuccess(result);
         using var document = JsonDocument.Parse(result.Output);
         var item = document.RootElement;
@@ -30,6 +45,7 @@ public sealed class YtDlpCatalog(ICommandRunner runner) : IMusicCatalog
         if (item.TryGetProperty("http_headers", out var values))
             foreach (var header in values.EnumerateObject())
                 if (header.Value.ValueKind == JsonValueKind.String) headers[header.Name] = header.Value.GetString()!;
+        PlaybackDiagnostics.Write("Extrator", "Áudio resolvido; formato=" + (Text(item, "format_id") ?? "?") + "; protocolo=" + (Text(item, "protocol") ?? "?"));
         return new(url, headers);
     }
 
@@ -63,7 +79,12 @@ public sealed class YtDlpCatalog(ICommandRunner runner) : IMusicCatalog
     private static void EnsureSuccess(ProcessResult result)
     {
         if (result.ExitCode != 0)
-            throw new InvalidOperationException("YT-DLP: " + (string.IsNullOrWhiteSpace(result.Error)
-                ? "Não foi possível acessar o conteúdo." : result.Error.Trim()[..Math.Min(result.Error.Trim().Length, 500)]));
+            {
+            var message = result.Error.Trim();
+            if (message.Contains("sign in", StringComparison.OrdinalIgnoreCase) || message.Contains("cookies", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("O YouTube pediu verificação de sessão. Você pode importar cookies nas configurações. Veja o diagnóstico para o erro completo.");
+            var lastError = message.Split('\n').LastOrDefault(line => line.Contains("ERROR:", StringComparison.OrdinalIgnoreCase)) ?? message;
+            throw new InvalidOperationException("YT-DLP: " + (lastError.Length == 0 ? "Não foi possível acessar o conteúdo." : lastError[..Math.Min(lastError.Length, 240)]));
+        }
     }
 }
