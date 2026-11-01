@@ -126,6 +126,31 @@ public sealed class MainView : UserControl
             _main.IsVisible = !_showingPlayer;
             _bottom.IsVisible = compact && !_showingPlayer;
             _main.Padding = Ui.Insets(compact ? "CompactPageInsets" : "DesktopPageInsets");
+            // Keep wide-screen content legible without stretching every field
+            // across a full desktop monitor. Mobile layout remains unchanged.
+            content.Width = compact ? double.NaN : Math.Max(0, Math.Min(1120, Bounds.Width - 200 - 64));
+            content.HorizontalAlignment = compact ? HorizontalAlignment.Stretch : HorizontalAlignment.Center;
+            _search.FontSize = compact ? 14 : 16;
+            _search.Height = compact ? 48 : 56;
+            _search.MinHeight = _search.Height;
+            _heading.FontSize = compact ? 18 : 24;
+            _count.FontSize = compact ? 12 : 14;
+            _status.FontSize = compact ? 12 : 14;
+            _nowTitle.FontSize = compact ? 13 : 16;
+            _nowArtist.FontSize = compact ? 12 : 14;
+            if (_emptyState.Content is StackPanel empty)
+            {
+                empty.MaxWidth = compact ? 320 : 460;
+                foreach (var child in empty.Children)
+                {
+                    if (child is TextBlock message) message.FontSize = compact ? 13 : 16;
+                    if (child is Button action)
+                    {
+                        action.Width = compact ? 200 : 260;
+                        action.FontSize = compact ? 13 : 16;
+                    }
+                }
+            }
             ResizePlayer();
         };
         AppServices.BackHandler = HandleBack; AppServices.OpenPlayerView = ShowPlayer;
@@ -261,7 +286,12 @@ public sealed class MainView : UserControl
             var message = Text(_page switch { "library" => "Suas favoritas ficam aqui.", "queue" => "Adicione músicas à fila.", _ => "Busque uma música ou artista\npara começar a ouvir." }, 13, Muted);
             message.TextAlignment = TextAlignment.Center; empty.Children.Add(message);
             var import = ActionButton("Abrir áudio local", OpenLocalAsync);
-            import.Width = 200; import.HorizontalAlignment = HorizontalAlignment.Center;
+            var wide = Bounds.Width >= 800;
+            import.Width = wide ? 260 : 200;
+            import.FontSize = wide ? 16 : 13;
+            message.FontSize = wide ? 16 : 13;
+            empty.MaxWidth = wide ? 460 : 320;
+            import.HorizontalAlignment = HorizontalAlignment.Center;
             import.Background = Ui.Brush("SurfaceElevated");
             empty.Children.Add(import); _emptyState.Content = empty;
         }
