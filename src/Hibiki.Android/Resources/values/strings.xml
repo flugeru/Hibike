@@ -3,4 +3,5 @@
   <string name="playback_channel">Hibiki • Reprodução</string>
   <string name="playback_channel_description">Controles de música e reprodução em segundo plano</string>
   <string name="preparing_audio">Preparando sua música…</string>
+  <string name="cancel_preparation">Cancelar</string>
 </resources>
