@@ -4,6 +4,7 @@ mkdir -p artifacts/smoke
 apk="$(find artifacts/emulator -maxdepth 1 -name '*-Signed.apk' -print -quit)"
 test -n "$apk"
 adb install -r "$apk"
+adb shell pm grant com.flugel.hibiki android.permission.POST_NOTIFICATIONS
 adb logcat -c
 # Resolve the generated .NET activity name instead of hard-coding its CRC prefix.
 activity="$(adb shell cmd package resolve-activity --brief com.flugel.hibiki | tr -d '\r' | tail -n 1)"
@@ -38,6 +39,12 @@ done
 adb logcat -d -s HibikiProbe:I '*:S' > artifacts/smoke/playback-probe.txt
 cat artifacts/smoke/playback-probe.txt
 grep -q HIBIKI_PROBE_LOCAL_OK artifacts/smoke/playback-probe.txt
+grep -q HIBIKI_PROBE_BACKGROUND_OK artifacts/smoke/playback-probe.txt
+grep -q HIBIKI_PROBE_NOTIFICATION_OK artifacts/smoke/playback-probe.txt
 grep -q HIBIKI_PROBE_RUNTIME_OK artifacts/smoke/playback-probe.txt
 grep -q HIBIKI_PROBE_DONE artifacts/smoke/playback-probe.txt
+sleep 1
+adb exec-out screencap -p > artifacts/smoke/player.png
+adb shell input keyevent 4
+sleep 1
 adb exec-out screencap -p > artifacts/smoke/results-layout-fixture.png

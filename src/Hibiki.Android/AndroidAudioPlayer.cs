@@ -1,70 +1,58 @@
 using Android.Content;
-using AudioSource = Hibiki.Core.Models.AudioSource;
-using Android.Media;
+using Android.OS;
 using Hibiki.Core.Models;
 using Hibiki.Core.Services;
 
 namespace Hibiki.Android;
 
-public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer
+public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPreparation
 {
-    private MediaPlayer? _player;
-    private bool _prepared;
+    private PlaybackService? _service;
     private double _volume = 0.8;
     public event EventHandler? Ended;
     public event EventHandler<string>? Failed;
-    public bool IsPlaying => _prepared && (_player?.IsPlaying ?? false);
-    public double Position => _prepared ? (_player?.CurrentPosition ?? 0) / 1000d : 0;
-    public double Duration => _prepared ? Math.Max(0, _player?.Duration ?? 0) / 1000d : 0;
-    public double Volume
+    public bool IsPlaying => PlaybackService.Instance?.Playing ?? false;
+    public double Position => PlaybackService.Instance?.Position ?? 0;
+    public double Duration => PlaybackService.Instance?.Duration ?? 0;
+    public double Volume { get => _volume; set { _volume = Math.Clamp(value, 0, 1); Main(() => PlaybackService.Instance?.SetVolume(_volume)); } }
+    public async Task BeginPreparationAsync(Track track, CancellationToken cancellationToken)
     {
-        get => _volume;
-        set { _volume = Math.Clamp(value, 0, 1); _player?.SetVolume((float)_volume, (float)_volume); }
+        var intent = new Intent(context, typeof(PlaybackService)).SetAction(PlaybackService.PrepareAction)!.PutExtra("title", track.Title);
+        Main(() => { if (Build.VERSION.SdkInt >= BuildVersionCodes.O) context.StartForegroundService(intent); else context.StartService(intent); });
+        while (PlaybackService.Instance is null) await Task.Delay(20, cancellationToken);
+        var service = PlaybackService.Instance;
+        if (!ReferenceEquals(_service, service))
+        {
+            if (_service is not null) { _service.Ended -= OnEnded; _service.Failed -= OnFailed; }
+            _service = service; _service!.Ended += OnEnded; _service.Failed += OnFailed;
+        }
     }
     public async Task PlayAsync(AudioSource source, CancellationToken cancellationToken)
     {
-        ReleasePlayer();
-        var player = new MediaPlayer();
-        _player = player;
-        var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        player.SetAudioAttributes(new AudioAttributes.Builder()!.SetUsage(AudioUsageKind.Media)!
-            .SetContentType(AudioContentType.Music)!.Build());
-        player.Prepared += (_, _) => { PlaybackDiagnostics.Write("Player", "Áudio preparado."); ready.TrySetResult(); };
-        player.Error += (_, e) =>
-        {
-            e.Handled = true;
-            PlaybackDiagnostics.Write("Player", $"Erro nativo: {e.What}/{e.Extra}");
-            _prepared = false;
-            var message = $"Falha no áudio ({e.What}/{e.Extra}). Tente reproduzir a faixa novamente.";
-            if (!ready.TrySetException(new IOException(message))) Failed?.Invoke(this, message);
-        };
-        player.Completion += (_, _) => Ended?.Invoke(this, EventArgs.Empty);
+        if (PlaybackService.Instance is null) await BeginPreparationAsync(new("audio", source.Title ?? "Hibiki", source.Artist ?? "", source.Url), cancellationToken);
+        var service = PlaybackService.Instance!;
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        Main(() => service.Open(source, _volume));
         try
         {
-            if (source.Url.StartsWith("content://", StringComparison.Ordinal))
-                player.SetDataSource(context, global::Android.Net.Uri.Parse(source.Url)!);
-            else if (Uri.TryCreate(source.Url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https")
-                player.SetDataSource(context, global::Android.Net.Uri.Parse(source.Url)!, new Dictionary<string, string>(source.Headers));
-            else player.SetDataSource(source.Url);
-            PlaybackDiagnostics.Write("Player", "Iniciando preparação do áudio.");
-            player.PrepareAsync();
-            await ready.Task.WaitAsync(cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
-            _prepared = true;
-            player.SetVolume((float)_volume, (float)_volume);
-            player.Start();
+            while (service.State != 3 || !service.Playing)
+            {
+                if (service.Error is { } error) throw new IOException(error);
+                await Task.Delay(25, cancellationToken);
+            }
+            PlaybackDiagnostics.Write("Player", $"Streaming iniciado em {started.ElapsedMilliseconds} ms; buffer inicial configurado em 250 ms.");
         }
-        catch { if (ReferenceEquals(_player, player)) ReleasePlayer(); throw; }
+        catch { Main(service.CancelPreparation); throw; }
     }
-    public void Pause() { if (IsPlaying) _player!.Pause(); }
-    public void Resume() { if (_prepared) _player!.Start(); }
-    public void Seek(double seconds) { if (_prepared) _player!.SeekTo((int)(Math.Clamp(seconds, 0, Duration) * 1000)); }
-    private void ReleasePlayer()
+    public void Pause() => Main(() => PlaybackService.Instance?.PauseAudio());
+    public void Resume() => Main(() => PlaybackService.Instance?.ResumeAudio());
+    public void Seek(double seconds) => Main(() => PlaybackService.Instance?.Seek(seconds));
+    public void CancelPreparation() => Main(() => PlaybackService.Instance?.CancelPreparation());
+    private void OnEnded(object? sender, EventArgs args) => Ended?.Invoke(this, args);
+    private void OnFailed(object? sender, string error) => Failed?.Invoke(this, error);
+    private static void Main(Action action)
     {
-        _prepared = false;
-        _player?.Release();
-        _player?.Dispose();
-        _player = null;
+        if (Looper.MyLooper() == Looper.MainLooper) action(); else new Handler(Looper.MainLooper!).Post(action);
     }
-    public void Dispose() => ReleasePlayer();
+    public void Dispose() { if (_service is not null) { _service.Ended -= OnEnded; _service.Failed -= OnFailed; } }
 }

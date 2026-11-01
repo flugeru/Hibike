@@ -8,18 +8,18 @@ namespace Hibiki.Android;
     ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.UiMode)]
 public sealed class MainActivity : AvaloniaMainActivity
 {
-#if HIBIKI_SMOKE_TEST
     protected override void OnCreate(global::Android.OS.Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
-        if (Intent?.GetBooleanExtra("hibiki.smoke.playback", false) == true)
-            _ = PlaybackProbe.RunAsync(this);
-    }
+#if HIBIKI_SMOKE_TEST
+        if (Intent?.GetBooleanExtra("hibiki.smoke.playback", false) == true) _ = PlaybackProbe.RunAsync(this);
 #endif
-    // The first milestone deliberately plays in the foreground only.
-    protected override void OnStop()
+        if (global::Android.OS.Build.VERSION.SdkInt >= global::Android.OS.BuildVersionCodes.Tiramisu)
+            RequestPermissions(new[] { global::Android.Manifest.Permission.PostNotifications }, 42);
+    }
+    public override void OnBackPressed()
     {
-        AppServices.Suspend();
-        base.OnStop();
+        if (AppServices.BackHandler?.Invoke() == true) return;
+        base.OnBackPressed();
     }
 }

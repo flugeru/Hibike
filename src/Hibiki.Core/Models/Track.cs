@@ -7,5 +7,5 @@ public sealed record Track(string Id, string Title, string Artist, string Source
         ? TimeSpan.FromSeconds(DurationSeconds).ToString(DurationSeconds >= 3600 ? @"h\:mm\:ss" : @"m\:ss") : "—";
 }
 
-public sealed record AudioSource(string Url, IReadOnlyDictionary<string, string> Headers);
+public sealed record AudioSource(string Url, IReadOnlyDictionary<string, string> Headers, string? Title = null, string? Artist = null, string? Artwork = null);
 public sealed record ProcessResult(int ExitCode, string Output, string Error);

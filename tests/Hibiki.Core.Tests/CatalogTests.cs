@@ -65,11 +65,23 @@ public class CatalogTests
         PlaybackDiagnostics.Write("test", "failed https://example.org/audio?token=secret");
         Assert.DoesNotContain("token=secret", PlaybackDiagnostics.Snapshot());
     }
+    [Fact] public async Task CachedResolutionAvoidsDuplicateExtraction()
+    {
+        var runner = new FakeRunner("{\"url\":\"https://example.org/audio\"}");
+        var catalog = new CachedMusicCatalog(new YtDlpCatalog(runner));
+        var track = new Track("id", "Title", "Artist", "https://example.org/video");
+        var first = await catalog.ResolveAsync(track, default);
+        var second = await catalog.ResolveAsync(track, default);
+        Assert.Same(first, second);
+        Assert.Equal(1, runner.Calls);
+        Assert.Contains("--skip-download", runner.Arguments);
+    }
     private sealed class FakeRunner(string output) : ICommandRunner
     {
         public IReadOnlyList<string> Arguments { get; private set; } = [];
         public int ExitCode { get; init; }
+        public int Calls { get; private set; }
         public Task<ProcessResult> RunAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken)
-        { Arguments = arguments; return Task.FromResult(new ProcessResult(ExitCode, output, "test error")); }
+        { Calls++; Arguments = arguments; return Task.FromResult(new ProcessResult(ExitCode, output, "test error")); }
     }
 }

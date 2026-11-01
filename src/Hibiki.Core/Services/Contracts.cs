@@ -23,3 +23,9 @@ public interface IAudioPlayer : IDisposable
     void Resume();
     void Seek(double seconds);
 }
+
+public interface IAudioPreparation
+{
+    Task BeginPreparationAsync(Track track, CancellationToken cancellationToken);
+    void CancelPreparation();
+}

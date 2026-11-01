@@ -26,17 +26,31 @@ public sealed class YtDlpCatalog(ICommandRunner runner, string? dataDirectory = 
         // Explicit terminator keeps user input out of yt-dlp's option parser.
         var target = Uri.TryCreate(query, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http"
             ? query : "ytsearch15:" + query;
-        var result = await runner.RunAsync([..Common, "--flat-playlist", "--dump-single-json", "--", target], cancellationToken);
-        PlaybackDiagnostics.Write("Busca", result.Error);
+        var result = await runner.RunAsync([..Common, "--flat-playlist", "--skip-download", "--quiet", "--dump-single-json", "--", target], cancellationToken);
+        PlaybackDiagnostics.Write("Busca", "Metadados recebidos; nenhum arquivo de áudio foi baixado.");
         EnsureSuccess(result);
         return ParseSearch(result.Output);
     }
 
     public async Task<AudioSource> ResolveAsync(Track track, CancellationToken cancellationToken)
     {
-        if (track.IsLocal) return new(track.Source, new Dictionary<string, string>());
-        var result = await runner.RunAsync([..Common, "-f", "bestaudio[ext=m4a][protocol=https]/bestaudio[protocol=https]/bestaudio", "--skip-download", "--dump-single-json", "--", track.Source], cancellationToken);
-        PlaybackDiagnostics.Write("Extrator", result.Error);
+        if (track.IsLocal) return new(track.Source, new Dictionary<string, string>(), track.Title, track.Artist, track.Thumbnail);
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var options = new[] { "-f", "bestaudio[ext=m4a][protocol=https]/bestaudio[protocol=https]/bestaudio", "--skip-download", "--dump-single-json" };
+        ProcessResult result;
+        var hasCookies = dataDirectory is not null && File.Exists(Path.Combine(dataDirectory, "youtube-cookies.txt"));
+        if (!hasCookies)
+        {
+            // Official yt-dlp JS-less default client: avoids interpreting the web player on a cold start.
+            result = await runner.RunAsync([..Common, ..options, "--extractor-args", "youtube:player_client=visionos", "--", track.Source], cancellationToken);
+            if (result.ExitCode != 0)
+            {
+                PlaybackDiagnostics.Write("Extrator", "Cliente rápido indisponível; tentando clientes padrão.");
+                result = await runner.RunAsync([..Common, ..options, "--", track.Source], cancellationToken);
+            }
+        }
+        else result = await runner.RunAsync([..Common, ..options, "--", track.Source], cancellationToken);
+        PlaybackDiagnostics.Write("Extrator", $"Resolução terminou em {watch.ElapsedMilliseconds} ms.");
         EnsureSuccess(result);
         using var document = JsonDocument.Parse(result.Output);
         var item = document.RootElement;
@@ -46,7 +60,7 @@ public sealed class YtDlpCatalog(ICommandRunner runner, string? dataDirectory = 
             foreach (var header in values.EnumerateObject())
                 if (header.Value.ValueKind == JsonValueKind.String) headers[header.Name] = header.Value.GetString()!;
         PlaybackDiagnostics.Write("Extrator", "Áudio resolvido; formato=" + (Text(item, "format_id") ?? "?") + "; protocolo=" + (Text(item, "protocol") ?? "?"));
-        return new(url, headers);
+        return new(url, headers, track.Title, track.Artist, track.Thumbnail);
     }
 
     public static IReadOnlyList<Track> ParseSearch(string json)
@@ -81,7 +95,7 @@ public sealed class YtDlpCatalog(ICommandRunner runner, string? dataDirectory = 
         if (result.ExitCode != 0)
             {
             var message = result.Error.Trim();
-            if (message.Contains("sign in", StringComparison.OrdinalIgnoreCase) || message.Contains("cookies", StringComparison.OrdinalIgnoreCase))
+            if (message.Contains("sign in", StringComparison.OrdinalIgnoreCase) || message.Contains("login required", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("O YouTube pediu verificação de sessão. Você pode importar cookies nas configurações. Veja o diagnóstico para o erro completo.");
             var lastError = message.Split('\n').LastOrDefault(line => line.Contains("ERROR:", StringComparison.OrdinalIgnoreCase)) ?? message;
             throw new InvalidOperationException("YT-DLP: " + (lastError.Length == 0 ? "Não foi possível acessar o conteúdo." : lastError[..Math.Min(lastError.Length, 240)]));

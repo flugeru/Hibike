@@ -18,6 +18,9 @@
   <ItemGroup>
     <ProjectReference Include="../Hibiki.App/Hibiki.App.csproj" />
     <PackageReference Include="Avalonia.Android" />
+    <PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer" />
+    <PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer.Hls" />
+    <PackageReference Include="Xamarin.AndroidX.Media3.Session" />
     <AndroidNativeLibrary Include="Native/**/*.so" />
     <AndroidAsset Include="../../THIRD-PARTY-NOTICES.md" Link="licenses/THIRD-PARTY-NOTICES.md" />
     <AndroidAsset Include="../../scripts/LICENSE.youtubedl-android.txt" Link="licenses/GPL-3.0.txt" />

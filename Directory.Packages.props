@@ -6,6 +6,9 @@
     <PackageVersion Include="Avalonia.Desktop" Version="12.1.4" />
     <PackageVersion Include="Avalonia.Themes.Fluent" Version="12.1.4" />
     <PackageVersion Include="Avalonia.Fonts.Inter" Version="12.1.4" />
+    <PackageVersion Include="Xamarin.AndroidX.Media3.ExoPlayer" Version="1.8.0" />
+    <PackageVersion Include="Xamarin.AndroidX.Media3.ExoPlayer.Hls" Version="1.8.0" />
+    <PackageVersion Include="Xamarin.AndroidX.Media3.Session" Version="1.8.0" />
     <PackageVersion Include="LibVLCSharp" Version="3.9.4" />
     <PackageVersion Include="VideoLAN.LibVLC.Windows" Version="3.0.21" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />

@@ -12,6 +12,7 @@ public sealed class MusicController
     private CancellationTokenSource? _play;
     private readonly SemaphoreSlim _playGate = new(1, 1);
     private readonly DispatcherTimer _timer;
+    private bool _initialized;
     private int _queueIndex = -1;
     public string DataDirectory { get; }
     public IAudioPlayer Player { get; }
@@ -41,6 +42,8 @@ public sealed class MusicController
     }
     public async Task InitializeAsync()
     {
+        if (_initialized) return;
+        _initialized = true;
         try { foreach (var track in await _store.LoadAsync()) Favorites.Add(track); Changed?.Invoke(); }
         catch (Exception ex) { SetStatus("Não foi possível ler a biblioteca: " + ex.Message); }
     }
@@ -58,6 +61,7 @@ public sealed class MusicController
             var tracks = await _catalog.SearchAsync(query, request.Token);
             if (!ReferenceEquals(_search, request)) return;
             Results.Clear(); foreach (var track in tracks) Results.Add(track);
+            if (_catalog is CachedMusicCatalog cached) _ = cached.WarmAsync(tracks.Take(2));
             Status = tracks.Count == 0 ? "Nenhuma faixa encontrada. Tente outro nome." : $"{tracks.Count} faixas encontradas.";
         }
         catch (OperationCanceledException) { if (ReferenceEquals(_search, request)) Status = "Busca cancelada ou tempo esgotado. Tente novamente."; }
@@ -84,6 +88,7 @@ public sealed class MusicController
         try
         {
             await _playGate.WaitAsync(request.Token); entered = true;
+            if (Player is IAudioPreparation preparing) await preparing.BeginPreparationAsync(track, request.Token);
             Player.Pause();
             PlaybackDiagnostics.Write("Reprodução", "Iniciando resolução de " + track.Id);
             using var extractTimeout = CancellationTokenSource.CreateLinkedTokenSource(request.Token);
@@ -103,6 +108,7 @@ public sealed class MusicController
             }
             else _queueIndex = queueIndex.Value;
             Current = track;
+            WarmNext();
             Status = "Tocando agora";
         }
         catch (OperationCanceledException)
@@ -116,6 +122,7 @@ public sealed class MusicController
         catch (Exception ex) { if (ReferenceEquals(_play, request)) Fail(ex.Message); }
         finally
         {
+            if (Player is IAudioPreparation preparing && !Player.IsPlaying) preparing.CancelPreparation();
             if (entered) _playGate.Release();
             if (ReferenceEquals(_play, request)) { _play = null; Pending = null; LoadingAudio = false; Changed?.Invoke(); }
             request.Dispose();
@@ -166,5 +173,7 @@ public sealed class MusicController
         else { Queue.Clear(); Queue.Add(Current); _queueIndex = 0; }
         SetStatus("Fila limpa. A faixa atual foi mantida.");
     }
-    public void StopObserving() { _timer.Stop(); _search?.Cancel(); _play?.Cancel(); Player.Pause(); }
+    private void WarmNext() { if (_catalog is CachedMusicCatalog cached && _queueIndex + 1 < Queue.Count) _ = cached.WarmAsync([Queue[_queueIndex + 1]]); }
+    public void StartObserving() => _timer.Start();
+    public void StopObserving() { _timer.Stop(); _search?.Cancel(); }
 }
