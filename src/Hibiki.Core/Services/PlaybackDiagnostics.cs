@@ -8,6 +8,7 @@ public static partial class PlaybackDiagnostics
     public static void Write(string stage, string message)
     {
         // Never retain signed stream URLs, cookies or authorization headers.
+        if (message.Count(c => c == '\t') >= 5 || message.Split("\\t").Length >= 6) message = "Detalhe de cookies omitido.";
         message = UrlPattern().Replace(message, "[URL]");
         var text = $"{DateTime.Now:HH:mm:ss} [{stage}] {message.Trim()}";
         lock (Gate) { Lines.Enqueue(text); while (Lines.Count > 80) Lines.Dequeue(); }
