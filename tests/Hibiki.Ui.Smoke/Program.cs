@@ -12,6 +12,7 @@ using Avalonia.VisualTree;
 using Hibiki.App;
 using Hibiki.App.Views;
 using Hibiki.Core.Models;
+using Track = Hibiki.Core.Models.Track;
 using Hibiki.Core.Services;
 
 var directory = Path.Combine(Path.GetTempPath(), "hibiki-ui-smoke-" + Guid.NewGuid().ToString("N"));
