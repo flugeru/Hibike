@@ -43,7 +43,7 @@ internal static class NotificationArtwork
             return MakeSquareCover(buffer.ToArray());
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException or OperationCanceledException
-                                   or TaskCanceledException or ArgumentException)
+                                   or ArgumentException)
         {
             // The track still plays if a thumbnail server is slow or unavailable.
             return null;
