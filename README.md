@@ -51,7 +51,7 @@ A biblioteca pode conter arquivos locais importados; removê-los dos favoritos n
 
 No desktop, a base usa **yt-dlp no PATH** (ou `HIBIKI_YTDLP` com o caminho do executável), além de um runtime JavaScript compatível com YT-DLP. O pacote nativo LibVLC do Windows está referenciado; no Linux é necessário instalar LibVLC e os plugins de áudio da distribuição. **Os hosts desktop ainda não têm workflow de compilação nem validação de execução nesta primeira etapa.**
 
-**Compilações e testes .NET são executados pelo GitHub Actions.** O workflow instala o workload Android e o SDK, verifica os runtimes contra versões/hashes fixos, executa os testes do núcleo, publica e valida a assinatura e o conteúdo do APK, abre uma versão Android x86_64 em emulador e testa avanço real da reprodução local. A tentativa de extração/reprodução do vídeo público de teste do YT-DLP registra o resultado em `Hibiki-Android-startup-check`; restrições externas do YouTube no IP do CI são reportadas separadamente.
+**Compilações e testes do núcleo .NET são executados pelo GitHub Actions.** O workflow instala o workload Android e o SDK, verifica os runtimes contra versões/hashes fixos, executa os testes do núcleo, publica o APK ARM64 assinado e valida sua assinatura e conteúdo. **O emulador foi removido do Actions para acelerar as builds; a interface e a reprodução são testadas manualmente no Android.**
 
 Sem compilar localmente, a estrutura pode ser verificada com `python3 scripts/check_source.py`.
 
@@ -65,4 +65,4 @@ The compact interface includes search/URL input, real results and artwork, a con
 
 Android playback runs in a Media3/ExoPlayer foreground service with a MediaSession, system media notification and lockscreen controls. The initial buffer target is 250 ms, with a 10-second buffer target; URL extraction/network latency can still delay cold starts. Resolved addresses are cached in memory for four minutes and prefetched without downloading media files. The player uses a dedicated animated page. Offline downloading, browser-based account login, persistent playlists and sync are not implemented. Importing an existing session does not guarantee access when YouTube restricts the content or network. Desktop hosts are scaffolded with LibVLC but have not yet been built or runtime-tested by a desktop workflow. Desktop also requires yt-dlp and a supported JavaScript runtime; Linux requires system LibVLC/audio plugins.
 
-.NET compilation and behavioral tests run in **GitHub Actions**, not locally. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for upstream components and source/build references.
+.NET builds and core tests run in **GitHub Actions**, not locally. The workflow publishes and verifies a signed ARM64 APK; emulator testing has been removed to reduce build time, so playback and UI must be checked on a real Android device. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for upstream components and source/build references.
