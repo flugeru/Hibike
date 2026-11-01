@@ -5,6 +5,18 @@ namespace Hibike.Core.Tests;
 
 public class CatalogTests
 {
+    [Fact] public async Task ExperimentalSearchLimitsPlaylists()
+    {
+        var runner = new FakeRunner("{\"entries\":[]}");
+        await new YtDlpCatalog(runner).SearchAsync("scsearch30:artist", default);
+        Assert.Equal("scsearch30:artist", runner.Arguments[^1]);
+        Assert.Contains("--yes-playlist", runner.Arguments);
+        Assert.Contains("--playlist-end", runner.Arguments);
+    }
+    [Fact] public async Task ExperimentalDownloadRejectsLocalPaths()
+    {
+        await Assert.ThrowsAsync<InvalidOperationException>(() => AudioDownload.SaveAsync(new("file:///private.flac", new Dictionary<string, string>()), "unused", null, default));
+    }
     [Fact] public void PlaybackSessionPreservesQueueAndPosition()
     {
         var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
@@ -32,7 +44,7 @@ public class CatalogTests
         var runner = new FakeRunner("""{"entries":[]}""");
         await new YtDlpCatalog(runner).SearchAsync("--exec bad", default);
         Assert.Equal("--", runner.Arguments[^2]);
-        Assert.Equal("ytsearch15:--exec bad", runner.Arguments[^1]);
+        Assert.Equal("ytsearch30:--exec bad", runner.Arguments[^1]);
     }
     [Fact] public async Task ResolvePreservesPlaybackHeaders()
     {

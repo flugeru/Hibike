@@ -34,6 +34,9 @@ public sealed class MusicController
     public bool LoadingAudio { get; private set; }
     public bool Shuffle { get; set; }
     public bool Repeat { get; set; }
+    public bool RepeatQueue { get; set; }
+    public DateTime? SleepAt { get; set; }
+    public ObservableCollection<Track> History { get; } = [];
     public event Action? Changed;
     public event Action? Tick;
 
@@ -48,6 +51,8 @@ public sealed class MusicController
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _timer.Tick += (_, _) =>
         {
+            if (SleepAt is { } sleep && DateTime.UtcNow >= sleep)
+            { SleepAt = null; Player.Pause(); SetStatus("Sleep timer: reprodução pausada."); }
             if (_seekAfterLoad is { } seek && Player.Duration > 0)
             { Player.Seek(Math.Min(seek, Player.Duration)); _seekAfterLoad = null; }
             if ((DateTime.UtcNow - _lastSave).TotalSeconds >= 5) SaveSession();
@@ -150,6 +155,9 @@ public sealed class MusicController
             }
             else _queueIndex = queueIndex.Value;
             Current = track;
+            var previousHistory = History.FirstOrDefault(t => t.Source == track.Source);
+            if (previousHistory is not null) History.Remove(previousHistory);
+            History.Insert(0, track); if (History.Count > 100) History.RemoveAt(100);
             CurrentSource = Player.PlaybackSource ?? source;
             WarmNext();
             Status = "Tocando agora";
@@ -201,6 +209,7 @@ public sealed class MusicController
     {
         if (Queue.Count == 0) return;
         var next = Shuffle && Queue.Count > 1 ? PickRandomIndex() : _queueIndex + 1;
+        if (next >= Queue.Count && RepeatQueue) next = 0;
         if (next >= Queue.Count) { Player.Pause(); SetStatus("Você chegou ao fim da fila."); return; }
         await PlayAsync(Queue[next], next);
     }
@@ -227,6 +236,18 @@ public sealed class MusicController
         if (Current is null) { Queue.Clear(); _queueIndex = -1; }
         else { Queue.Clear(); Queue.Add(Current); _queueIndex = 0; }
         SetStatus("Fila limpa. A faixa atual foi mantida.");
+    }
+    public void EnqueueResults()
+    {
+        foreach (var track in Results.Where(t => !Queue.Any(q => q.Source == t.Source))) Queue.Add(track);
+        SetStatus("Resultados adicionados à fila.");
+    }
+    public void ReorderQueue(bool random)
+    {
+        var items = random ? Queue.OrderBy(_ => Random.Shared.Next()).ToArray() : Queue.OrderBy(t => t.Title, StringComparer.CurrentCultureIgnoreCase).ToArray();
+        Queue.Clear(); foreach (var track in items) Queue.Add(track);
+        _queueIndex = Current is null ? -1 : Queue.IndexOf(Current);
+        SetStatus(random ? "Fila embaralhada." : "Fila ordenada por título.");
     }
     private void WarmNext() { if (_catalog is CachedMusicCatalog cached && _queueIndex + 1 < Queue.Count) _ = cached.WarmAsync([Queue[_queueIndex + 1]]); }
     public void SaveSession()

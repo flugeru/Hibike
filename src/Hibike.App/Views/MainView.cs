@@ -501,9 +501,63 @@ public sealed class MainView : UserControl
         panel.Children.Add(ActionButton("Importar cookies de sessão", ImportCookiesAsync));
         if (session) panel.Children.Add(ActionButton("Remover sessão", () => { System.IO.File.Delete(CookiesPath); AppServices.InvalidateCatalog(); ShowSettings(); return Task.CompletedTask; }));
         panel.Children.Add(ActionButton("Diagnóstico de reprodução", () => { ShowDiagnostics(); return Task.CompletedTask; }));
+        panel.Children.Add(ActionButton("Laboratório experimental", () => { ShowExperimental(); return Task.CompletedTask; }));
         ShowSheet("Configurações", panel);
     }
     private string CookiesPath => System.IO.Path.Combine(_music.DataDirectory, "youtube-cookies.txt");
+    private CancellationTokenSource? _download;
+    private void ShowExperimental()
+    {
+        var panel = new StackPanel { Spacing = UiTheme.CompactGap };
+        var note = Text("Branch de testes. Links de serviços suportados pelo yt-dlp e playlists: até 100 entradas. Downloads: somente áudio original HTTPS direto, sem conversão, até 1 GB.", UiTheme.Caption, Muted);
+        note.TextWrapping = TextWrapping.Wrap; panel.Children.Add(note);
+        var query = new TextBox { PlaceholderText = "Artista, música ou link de playlist/serviço", Text = _search.Text };
+        panel.Children.Add(query);
+        foreach (var (label, prefix) in new[] { ("Buscar YouTube", "ytsearch30:"), ("Buscar SoundCloud", "scsearch30:"), ("Abrir link / playlist", "") })
+            panel.Children.Add(ActionButton(label, async () =>
+            {
+                var text = query.Text?.Trim() ?? "";
+                if (text.Length == 0) return;
+                if (prefix.Length == 0 && (!Uri.TryCreate(text, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http")))
+                    throw new ArgumentException("Informe link HTTP ou HTTPS.");
+                CloseSheet(); _page = "explore"; await _music.SearchAsync(prefix + text);
+            }));
+        panel.Children.Add(ActionButton("Adicionar resultados à fila", () => { _music.EnqueueResults(); return Task.CompletedTask; }));
+        panel.Children.Add(ActionButton("Ordenar fila por título", () => { _music.ReorderQueue(false); return Task.CompletedTask; }));
+        panel.Children.Add(ActionButton("Embaralhar fila agora", () => { _music.ReorderQueue(true); return Task.CompletedTask; }));
+        panel.Children.Add(ActionButton("Limpar fila (manter atual)", () => { _music.ClearQueue(); return Task.CompletedTask; }));
+        panel.Children.Add(ActionButton(_music.RepeatQueue ? "Desativar repetir fila" : "Repetir fila inteira", () => { _music.RepeatQueue = !_music.RepeatQueue; ShowExperimental(); return Task.CompletedTask; }));
+        foreach (var seconds in new[] { -10, 10, 30 })
+            panel.Children.Add(ActionButton($"Pular {seconds:+0;-0} segundos", () => { _music.Player.Seek(Math.Max(0, _music.Position + seconds)); return Task.CompletedTask; }));
+        foreach (var minutes in new[] { 15, 30, 60 })
+            panel.Children.Add(ActionButton($"Sleep timer: {minutes} min", () => { _music.SleepAt = DateTime.UtcNow.AddMinutes(minutes); _music.SetStatus($"Pausar em {minutes} minutos."); return Task.CompletedTask; }));
+        panel.Children.Add(ActionButton("Cancelar sleep timer", () => { _music.SleepAt = null; return Task.CompletedTask; }));
+        panel.Children.Add(ActionButton("Baixar faixa atual (formato original)", DownloadCurrentAsync));
+        panel.Children.Add(ActionButton("Cancelar download", () => { _download?.Cancel(); return Task.CompletedTask; }));
+        panel.Children.Add(ActionButton("Histórico desta sessão", () =>
+        {
+            var history = new StackPanel { Spacing = UiTheme.CompactGap };
+            foreach (var track in _music.History.ToArray()) history.Children.Add(ActionButton(track.Artist + " — " + track.Title, async () => { CloseSheet(); await _music.PlayAsync(track); }));
+            ShowSheet("Histórico", history); return Task.CompletedTask;
+        }));
+        ShowSheet("Laboratório experimental", panel);
+    }
+    private async Task DownloadCurrentAsync()
+    {
+        if (_download is not null) throw new InvalidOperationException("Já existe download em andamento.");
+        var track = _music.Current ?? throw new InvalidOperationException("Reproduza uma faixa primeiro.");
+        var source = _music.CurrentSource ?? throw new InvalidOperationException("Fonte ainda indisponível.");
+        if (track.IsLocal) throw new InvalidOperationException("Faixa já é local.");
+        using var request = new CancellationTokenSource(TimeSpan.FromMinutes(30)); _download = request;
+        try
+        {
+            var path = await AudioDownload.SaveAsync(source, System.IO.Path.Combine(_music.DataDirectory, "downloads"), new Progress<string>(_music.SetStatus), request.Token);
+            var local = track with { Id = Guid.NewGuid().ToString("N"), Source = path, IsLocal = true };
+            await _music.ToggleFavoriteAsync(local); _music.SetStatus("Download salvo na biblioteca local.");
+        }
+        catch (OperationCanceledException) { _music.SetStatus("Download cancelado ou tempo esgotado."); }
+        finally { _download = null; }
+    }
     private async Task ImportCookiesAsync()
     {
         var top = TopLevel.GetTopLevel(this); if (top is null) return;
