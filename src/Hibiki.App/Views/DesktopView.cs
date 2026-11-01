@@ -45,6 +45,7 @@ public sealed class DesktopView : UserControl
     private readonly ContentControl _artworkSmall = new();
     private readonly Button _play = DesktopTheme.Button("", true);
     private readonly Button _favorite = DesktopTheme.Icon("heart", "Adicionar aos favoritos");
+    private readonly Button _cancelSearch = DesktopTheme.Button("Cancelar");
     private readonly Button _shuffle = DesktopTheme.Icon("shuffle", "Ativar aleatório");
     private readonly Button _repeat = DesktopTheme.Icon("repeat", "Ativar repetição");
     private readonly TextBlock _elapsed = DesktopTheme.Text("0:00", 12, DesktopTheme.TextMuted);
@@ -214,7 +215,7 @@ public sealed class DesktopView : UserControl
         Grid.SetColumn(actions, 1); header.Children.Add(actions);
         page.Children.Add(header);
 
-        var searchCard = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 12 };
+        var searchCard = new Grid { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = 12 };
         _search.VerticalContentAlignment = VerticalAlignment.Center;
         _search.Background = DesktopTheme.Surface;
         _search.BorderBrush = DesktopTheme.Outline;
@@ -229,6 +230,12 @@ public sealed class DesktopView : UserControl
         var search = Button("Buscar", SearchAsync, primary: true);
         search.Width = 108; search.Height = 44; search.MinHeight = 44;
         Grid.SetColumn(search, 1); searchCard.Children.Add(search);
+        _cancelSearch.Height = 44;
+        _cancelSearch.MinHeight = 44;
+        _cancelSearch.IsVisible = false;
+        _cancelSearch.Click += (_, _) => _music.CancelSearch();
+        Grid.SetColumn(_cancelSearch, 2);
+        searchCard.Children.Add(_cancelSearch);
         Grid.SetRow(searchCard, 1); page.Children.Add(searchCard);
 
         var section = new Grid { RowDefinitions = new("Auto,*"), RowSpacing = 13 };
@@ -384,6 +391,7 @@ public sealed class DesktopView : UserControl
     private void Refresh()
     {
         _status.Text = _music.Status;
+        _cancelSearch.IsVisible = _music.Searching;
         var tracks = _page switch
         {
             "library" => _music.Favorites,
@@ -449,9 +457,9 @@ public sealed class DesktopView : UserControl
         _footerTitle.Text = _sideTitle.Text = name;
         _footerArtist.Text = _sideArtist.Text = artist;
         _favorite.IsEnabled = _music.Current is not null;
-        _favorite.Content = Icons.Make("heart_filled",
-            _music.Current is not null && _music.IsFavorite(_music.Current)
-                ? DesktopTheme.Accent : DesktopTheme.TextSecondary, 20);
+        var isFavorite = _music.Current is { } favoriteTrack && _music.IsFavorite(favoriteTrack);
+        _favorite.Content = Icons.Make(isFavorite ? "heart_filled" : "heart",
+            isFavorite ? DesktopTheme.Accent : DesktopTheme.TextSecondary, 20);
         _shuffle.Content = Icons.Make("shuffle", _music.Shuffle ? DesktopTheme.Accent : DesktopTheme.TextSecondary, 21);
         _repeat.Content = Icons.Make("repeat", _music.Repeat ? DesktopTheme.Accent : DesktopTheme.TextSecondary, 21);
         _queueCount.Text = _music.Queue.Count.ToString();
