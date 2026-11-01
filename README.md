@@ -2,7 +2,7 @@
 
 **Sua música. Seu ritmo. • by Flugel**
 
-Player de música em **C# / .NET 10 + Avalonia UI 12**, com busca e extração de áudio via **YT-DLP**. Interface compartilhada entre **Android, Windows e Linux**, seguindo a organização do OrbisExtract, com identidade visual própria.
+Player de música em **C# / .NET 10 + Avalonia UI 12**, com busca e extração de áudio via **YT-DLP**. O **Windows tem uma interface desktop própria** inspirada na organização visual do OrbisExtract (navegação lateral, área central, painel de reprodução e player inferior permanente); o **Android mantém a interface móvel dedicada**. Ambos usam o mesmo núcleo de reprodução e catálogo.
 
 ## Português
 
@@ -32,6 +32,12 @@ Abra **[Actions → Hibiki • Android APK](https://github.com/flugeru/Hibiki/ac
 - O projeto também tem preparação de runtime x86_64 para desenvolvimento futuro em emulador.
 - A chave de desenvolvimento é gerada no runner e preservada no cache do Actions, sem enviar chaves ao repositório e sem precisar de segredos pessoais. Enquanto o cache existir, a assinatura será a mesma entre builds; se ele expirar ou for apagado, será necessário desinstalar o APK antigo (perdendo seus dados locais) antes de instalar um build com nova assinatura. Ela **não é uma identidade de produção/Play Store**.
 - O versionCode cresce pelo número da execução do Actions para permitir atualizações.
+
+### Interface desktop redesenhada
+
+A interface Windows foi reconstruída separadamente da tela móvel: barra lateral de navegação, busca com botão próprio, resultados com capas e ações para favoritos/fila, inspetor do que está tocando e player persistente na parte inferior. O tema usa preto profundo com superfícies elevadas discretas, contornos e o acento lilás. Em janelas mais estreitas, o inspetor lateral se recolhe para preservar o conteúdo. Configurações, importação de cookies e diagnóstico permanecem disponíveis.
+
+A CI valida a renderização e interações básicas em 1000 e 1360 pixels e publica as imagens no artefato `Hibiki-Windows-ui-previews`. Reprodução real e acesso ao YouTube devem ser validados em um computador.
 
 ### Windows desktop (x64)
 
@@ -68,6 +74,8 @@ Sem compilar localmente, a estrutura pode ser verificada com `python3 scripts/ch
 Hibiki is a music player by **Flugel**, built with **C# / .NET 10 and Avalonia UI 12**, using **YT-DLP** for search and audio extraction. One adaptive interface serves Android, Windows and Linux.
 
 The compact interface includes search/URL input, real results and artwork, a conditional miniplayer and an expanded player sheet. Playback includes seeking, a queue, shuffle/repeat, persistent favorites and local audio import. Per-track menus keep secondary actions out of the main list. Private extractor caching, optional Netscape session cookie import and redacted playback diagnostics are available in settings. The Android APK bundles Python, QuickJS, YT-DLP and EJS. No Termux or external backend is required.
+
+The Windows interface is now a **dedicated desktop shell**, inspired by OrbisExtract's spacing, cards, and restrained dark palette, with side navigation, a separate results workspace, a now-playing inspector, and a persistent bottom player. The Android screen remains independent and shares the underlying music controller. The CI runs headless UI checks at 1000px and 1360px and publishes desktop screenshots in `Hibiki-Windows-ui-previews`.
 
 **GitHub Actions builds Android ARM64 and Windows x64.** Download the installable APK from the `Hibiki-Android-arm64` workflow artifact. Android 7.0/API 24 or later is required. An Actions-generated development key is cached between builds without committing private keys or requiring personal signing secrets. If that cache expires or is removed, the signature changes and the old APK must be uninstalled before installing the new one, which removes local app data. This is not a production or Play Store signing identity.
 
