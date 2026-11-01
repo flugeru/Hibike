@@ -21,11 +21,17 @@ namespace Hibiki.Android;
 public sealed class PlaybackService : MediaSessionService
 {
     public const string PrepareAction = "com.flugel.hibiki.PREPARE";
+    public const string CancelPrepareAction = "com.flugel.hibiki.CANCEL_PREPARE";
     public static PlaybackService? Instance { get; private set; }
     private IExoPlayer? _player;
     private MediaSession? _session;
     private PendingIntent? _launchIntent;
     private SessionPlayer? _sessionPlayer;
+    private static readonly Lazy<global::Android.Graphics.Bitmap?> PlaceholderCover = new(() =>
+    {
+        var png = NotificationArtwork.Fallback;
+        return global::Android.Graphics.BitmapFactory.DecodeByteArray(png, 0, png.Length);
+    });
     private Handler? _handler;
     private Action? _poll;
     private int _state;
@@ -73,6 +79,12 @@ public sealed class PlaybackService : MediaSessionService
     }
     public override StartCommandResult OnStartCommand(Intent? intent, StartCommandFlags flags, int startId)
     {
+        if (intent?.Action == CancelPrepareAction)
+        {
+            Dispatcher.UIThread.Post(() => AppServices.Controller?.CancelPlayback());
+            CancelPreparation();
+            return StartCommandResult.NotSticky;
+        }
         if (intent?.Action == PrepareAction)
         {
             if (Build.VERSION.SdkInt >= BuildVersionCodes.O)
@@ -82,17 +94,33 @@ public sealed class PlaybackService : MediaSessionService
                 channel.SetShowBadge(false);
                 ((NotificationManager)GetSystemService(NotificationService)!).CreateNotificationChannel(channel);
             }
-            var builder = Build.VERSION.SdkInt >= BuildVersionCodes.O ? new Notification.Builder(this, "hibiki-playback") : new Notification.Builder(this);
-            var notification = builder.SetContentTitle(intent.GetStringExtra("title") ?? "Hibiki")!
-                .SetContentText(GetString(Resource.String.preparing_audio))!
+            // A regular foreground notification is not a music player on Android/HyperOS.
+            // Attach the platform MediaSession even while yt-dlp is resolving the URL.
+            // Media3 takes over this SAME notification id once the track starts.
+            var cancelIntent = new Intent(this, typeof(PlaybackService)).SetAction(CancelPrepareAction);
+            var cancel = PendingIntent.GetService(this, 42, cancelIntent,
+                PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent);
+            var style = new Notification.MediaStyle().SetMediaSession(_session!.PlatformToken);
+            style.SetShowActionsInCompactView(0);
+            var builder = Build.VERSION.SdkInt >= BuildVersionCodes.O
+                ? new Notification.Builder(this, "hibiki-playback")
+                : new Notification.Builder(this);
+            builder.SetContentTitle(intent.GetStringExtra("title") ?? "Hibiki")!
+                .SetContentText(intent.GetStringExtra("artist") ?? GetString(Resource.String.preparing_audio))!
+                .SetSubText(GetString(Resource.String.preparing_audio))!
                 .SetSmallIcon(Resource.Drawable.ic_stat_music)!
+                .SetLargeIcon(PlaceholderCover.Value)!
                 .SetContentIntent(_launchIntent)!
                 .SetColor(global::Android.Graphics.Color.Rgb(189, 162, 255))!
+                .SetCategory("transport")!
+                .SetVisibility(NotificationVisibility.Public)!
                 .SetOnlyAlertOnce(true)!
                 .SetShowWhen(false)!
                 .SetOngoing(true)!
-                .Build();
-            StartForeground(42, notification);
+                .AddAction(Resource.Drawable.ic_notification_cancel, GetString(Resource.String.cancel_preparation), cancel)!
+                .SetStyle(style);
+            if (Build.VERSION.SdkInt >= BuildVersionCodes.O) builder.SetColorized(true);
+            StartForeground(42, builder.Build());
         }
         return base.OnStartCommand(intent, flags, startId);
     }
