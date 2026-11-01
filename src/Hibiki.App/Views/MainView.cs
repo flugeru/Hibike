@@ -9,6 +9,7 @@ using Avalonia.Input.Platform;
 using Avalonia.Input.TextInput;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Transformation;
 using Avalonia.Platform.Storage;
 using Hibiki.Core.Models;
 using Hibiki.Core.Services;
@@ -487,20 +488,16 @@ public sealed class MainView : UserControl
         // the old fade before it became visible on Android.
         control.Transitions = null;
         control.Opacity = 0;
-        var slide = new TranslateTransform(0, 12);
-        slide.Transitions = new Transitions
-        {
-            new DoubleTransition { Property = TranslateTransform.YProperty, Duration = TimeSpan.FromMilliseconds(280) }
-        };
-        control.RenderTransform = slide;
+        control.RenderTransform = TransformOperations.Parse("translateY(12px)");
         control.Transitions = new Transitions
         {
-            new DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(280) }
+            new DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(280) },
+            new TransformOperationsTransition { Property = RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(280) }
         };
         DispatcherTimer.RunOnce(() =>
         {
             control.Opacity = 1;
-            slide.Y = 0;
+            control.RenderTransform = TransformOperations.Parse("translateY(0px)");
         }, TimeSpan.FromMilliseconds(45));
     }
     private void RefreshPlayback()
