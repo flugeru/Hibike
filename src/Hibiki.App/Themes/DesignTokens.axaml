@@ -41,6 +41,10 @@
   <x:Double x:Key="TypeSection">16</x:Double>
   <x:Double x:Key="TypeButton">14</x:Double>
   <x:Double x:Key="AnimationMs">160</x:Double>
+  <x:Double x:Key="PlayerArtworkRatio">0.40</x:Double>
+  <x:Double x:Key="FavoritePressedOpacity">0.70</x:Double>
+  <x:Double x:Key="DominantDarken">0.26</x:Double>
+  <x:String x:Key="CoverShadow">0 8 24 0 #48000000</x:String>
   <SolidColorBrush x:Key="BackgroundBrush" Color="#100E17"/>
   <SolidColorBrush x:Key="SurfaceBrush" Color="#1D1927"/>
   <SolidColorBrush x:Key="SurfaceElevatedBrush" Color="#30263D"/>
@@ -67,4 +71,57 @@
   <Thickness x:Key="CardInsets">12</Thickness>
   <Thickness x:Key="ButtonInsets">12,8</Thickness>
   <Thickness x:Key="NoInsets">0</Thickness>
+  <!-- High-contrast, rounded 4dp seek track and 14dp thumb.
+       The PART_Track name and TwoWay Value preserve keyboard/touch seeking. -->
+  <ControlTheme x:Key="HibikiSeekSlider" TargetType="Slider">
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Grid Height="{StaticResource TouchTarget}">
+          <Track Name="PART_Track"
+                 Minimum="{TemplateBinding Minimum}"
+                 Maximum="{TemplateBinding Maximum}"
+                 Value="{TemplateBinding Value, Mode=TwoWay}"
+                 Orientation="Horizontal">
+            <Track.DecreaseButton>
+              <RepeatButton Focusable="False">
+                <RepeatButton.Template>
+                  <ControlTemplate>
+                    <Border Height="{StaticResource SeekHeight}"
+                            CornerRadius="{StaticResource RadiusPill}"
+                            Background="{StaticResource AccentBrush}"
+                            VerticalAlignment="Center"/>
+                  </ControlTemplate>
+                </RepeatButton.Template>
+              </RepeatButton>
+            </Track.DecreaseButton>
+            <Track.IncreaseButton>
+              <RepeatButton Focusable="False">
+                <RepeatButton.Template>
+                  <ControlTemplate>
+                    <Border Height="{StaticResource SeekHeight}"
+                            CornerRadius="{StaticResource RadiusPill}"
+                            Background="{StaticResource TrackBrush}"
+                            VerticalAlignment="Center"/>
+                  </ControlTemplate>
+                </RepeatButton.Template>
+              </RepeatButton>
+            </Track.IncreaseButton>
+            <Thumb Name="PART_Thumb" Width="{StaticResource SeekThumb}"
+                   Height="{StaticResource SeekThumb}" BorderThickness="0">
+              <Thumb.Template>
+                <ControlTemplate>
+                  <Border CornerRadius="{StaticResource RadiusPill}"
+                          Background="{StaticResource AccentBrush}"/>
+                </ControlTemplate>
+              </Thumb.Template>
+            </Thumb>
+          </Track>
+        </Grid>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pressed /template/ Thumb#PART_Thumb">
+      <Setter Property="Width" Value="{StaticResource IconSize}"/>
+      <Setter Property="Height" Value="{StaticResource IconSize}"/>
+    </Style>
+  </ControlTheme>
 </ResourceDictionary>

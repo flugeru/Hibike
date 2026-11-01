@@ -4,6 +4,7 @@ using Avalonia.Threading;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
+using Avalonia.Styling;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Layout;
@@ -431,64 +432,224 @@ public sealed class MainView : UserControl
     }
     private void ShowPlayer()
     {
-        var track = _music.Pending ?? _music.Current; if (track is null) return;
+        var track = _music.Pending ?? _music.Current;
+        if (track is null) return;
         if (_overlay is not null) CloseSheet();
         _detailTrack = track; _showingPlayer = true;
         if (_playerPage is not null) _root.Children.Remove(_playerPage);
-        var width = Math.Min(420, Math.Max(240, Bounds.Width - (Bounds.Width < 800 ? 40 : 280)));
-        var panel = new StackPanel { Spacing = 12, Width = width, Margin = new Thickness(0, 12, 0, 24),
-            HorizontalAlignment = HorizontalAlignment.Center };
-        var header = new Grid { ColumnDefinitions = new("Auto,*,Auto") };
-        header.Children.Add(IconButton("back", "Voltar", () => { ClosePlayer(); return Task.CompletedTask; }));
-        var eyebrow = Text("REPRODUZINDO", 10, Muted); eyebrow.LetterSpacing = 2; eyebrow.HorizontalAlignment = HorizontalAlignment.Center; eyebrow.VerticalAlignment = VerticalAlignment.Center; Put(header, eyebrow, 0, 1);
-        Put(header, IconButton("queue", "Abrir fila", () => { ClosePlayer(); _page = "queue"; Refresh(); return Task.CompletedTask; }), 0, 2); panel.Children.Add(header);
-        var art = new Artwork(track, Math.Min(width - 24, Math.Clamp(Bounds.Height * 0.30, 140, 260)))
-        { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 6, 0, 4) };
-        panel.Children.Add(art);
-        var metadata = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 8, MinWidth = 0 };
-        var labels = new StackPanel { Spacing = 6, MinWidth = 0, VerticalAlignment = VerticalAlignment.Center };
-        var title = Text(track.Title, 20); title.FontWeight = FontWeight.SemiBold;
-        title.TextWrapping = TextWrapping.Wrap; title.MaxLines = 2; labels.Children.Add(title);
-        var artist = Text(track.Artist, 13, Muted);
+
+        var width = Math.Min(Ui.D("MaxContentWidth"), Math.Max(0,
+            Bounds.Width - Ui.D("PagePadding") * 2));
+        var layout = new Grid
+        {
+            Width = width,
+            MinHeight = Math.Max(0, Bounds.Height - Ui.D("Space24")),
+            RowDefinitions = new RowDefinitions("Auto,*,Auto,Auto,Auto,Auto,*,Auto"),
+            RowSpacing = Ui.D("Space12"),
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        var header = new Grid { ColumnDefinitions = new("Auto,*,Auto"),
+            MinHeight = Ui.D("TouchTarget") };
+        var collapse = IconButton("chevron-down", "Recolher player", () =>
+        {
+            ClosePlayer(); return Task.CompletedTask;
+        });
+        header.Children.Add(collapse);
+
+        // There is no album field in Track yet; display its artist instead of inventing an album.
+        var sourceLabel = Text(TrackTextFormatter.Artist(track.Artist),
+            Ui.D("TypeCaption"), "TextSecondaryBrush");
+        sourceLabel.TextTrimming = TextTrimming.CharacterEllipsis; sourceLabel.MaxLines = 1;
+        sourceLabel.VerticalAlignment = VerticalAlignment.Center;
+        sourceLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        Put(header, sourceLabel, 0, 1);
+        Put(header, IconButton("queue", "Abrir fila", () =>
+        {
+            ClosePlayer(); _page = "queue"; Refresh(); return Task.CompletedTask;
+        }), 0, 2);
+        Put(layout, header, 0, 0);
+
+        var artSize = Math.Max(0, Math.Min(width, Bounds.Height * Ui.D("PlayerArtworkRatio")));
+        var artView = new Artwork(track, artSize)
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            BoxShadow = Ui.Shadows("CoverShadow")
+        };
+        Put(layout, artView, 2, 0);
+
+        var metadata = new Grid { ColumnDefinitions = new("*,Auto"),
+            ColumnSpacing = Ui.D("Space8"), MinWidth = 0 };
+        var labels = new StackPanel { Spacing = Ui.D("Space4"), MinWidth = 0,
+            VerticalAlignment = VerticalAlignment.Center };
+        var title = Text(TrackTextFormatter.Title(track.Title, track.Artist),
+            Ui.D("TypePlayerTitle"));
+        title.FontWeight = FontWeight.Bold;
+        title.TextWrapping = TextWrapping.Wrap; title.MaxLines = 2;
+        labels.Children.Add(title);
+        var artist = Text(TrackTextFormatter.Artist(track.Artist),
+            Ui.D("TypeArtist"), "TextSecondaryBrush");
         artist.TextTrimming = TextTrimming.CharacterEllipsis; artist.MaxLines = 1;
         labels.Children.Add(artist); metadata.Children.Add(labels);
         Button? favorite = null;
-        favorite = IconButton("heart", "Alternar favorito", async () => { await _music.ToggleFavoriteAsync(track); favorite!.Content = Icons.Make("heart", _music.IsFavorite(track) ? Accent : Muted, 20); }, _music.IsFavorite(track) ? Accent : Muted);
-        Put(metadata, favorite, 0, 1); panel.Children.Add(metadata);
-        var seekGroup = new StackPanel { Spacing = 2, Margin = new Thickness(0, 8, 0, 0) };
-        _detailSeek = new Slider { Minimum = 0, Maximum = 1, Margin = new Thickness(0) };
-        _detailSeek.AddHandler(PointerPressedEvent, (_, _) => _seeking = true, Avalonia.Interactivity.RoutingStrategies.Tunnel);
-        _detailSeek.AddHandler(PointerReleasedEvent, (_, _) => { _seeking = false; _music.Player.Seek(_detailSeek.Value); }, Avalonia.Interactivity.RoutingStrategies.Bubble, true);
+        favorite = IconButton(_music.IsFavorite(track) ? "heart" : "heart-outline",
+            "Alternar favorito", async () =>
+            {
+                await _music.ToggleFavoriteAsync(track);
+                var isFavorite = _music.IsFavorite(track);
+                favorite!.Content = Icons.Make(isFavorite ? "heart" : "heart-outline",
+                    isFavorite ? "AccentBrush" : "TextSecondaryBrush", Ui.D("IconSize"));
+                // A short feedback transition, without moving the hit target.
+                favorite.Opacity = Ui.D("FavoritePressedOpacity");
+                Dispatcher.UIThread.Post(() => favorite.Opacity = 1, DispatcherPriority.Render);
+            }, _music.IsFavorite(track) ? "AccentBrush" : "TextSecondaryBrush");
+        favorite.Transitions = new Transitions
+        {
+            new DoubleTransition { Property = OpacityProperty,
+                Duration = TimeSpan.FromMilliseconds(Ui.D("AnimationMs")) }
+        };
+        Put(metadata, favorite, 0, 1);
+        Put(layout, metadata, 3, 0);
+
+        var seekGroup = new StackPanel { Spacing = Ui.D("Space4") };
+        _detailSeek = new Slider
+        {
+            Minimum = 0, Maximum = 1,
+            Height = Ui.D("TouchTarget"),
+            Theme = Ui.Get<ControlTheme>("HibikiSeekSlider"),
+            Margin = Ui.Inset("Space0")
+        };
+        _detailSeek.AddHandler(PointerPressedEvent, (_, _) => _seeking = true,
+            Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        _detailSeek.AddHandler(PointerReleasedEvent, (_, _) =>
+        {
+            _seeking = false;
+            _music.Player.Seek(_detailSeek.Value);
+        }, Avalonia.Interactivity.RoutingStrategies.Bubble, true);
         _detailSeek.KeyUp += (_, _) => _music.Player.Seek(_detailSeek.Value);
         seekGroup.Children.Add(_detailSeek);
-        var times = new Grid { ColumnDefinitions = new("*,Auto"), Margin = new Thickness(8, 0) };
-        _detailTime = Text("", Ui.D("TypeCaption"), Muted); _detailDuration = Text("", Ui.D("TypeCaption"), Muted);
-        times.Children.Add(_detailTime); Put(times, _detailDuration, 0, 1);
-        seekGroup.Children.Add(times); panel.Children.Add(seekGroup);
-        var controls = new Grid { ColumnDefinitions = new("*,Auto,Auto,Auto,*"), ColumnSpacing = 4, Margin = new Thickness(0, 10, 0, 0) };
+        var times = new Grid { ColumnDefinitions = new("*,Auto") };
+        _detailTime = Text("", Ui.D("TypeCaption"), "TextSecondaryBrush");
+        _detailDuration = Text("", Ui.D("TypeCaption"), "TextSecondaryBrush");
+        times.Children.Add(_detailTime);
+        Put(times, _detailDuration, 0, 1);
+        seekGroup.Children.Add(times);
+        Put(layout, seekGroup, 4, 0);
+
+        var controls = new Grid { ColumnDefinitions = new("*,Auto,Auto,Auto,*"),
+            ColumnSpacing = Ui.D("Space4"), MinHeight = Ui.D("PlayerPlaySize") };
+
         Button? shuffle = null;
-        shuffle = IconButton("shuffle", "Aleatório", () => { _music.Shuffle = !_music.Shuffle; shuffle!.Content = Icons.Make("shuffle", _music.Shuffle ? Accent : Muted, 20); return Task.CompletedTask; }, _music.Shuffle ? Accent : Muted); shuffle.HorizontalAlignment = HorizontalAlignment.Center; controls.Children.Add(shuffle);
-        Put(controls, IconButton("previous", "Anterior", _music.PreviousAsync), 0, 1);
-        _detailPlay = IconButton("play", "Reproduzir ou pausar", _music.ToggleAsync); _detailPlay.Classes.Remove("subtle"); _detailPlay.Classes.Add("primary"); _detailPlay.Width = _detailPlay.Height = 64; _detailPlay.CornerRadius = new CornerRadius(32); Put(controls, _detailPlay, 0, 2);
-        Put(controls, IconButton("next", "Próxima", _music.NextAsync), 0, 3);
+        shuffle = IconButton("shuffle", "Aleatório", () =>
+        {
+            _music.Shuffle = !_music.Shuffle;
+            shuffle!.Content = ModeIndicator("shuffle", _music.Shuffle);
+            return Task.CompletedTask;
+        }, _music.Shuffle ? "AccentBrush" : "TextSecondaryBrush");
+        shuffle.Content = ModeIndicator("shuffle", _music.Shuffle);
+        shuffle.HorizontalAlignment = HorizontalAlignment.Center;
+        controls.Children.Add(shuffle);
+
+        var previous = IconButton("previous", "Anterior", _music.PreviousAsync,
+            "TextPrimaryBrush");
+        previous.Content = Icons.Make("previous", "TextPrimaryBrush", Ui.D("PlayerIconSize"));
+        Put(controls, previous, 0, 1);
+
+        _detailPlay = IconButton("play", "Reproduzir ou pausar", _music.ToggleAsync, "OnAccentBrush");
+        _detailPlay.Classes.Remove("subtle"); _detailPlay.Classes.Add("primary");
+        _detailPlay.Width = _detailPlay.Height = Ui.D("PlayerPlaySize");
+        _detailPlay.CornerRadius = Ui.Radius("RadiusPill");
+        Put(controls, _detailPlay, 0, 2);
+
+        var next = IconButton("next", "Próxima", _music.NextAsync, "TextPrimaryBrush");
+        next.Content = Icons.Make("next", "TextPrimaryBrush", Ui.D("PlayerIconSize"));
+        Put(controls, next, 0, 3);
+
         Button? repeat = null;
-        repeat = IconButton("repeat", "Repetir", () => { _music.Repeat = !_music.Repeat; repeat!.Content = Icons.Make("repeat", _music.Repeat ? Accent : Muted, 20); return Task.CompletedTask; }, _music.Repeat ? Accent : Muted); repeat.HorizontalAlignment = HorizontalAlignment.Center; Put(controls, repeat, 0, 4); panel.Children.Add(controls);
-        var queue = ActionButton("Fila de reprodução  ·  " + _music.Queue.Count, () => { ClosePlayer(); _page = "queue"; Refresh(); return Task.CompletedTask; }); var queueLabel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        queueLabel.Children.Add(Icons.Make("queue", Muted, 16)); queueLabel.Children.Add(Text("Fila · " + _music.Queue.Count, 12, Muted)); queue.Content = queueLabel;
-        queue.MinWidth = 140; queue.CornerRadius = new CornerRadius(16);
-        queue.HorizontalContentAlignment = HorizontalAlignment.Center;
-        queue.HorizontalAlignment = HorizontalAlignment.Center; panel.Children.Add(queue);
-        var scroll = new ScrollViewer { Content = panel, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Hidden };
-        _playerPage = new Border { Background = Ui.B("BackgroundBrush"), Child = scroll };
-        Grid.SetColumn(_playerPage, 1); Grid.SetRowSpan(_playerPage, 3); _root.Children.Add(_playerPage);
+        repeat = IconButton("repeat", "Repetir faixa", () =>
+        {
+            _music.Repeat = !_music.Repeat;
+            repeat!.Content = RepeatIndicator(_music.Repeat);
+            return Task.CompletedTask;
+        }, _music.Repeat ? "AccentBrush" : "TextSecondaryBrush");
+        repeat.Content = RepeatIndicator(_music.Repeat);
+        repeat.HorizontalAlignment = HorizontalAlignment.Center;
+        Put(controls, repeat, 0, 4);
+        Put(layout, controls, 5, 0);
+
+        var upcoming = _music.Queue.FirstOrDefault(candidate => candidate.Id != track.Id);
+        var nextLabel = Text(upcoming is null
+            ? "Fim da fila" : "Próxima: " + TrackTextFormatter.Title(upcoming.Title, upcoming.Artist),
+            Ui.D("TypeCaption"), "TextSecondaryBrush");
+        nextLabel.TextTrimming = TextTrimming.CharacterEllipsis; nextLabel.MaxLines = 1;
+        nextLabel.HorizontalAlignment = HorizontalAlignment.Stretch;
+        nextLabel.VerticalAlignment = VerticalAlignment.Bottom;
+        Put(layout, nextLabel, 7, 0);
+
+        var scroll = new ScrollViewer { Content = layout,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
+            Padding = Ui.Insets("PagePadding", "Space8", "PagePadding", "Space24") };
+        var gradient = new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+            GradientStops =
+            [
+                new GradientStop(Ui.Color("PlayerGradientTopBrush"), 0),
+                new GradientStop(Ui.Color("PlayerGradientBottomBrush"), 1)
+            ]
+        };
+        artView.DominantColorReady += color =>
+        {
+            if (!ReferenceEquals(_detailTrack, track) || _playerPage is null) return;
+            var dark = Artwork.Darkened(color);
+            gradient.GradientStops[0].Color = dark;
+            TopLevel.SetSystemBarColor(this, new SolidColorBrush(dark));
+        };
+        _playerPage = new Border { Background = gradient, Child = scroll };
+        Grid.SetColumn(_playerPage, 1); Grid.SetRowSpan(_playerPage, 3);
+        _root.Children.Add(_playerPage);
+        TopLevel.SetSystemBarColor(this, (SolidColorBrush)Ui.B("PlayerGradientTopBrush"));
         _main.IsVisible = false; _mini.IsVisible = false; _bottom.IsVisible = false;
         Animate(_playerPage); RefreshPlayback();
+    }
+
+    private static Control ModeIndicator(string glyph, bool enabled)
+    {
+        var host = new Grid { Width = Ui.D("TouchTarget"), Height = Ui.D("TouchTarget") };
+        host.Children.Add(Icons.Make(glyph, enabled ? "AccentBrush" : "TextSecondaryBrush",
+            Ui.D("IconSize")));
+        if (enabled)
+        {
+            var marker = new Border { Width = Ui.D("Space4"), Height = Ui.D("Space4"),
+                CornerRadius = Ui.Radius("RadiusPill"), Background = Ui.B("AccentBrush"),
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom };
+            host.Children.Add(marker);
+        }
+        return host;
+    }
+
+    private static Control RepeatIndicator(bool enabled)
+    {
+        var host = new Grid { Width = Ui.D("TouchTarget"), Height = Ui.D("TouchTarget") };
+        host.Children.Add(Icons.Make(enabled ? "repeat-one" : "repeat",
+            enabled ? "AccentBrush" : "TextSecondaryBrush", Ui.D("IconSize")));
+        if (enabled)
+        {
+            var marker = new Border { Width = Ui.D("Space4"), Height = Ui.D("Space4"),
+                CornerRadius = Ui.Radius("RadiusPill"), Background = Ui.B("AccentBrush"),
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom };
+            host.Children.Add(marker);
+        }
+        return host;
     }
     private void ClosePlayer()
     {
         if (_playerPage is not null) _root.Children.Remove(_playerPage);
-        _playerPage = null; _showingPlayer = false; _listFingerprint = null; _main.IsVisible = true; _bottom.IsVisible = Bounds.Width < 800;
+        _playerPage = null; _showingPlayer = false; _listFingerprint = null;
+        TopLevel.SetSystemBarColor(this, (SolidColorBrush)Ui.B("BackgroundBrush"));
+        _main.IsVisible = true; _bottom.IsVisible = Bounds.Width < Ui.D("DesktopBreakpoint");
         _detailTrack = null; _detailSeek = null; _detailPlay = null; _detailTime = null; _detailDuration = null; _seeking = false; Refresh(); Animate(_main);
     }
     private bool HandleBack()
@@ -510,16 +671,20 @@ public sealed class MainView : UserControl
             UpdateRowState(id, row, _music.Pending ?? _music.Current);
         var icon = _music.LoadingAudio ? "close" : _music.Player.IsPlaying ? "pause" : "play";
         _play.Content = Icons.Make(icon, "OnAccentBrush", Ui.D("IconSize"));
-        if (_detailPlay is not null) _detailPlay.Content = Icons.Make(icon, "#211337", 20);
-        var duration = _music.Player.Duration; if (duration <= 0) duration = _music.Current?.DurationSeconds ?? 0;
+        if (_detailPlay is not null)
+            _detailPlay.Content = Icons.Make(icon, "OnAccentBrush", Ui.D("PlayerIconSize"));
+        // Prefer the same metadata duration shown in lists; fallback for imported local audio.
+        var duration = _music.Current?.DurationSeconds is > 0
+            ? _music.Current.DurationSeconds : _music.Player.Duration;
         _progress.Maximum = Math.Max(1, duration); _progress.Value = Math.Min(_music.Player.Position, _progress.Maximum);
         if (_detailSeek is not null)
         {
             _detailSeek.Maximum = Math.Max(1, duration); _detailSeek.IsEnabled = duration > 0 && !_music.LoadingAudio;
             if (!_seeking) _detailSeek.Value = Math.Min(_music.Player.Position, _detailSeek.Maximum);
         }
-        if (_detailTime is not null) _detailTime.Text = Time(_music.Player.Position);
-        if (_detailDuration is not null) _detailDuration.Text = Time(duration);
+        if (_detailTime is not null) _detailTime.Text = TrackTextFormatter.Duration(_music.Player.Position);
+        if (_detailDuration is not null) _detailDuration.Text =
+            TrackTextFormatter.Duration(duration, unknownAsDash: duration <= 0);
     }
     private void ShowSettings()
     {
@@ -581,7 +746,6 @@ public sealed class MainView : UserControl
         if (_overlay is not null) _root.Children.Remove(_overlay); _overlay = null;
         _detailTrack = null; _detailSeek = null; _detailPlay = null; _detailTime = null; _detailDuration = null; _seeking = false;
     }
-    private static string Time(double seconds) => TimeSpan.FromSeconds(Math.Max(0, seconds)).ToString(seconds >= 3600 ? @"h\:mm\:ss" : @"m\:ss");
     private static TextBlock Text(string text, double size, string color = "TextPrimaryBrush") =>
         new() { Text = text, FontSize = Math.Max(Ui.D("TypeCaption"), size), Foreground = Ui.B(color) };
     private Button ActionButton(string text, Func<Task> action)

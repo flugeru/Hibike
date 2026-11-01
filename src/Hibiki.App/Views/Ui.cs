@@ -17,6 +17,8 @@ internal static class Ui
         throw new InvalidOperationException("Missing Hibiki design token: " + key);
     }
 
+    public static T Get<T>(string key) where T : class => (T)Resource(key);
+    public static BoxShadows Shadows(string key) => BoxShadows.Parse((string)Resource(key));
     public static double D(string key) => Convert.ToDouble(Resource(key));
     public static IBrush B(string key) => (IBrush)Resource(key);
     public static Color Color(string key) => ((ISolidColorBrush)B(key)).Color;
