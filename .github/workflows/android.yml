@@ -83,6 +83,34 @@ jobs:
           python3 scripts/check_apk.py "$apk"
           mkdir -p artifacts/release
           cp "$apk" artifacts/release/Hibiki-Android-arm64.apk
+      - name: Publish Android emulator test APK
+        run: >-
+          dotnet publish src/Hibiki.Android/Hibiki.Android.csproj
+          -f net10.0-android -c Release -r android-x64
+          -p:AndroidSdkDirectory="$ANDROID_HOME"
+          -o artifacts/emulator
+      - name: Enable emulator hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Launch app and check for startup crashes
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          script: bash scripts/smoke_android.sh
+      - name: Upload startup screenshot and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hibiki-Android-startup-check
+          path: artifacts/smoke/**
+          if-no-files-found: ignore
       - name: Upload installable APK
         uses: actions/upload-artifact@v4
         with:
