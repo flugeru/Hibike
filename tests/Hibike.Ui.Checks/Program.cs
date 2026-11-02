@@ -35,6 +35,8 @@ internal static class Program
                     window.Width = homeWidth; await Task.Delay(150); Capture(view, $"home-{homeWidth}");
                     var card = view.GetVisualDescendants().OfType<Button>().Single(b => Avalonia.Automation.AutomationProperties.GetName(b) == "Faixa recente — Artista");
                     Check(card.Bounds.Width >= 160 && card.IsEffectivelyVisible, "Home history cover card missing");
+                    foreach (var button in view.GetVisualDescendants().OfType<Button>().Where(b => b.IsEffectivelyVisible))
+                        Check(button.Bounds.Height >= 48, "Home touch target below 48");
                 }
                 typeof(MainView).GetField("_page", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(view, "explore");
                 var imageUrl = typeof(MainView).Assembly.GetType("Hibike.App.Views.Artwork")!.GetMethod("PlayerImageUrl")!;
@@ -117,7 +119,26 @@ internal static class Program
                     more.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)); await Task.Delay(300);
                     Capture(view, $"dialog-{width}"); Check(AppServices.BackHandler!(), "Dialog cannot close");
                 }
-                AppServices.Controller!.SaveSession();
+                var music = AppServices.Controller!;
+                await music.ToggleFavoriteAsync(music.Results[0]);
+                await music.ToggleFavoriteAsync(new("local-filter", "Local favorite", "Local artist", "test", IsLocal: true));
+                foreach (var width in new[] { 360, 1260 })
+                {
+                    window.Width = width;
+                    var libraryNav = view.GetVisualDescendants().OfType<Button>().First(b => b.IsEffectivelyVisible && b.Tag is ValueTuple<string, string, string, bool> tag && tag.Item1 == "library");
+                    libraryNav.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)); await Task.Delay(150);
+                    var filter = view.GetVisualDescendants().OfType<TextBox>().Single(t => t.PlaceholderText == "Filtrar título ou artista");
+                    filter.Text = "Local favorite"; await Task.Delay(100);
+                    var filtered = view.GetVisualDescendants().OfType<ItemsControl>().Single();
+                    Check(filtered.ItemsSource!.Cast<Track>().Single().Id == "local-filter", "Library filter did not isolate local favorite");
+                    Capture(view, $"library-{width}"); filter.Text = "";
+                    var queueNav = view.GetVisualDescendants().OfType<Button>().First(b => b.IsEffectivelyVisible && b.Tag is ValueTuple<string, string, string, bool> tag && tag.Item1 == "queue");
+                    queueNav.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)); await Task.Delay(150); Capture(view, $"queue-{width}");
+                }
+                var extra = new Track("queue-edit", "Queue edit", "Artist", "test"); music.Enqueue(extra);
+                music.EditQueue(extra, -1); Check(music.Queue.IndexOf(extra) == music.Queue.Count - 2, "Queue move failed");
+                music.EditQueue(extra, 0); Check(!music.Queue.Contains(extra), "Queue remove failed");
+                music.SaveSession();
                 var restored = new MusicController(new Catalog(), new Player(), new LibraryStore(directory), directory);
                 await restored.InitializeAsync();
                 Check(restored.Current == AppServices.Controller.Current && restored.Queue.SequenceEqual(AppServices.Controller.Queue), "Playback session not restored");

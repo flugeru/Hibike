@@ -238,6 +238,22 @@ public sealed class MusicController
         else { Queue.Clear(); Queue.Add(Current); _queueIndex = 0; }
         SetStatus("Fila limpa. A faixa atual foi mantida.");
     }
+    public void EditQueue(Track track, int direction)
+    {
+        var index = Queue.IndexOf(track); if (index < 0) return;
+        if (direction == 0)
+        {
+            if (track == Current) { SetStatus("Faixa atual permanece na fila até terminar."); return; }
+            Queue.RemoveAt(index);
+        }
+        else
+        {
+            var target = Math.Clamp(index + direction, 0, Queue.Count - 1);
+            Queue.Move(index, target);
+        }
+        _queueIndex = Current is null ? -1 : Queue.IndexOf(Current);
+        SetStatus("Fila atualizada.");
+    }
     public void EnqueueResults()
     {
         foreach (var track in Results.Where(t => !Queue.Any(q => q.Source == t.Source))) Queue.Add(track);

@@ -20,7 +20,7 @@ internal static class UiTheme
         ButtonText = 14, TouchSize = 48, IconSize = 24, IconStroke = 1.8, RoundSize = 44,
         ThumbnailSize = 52, MiniArtworkSize = 40, PlaySize = 72, TransportIconSize = 32,
         ProgressHeight = 8, ProgressRadius = 4, MiniProgressHeight = 4, SeekHeight = 6,
-        SeekThumbSize = 16, SeekThumbPressedSize = 20, PageMaxWidth = 820, PlayerMaxWidth = 440,
+        SeekThumbSize = 16, SeekThumbPressedSize = 20, PageMaxWidth = 1280, PlayerMaxWidth = 440,
         DialogMaxWidth = 520, CompactWidth = 390, DesktopWidth = 800, SidebarWidth = 200,
         NavHeight = 72, RowHeight = 76, TrackRowHeight = 70, MarkerSize = 7, EqualizerGap = 3, EqualizerBarWidth = 4, EqualizerStep = 5,
         PauseStroke = 4, StateTransitionMilliseconds = 160, EqualizerMilliseconds = 180,
@@ -107,6 +107,11 @@ internal static class UiTheme
         Add(new Style(x => x.OfType<Button>().Class("primary").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
             new Setter(ContentPresenter.ForegroundProperty, Brush(OnPrimary)));
         Add(new Style(x => x.OfType<Button>().Class("subtle")), new Setter(TemplatedControl.BorderThicknessProperty, Zero));
+        Add(new Style(x => x.OfType<Button>().Class("cover")), new(TemplatedControl.BorderThicknessProperty, Zero),
+            new(TemplatedControl.CornerRadiusProperty, new CornerRadius(CardRadius)), new(TemplatedControl.PaddingProperty, new Thickness(8)));
+        Add(new Style(x => x.OfType<Button>().Class("pill")), new Setter(TemplatedControl.CornerRadiusProperty, new CornerRadius(24)));
+        Add(new Style(x => x.OfType<Button>().Class(":focus-visible").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
+            new(ContentPresenter.BorderBrushProperty, Brush(Primary)), new(ContentPresenter.BorderThicknessProperty, new Thickness(2)));
         Add(new Style(x => x.OfType<Button>().Class("round")), new(Layoutable.WidthProperty, TouchSize),
             new(Layoutable.HeightProperty, TouchSize), new(TemplatedControl.PaddingProperty, Zero),
             new(TemplatedControl.CornerRadiusProperty, new CornerRadius(RoundRadius)));
