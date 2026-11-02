@@ -9,17 +9,31 @@ namespace Hibike.App.Views;
 internal sealed class Artwork : Border
 {
     private static readonly HttpClient Client = new() { Timeout = TimeSpan.FromSeconds(12) };
+    private static readonly SemaphoreSlim DecodeSlots = new(2);
     private CancellationTokenSource? _cancel;
     private Bitmap? _bitmap;
-    public Artwork(Track? track, double size, bool fullResolution = false)
+    public Artwork(Track? track, double size, bool fullResolution = false, Stretch stretch = Stretch.UniformToFill, bool naturalAspect = false, bool highQuality = false)
     {
         Width = Height = size; CornerRadius = new CornerRadius(size > UiTheme.ThumbnailSize ? UiTheme.CardRadius : UiTheme.ThumbRadius); ClipToBounds = true;
         Background = UiTheme.Brush(UiTheme.SurfaceElevated);
         BorderBrush = UiTheme.Brush(UiTheme.Outline); BorderThickness = UiTheme.One;
+        if (naturalAspect) { Background = Brushes.Transparent; BorderThickness = new Thickness(0); CornerRadius = new(8); }
         var panel = new Grid();
         panel.Children.Add(Icons.Make("wave", UiTheme.Primary, UiTheme.IconSize));
-        var picture = new Image { Stretch = Stretch.UniformToFill }; panel.Children.Add(picture);
+        var picture = new Image { Stretch = stretch, Opacity = 0,
+            Transitions = new Avalonia.Animation.Transitions { new Avalonia.Animation.DoubleTransition
+            { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(160) } } }; panel.Children.Add(picture);
         Child = panel;
+        void Display(Bitmap bitmap)
+        {
+            if (naturalAspect)
+            {
+                Height = size * bitmap.PixelSize.Height / bitmap.PixelSize.Width;
+                Background = Brushes.Transparent; BorderThickness = new Thickness(0); CornerRadius = new(8);
+                panel.Children[0].IsVisible = false;
+            }
+            _bitmap = bitmap; picture.Source = bitmap; picture.Opacity = 1;
+        }
         if (track?.Thumbnail is { } url)
         {
             AttachedToVisualTree += async (_, _) =>
@@ -27,11 +41,15 @@ internal sealed class Artwork : Border
                 _cancel?.Dispose(); _cancel = new CancellationTokenSource(); var token = _cancel.Token;
                 try
                 {
+                    // Square crops need extra source width for landscape video thumbnails.
+                    var pixels = fullResolution ? 1200 : (int)Math.Clamp(size * (TopLevel.GetTopLevel(this)?.RenderScaling ?? 1) * (highQuality ? 2 : 1), 128, 1200);
                     if (Uri.TryCreate(url, UriKind.Absolute, out var local) && local.IsFile)
                     {
-                        _bitmap = new Bitmap(local.LocalPath); picture.Source = _bitmap; return;
+                        var localBitmap = await DecodeAsync(() => File.OpenRead(local.LocalPath), pixels, token);
+                        if (token.IsCancellationRequested) { localBitmap.Dispose(); return; }
+                        Display(localBitmap); return;
                     }
-                    var imageUrl = fullResolution ? PlayerImageUrl(url) : url;
+                    var imageUrl = fullResolution || highQuality ? PlayerImageUrl(url) : url;
                     var fetched = await Client.GetAsync(imageUrl, HttpCompletionOption.ResponseHeadersRead, token);
                     if (!fetched.IsSuccessStatusCode && imageUrl != url)
                     {
@@ -52,9 +70,10 @@ internal sealed class Artwork : Border
                     }
                     memory.Position = 0;
                     // Player is resized after construction; never upscale its 52dp placeholder decode.
-                    var bitmap = fullResolution ? new Bitmap(memory) : Bitmap.DecodeToWidth(memory, (int)Math.Max(128, size * 2));
+                    var bytes = memory.ToArray();
+                    var bitmap = await DecodeAsync(() => new MemoryStream(bytes, writable: false), pixels, token);
                     if (token.IsCancellationRequested) { bitmap.Dispose(); return; }
-                    _bitmap = bitmap; picture.Source = bitmap;
+                    Display(bitmap);
                 }
                 catch (Exception) { /* Artwork is optional; playback never depends on it. */ }
             };
@@ -63,6 +82,20 @@ internal sealed class Artwork : Border
         {
             _cancel?.Cancel(); picture.Source = null; _bitmap?.Dispose(); _bitmap = null;
         };
+    }
+    private static async Task<Bitmap> DecodeAsync(Func<Stream> open, int pixels, CancellationToken token)
+    {
+        await DecodeSlots.WaitAsync(token);
+        try
+        {
+            return await Task.Run(() =>
+            {
+                token.ThrowIfCancellationRequested();
+                using var stream = open();
+                return Bitmap.DecodeToWidth(stream, pixels);
+            }, token);
+        }
+        finally { DecodeSlots.Release(); }
     }
     public static string PlayerImageUrl(string url)
     {

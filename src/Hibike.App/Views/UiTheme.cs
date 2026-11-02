@@ -20,15 +20,15 @@ internal static class UiTheme
         ButtonText = 14, TouchSize = 48, IconSize = 24, IconStroke = 1.8, RoundSize = 44,
         ThumbnailSize = 52, MiniArtworkSize = 40, PlaySize = 72, TransportIconSize = 32,
         ProgressHeight = 8, ProgressRadius = 4, MiniProgressHeight = 4, SeekHeight = 6,
-        SeekThumbSize = 16, SeekThumbPressedSize = 20, PageMaxWidth = 820, PlayerMaxWidth = 440,
-        DialogMaxWidth = 520, CompactWidth = 390, DesktopWidth = 800, SidebarWidth = 200,
+        SeekThumbSize = 16, SeekThumbPressedSize = 20, PageMaxWidth = 1280, PlayerMaxWidth = 440,
+        DialogMaxWidth = 560, CompactWidth = 390, DesktopWidth = 800, SidebarWidth = 104,
         NavHeight = 72, RowHeight = 76, TrackRowHeight = 70, MarkerSize = 7, EqualizerGap = 3, EqualizerBarWidth = 4, EqualizerStep = 5,
         PauseStroke = 4, StateTransitionMilliseconds = 160, EqualizerMilliseconds = 180,
         PlayerChromeHeight = 388, PlayerBottomWeight = .15, ListFadeHeight = 18,
         DesktopPlayerGap = 48, DesktopPlayerChromeHeight = 280, ToggleIconHeight = 36,
         DesktopArtworkMax = 500, DesktopPlayerMaxWidth = 1120, DesktopPlaySize = 56,
         MarqueeFrameMilliseconds = 30, MarqueeStep = .8, MarqueePauseFrames = 60, TitleLineHeight = 24;
-    public static readonly Thickness PageMargin = new(14, 14, 14, 18), ButtonPadding = new(16, 13),
+    public static readonly Thickness PageMargin = new(14, 14, 14, 18), ButtonPadding = new(12, 7),
         RowPadding = new(4, 8), ChipPadding = new(10, 4), BannerPadding = new(14, 10),
         One = new(1), Zero = new(0), InnerPadding = new(12), DialogMargin = new(14),
         MiniMargin = new(14, 0, 14, 8), TopBorder = new(0, 1, 0, 0), BottomBorder = new(0, 0, 0, 1),
@@ -37,16 +37,46 @@ internal static class UiTheme
     public static readonly Thickness ContentPadding = new(14, 14, 14, 8);
     public static readonly Thickness DesktopPlayerMargin = new(32, 20, 32, 24), NavPadding = new(12, 8);
     public static readonly Thickness DesktopTransportPadding = new(32, 16, 32, 20);
-    // Opacity only, not a surface gradient: soften items scrolling beneath fixed chrome.
-    public static IBrush ListMask(double height) => new LinearGradientBrush
+    public static ScrollViewer FadingScroll(Control? content = null, bool horizontal = false)
     {
-        StartPoint = new(0, 0, RelativeUnit.Relative), EndPoint = new(0, 1, RelativeUnit.Relative),
-        GradientStops =
-        [
-            new(Colors.Transparent, 0), new(Colors.Black, Math.Min(.5, ProgressRadius / Math.Max(1, height))),
-            new(Colors.Black, Math.Max(.5, 1 - ListFadeHeight / Math.Max(1, height))), new(Colors.Transparent, 1)
-        ]
-    };
+        var scroll = new ScrollViewer
+        {
+            Content = content,
+            HorizontalScrollBarVisibility = horizontal ? ScrollBarVisibility.Hidden : ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = horizontal ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Hidden
+        };
+        // ponytail: Android uses plain clipping; restore edge fades only after device frame-time profiling.
+        if (OperatingSystem.IsAndroid()) return scroll;
+        (double Fade, byte Start, byte End)? previous = null;
+        void UpdateMask()
+        {
+            var length = horizontal ? scroll.Viewport.Width : scroll.Viewport.Height;
+            var extent = horizontal ? scroll.Extent.Width : scroll.Extent.Height;
+            var offset = horizontal ? scroll.Offset.X : scroll.Offset.Y;
+            var remaining = Math.Max(0, extent - length - offset);
+            if (length <= 0 || extent <= length + 1) { scroll.OpacityMask = null; previous = null; return; }
+            var fade = Math.Min(.5, (horizontal ? 20 : 16) / length);
+            var start = (byte)(255 - 191 * Math.Clamp(offset / 12, 0, 1));
+            var end = (byte)(255 - 191 * Math.Clamp(remaining / 12, 0, 1));
+            if (previous == (fade, start, end)) return;
+            previous = (fade, start, end);
+            // Fade only hidden content; keep first/last items intact at scroll limits.
+            scroll.OpacityMask = new LinearGradientBrush
+            {
+                StartPoint = new(0, 0, RelativeUnit.Relative),
+                EndPoint = horizontal ? new(1, 0, RelativeUnit.Relative) : new(0, 1, RelativeUnit.Relative),
+                GradientStops =
+                [
+                    new(Color.FromArgb(start, 0, 0, 0), 0),
+                    new(Colors.Black, fade), new(Colors.Black, 1 - fade),
+                    new(Color.FromArgb(end, 0, 0, 0), 1)
+                ]
+            };
+        }
+        scroll.ScrollChanged += (_, _) => UpdateMask();
+        scroll.SizeChanged += (_, _) => UpdateMask();
+        return scroll;
+    }
     public static readonly FontFamily Inter = new("avares://Avalonia.Fonts.Inter/Assets#Inter");
     public static readonly FontFamily Mono = new("Cascadia Mono, Consolas, monospace");
     public static IBrush Brush(string color) => new SolidColorBrush(Color.Parse(color)).ToImmutable();
@@ -66,6 +96,17 @@ internal static class UiTheme
         Child = child, Background = Brush(SurfaceElevated), BorderBrush = Brush(Outline),
         BorderThickness = One, CornerRadius = new(ThumbRadius), Padding = ChipPadding
     };
+    public static Border AudioBadge(Control child) => new()
+    {
+        Child = child, Padding = new Thickness(16, 8), CornerRadius = new(24),
+        BorderBrush = Brush("#353535"), BorderThickness = One,
+        Background = new LinearGradientBrush
+        {
+            StartPoint = new(0, 0, RelativeUnit.Relative), EndPoint = new(0, 1, RelativeUnit.Relative),
+            GradientStops = [new(Color.Parse("#202323"), 0), new(Color.Parse("#090A0A"), .6), new(Color.Parse("#151717"), 1)]
+        },
+        VerticalAlignment = VerticalAlignment.Center
+    };
     public static Border Inner(Control child) => new()
     {
         Child = child, Background = Brush(SurfaceElevated), BorderBrush = Brush(Outline),
@@ -78,7 +119,16 @@ internal static class UiTheme
         border.CornerRadius = new(ControlRadius); border.Padding = BannerPadding;
     }
     public static Button PrimaryButton(string text) { var button = OutlinedButton(text); button.Classes.Add("primary"); return button; }
-    public static Button OutlinedButton(string text) => new() { Content = text, HorizontalAlignment = HorizontalAlignment.Stretch };
+    public static Button OutlinedButton(string text) => new()
+    {
+        Content = text, HorizontalAlignment = HorizontalAlignment.Stretch,
+        RenderTransformOrigin = RelativePoint.Center,
+        Transitions = new Avalonia.Animation.Transitions
+        {
+            new Avalonia.Animation.TransformOperationsTransition { Property = Visual.RenderTransformProperty,
+                Duration = TimeSpan.FromMilliseconds(120), Easing = new Avalonia.Animation.Easings.CubicEaseOut() }
+        }
+    };
     public static Button RoundIconButton(string icon, string label, string color = Primary)
     {
         var button = OutlinedButton(""); button.Classes.Add("round"); button.Content = Icons.Make(icon, color, IconSize);
@@ -98,7 +148,8 @@ internal static class UiTheme
             new(TemplatedControl.PaddingProperty, ButtonPadding), new(TemplatedControl.FontSizeProperty, ButtonText),
             new(TemplatedControl.ForegroundProperty, Brush(Primary)), new(TemplatedControl.BackgroundProperty, Brushes.Transparent),
             new(TemplatedControl.BorderBrushProperty, Brush(Outline)), new(TemplatedControl.BorderThicknessProperty, One),
-            new(ContentControl.HorizontalContentAlignmentProperty, HorizontalAlignment.Center));
+            new(ContentControl.HorizontalContentAlignmentProperty, HorizontalAlignment.Center),
+            new(ContentControl.VerticalContentAlignmentProperty, VerticalAlignment.Center));
         Add(new Style(x => x.OfType<Button>().Class("primary")), new(TemplatedControl.BackgroundProperty, Brush(Primary)),
             new(TemplatedControl.ForegroundProperty, Brush(OnPrimary)), new(TemplatedControl.BorderThicknessProperty, Zero),
             new(TemplatedControl.FontWeightProperty, FontWeight.SemiBold));
@@ -107,6 +158,11 @@ internal static class UiTheme
         Add(new Style(x => x.OfType<Button>().Class("primary").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
             new Setter(ContentPresenter.ForegroundProperty, Brush(OnPrimary)));
         Add(new Style(x => x.OfType<Button>().Class("subtle")), new Setter(TemplatedControl.BorderThicknessProperty, Zero));
+        Add(new Style(x => x.OfType<Button>().Class("cover")), new(TemplatedControl.BorderThicknessProperty, Zero),
+            new(TemplatedControl.CornerRadiusProperty, new CornerRadius(CardRadius)), new(TemplatedControl.PaddingProperty, new Thickness(8)));
+        Add(new Style(x => x.OfType<Button>().Class("pill")), new Setter(TemplatedControl.CornerRadiusProperty, new CornerRadius(24)));
+        Add(new Style(x => x.OfType<Button>().Class(":focus-visible").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
+            new(ContentPresenter.BorderBrushProperty, Brush(Primary)), new(ContentPresenter.BorderThicknessProperty, new Thickness(2)));
         Add(new Style(x => x.OfType<Button>().Class("round")), new(Layoutable.WidthProperty, TouchSize),
             new(Layoutable.HeightProperty, TouchSize), new(TemplatedControl.PaddingProperty, Zero),
             new(TemplatedControl.CornerRadiusProperty, new CornerRadius(RoundRadius)));
@@ -118,6 +174,10 @@ internal static class UiTheme
             new Setter(Layoutable.MarginProperty, Zero));
         Add(new Style(x => x.OfType<Button>().Class("nav")), new(TemplatedControl.BorderThicknessProperty, Zero), new(TemplatedControl.PaddingProperty, Zero));
         Add(new Style(x => x.OfType<Button>().Class(":disabled")), new Setter(Visual.OpacityProperty, .4));
+        Add(new Style(x => x.OfType<Button>()),
+            new Setter(Visual.RenderTransformProperty, Avalonia.Media.Transformation.TransformOperations.Parse("scale(1)")));
+        Add(new Style(x => x.OfType<Button>().Class(":pressed")),
+            new Setter(Visual.RenderTransformProperty, Avalonia.Media.Transformation.TransformOperations.Parse("scale(0.97)")));
         // Target Fluent's presenter so local backgrounds do not suppress pointer states.
         foreach (var state in new[] { ":pointerover", ":pressed" })
         {
@@ -128,6 +188,24 @@ internal static class UiTheme
                 new(ContentPresenter.BackgroundProperty, new SolidColorBrush(Color.Parse(Primary), state == ":pressed" ? .75 : .9)),
                 new(ContentPresenter.ForegroundProperty, Brush(OnPrimary)));
         }
+        Add(new Style(x => x.OfType<Button>().Class("cardAction")),
+            new(Layoutable.WidthProperty, TouchSize), new(Layoutable.HeightProperty, TouchSize),
+            new(Layoutable.MinWidthProperty, TouchSize), new(Layoutable.MinHeightProperty, TouchSize),
+            new(Layoutable.MaxWidthProperty, TouchSize), new(Layoutable.MaxHeightProperty, TouchSize),
+            new(TemplatedControl.PaddingProperty, Zero), new(TemplatedControl.BorderThicknessProperty, Zero),
+            new(TemplatedControl.CornerRadiusProperty, new CornerRadius(22)),
+            new(TemplatedControl.BackgroundProperty, Brush(Scrim)),
+            new(ContentControl.HorizontalContentAlignmentProperty, HorizontalAlignment.Center),
+            new(ContentControl.VerticalContentAlignmentProperty, VerticalAlignment.Center));
+        Add(new Style(x => x.OfType<Button>().Class("topMenuAction")),
+            new(TemplatedControl.BorderThicknessProperty, Zero), new(TemplatedControl.PaddingProperty, new Thickness(12, 8)),
+            new(ContentControl.HorizontalContentAlignmentProperty, HorizontalAlignment.Left));
+        foreach (var state in new[] { ":pointerover", ":pressed" })
+            Add(new Style(x => x.OfType<Button>().Class("topMenuAction").Class(state).Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
+                new(ContentPresenter.BackgroundProperty, Brushes.Transparent), new(ContentPresenter.BorderThicknessProperty, Zero));
+        Add(new Style(x => x.OfType<Button>().Class("cardAction").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
+            new(Layoutable.MarginProperty, RoundInset), new(TemplatedControl.PaddingProperty, Zero),
+            new(TemplatedControl.BorderThicknessProperty, Zero), new(TemplatedControl.CornerRadiusProperty, new CornerRadius(22)));
         Add(new Style(x => x.OfType<TextBox>()), new(TemplatedControl.BackgroundProperty, Brush(Surface)),
             new(TemplatedControl.ForegroundProperty, Brush(TextPrimary)), new(TemplatedControl.BorderBrushProperty, Brush(Outline)),
             new(TemplatedControl.BorderThicknessProperty, One), new(TemplatedControl.CornerRadiusProperty, new CornerRadius(ControlRadius)),
@@ -149,6 +227,8 @@ internal static class UiTheme
     }
     public static void InstallResources(IResourceDictionary resources)
     {
+        resources["SliderTrackValueFill"] = Brush(Primary);
+        resources["SliderTrackFill"] = Brush(Outline);
         resources["SliderTrackThemeHeight"] = SeekHeight;
         resources["SliderHorizontalThumbWidth"] = SeekThumbSize;
         resources["SliderHorizontalThumbHeight"] = SeekThumbSize;

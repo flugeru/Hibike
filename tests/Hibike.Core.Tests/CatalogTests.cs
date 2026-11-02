@@ -5,6 +5,18 @@ namespace Hibike.Core.Tests;
 
 public class CatalogTests
 {
+    [Fact] public async Task ExperimentalSearchLimitsPlaylists()
+    {
+        var runner = new FakeRunner("{\"entries\":[]}");
+        await new YtDlpCatalog(runner).SearchAsync("scsearch30:artist", default);
+        Assert.Equal("scsearch30:artist", runner.Arguments[^1]);
+        Assert.Contains("--yes-playlist", runner.Arguments);
+        Assert.Contains("--playlist-end", runner.Arguments);
+    }
+    [Fact] public async Task ExperimentalDownloadRejectsLocalPaths()
+    {
+        await Assert.ThrowsAsync<InvalidOperationException>(() => AudioDownload.SaveAsync(new("file:///private.flac", new Dictionary<string, string>()), "unused", null, default));
+    }
     [Fact] public void PlaybackSessionPreservesQueueAndPosition()
     {
         var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
@@ -12,11 +24,13 @@ public class CatalogTests
         {
             var store = new PlaybackSessionStore(directory);
             var track = new Track("one", "Song", "Artist", "https://example.org/song");
-            store.Save(new([track, track with { Id = "two" }], track, 0, 123.75));
+            store.Save(new([track, track with { Id = "two" }], track, 0, 123.75, [track]));
             var saved = store.Load()!;
             Assert.Equal(123.75, saved.Position); Assert.Equal(track, saved.Current); Assert.Equal(2, saved.Queue.Length);
+            Assert.Equal(track, Assert.Single(saved.History!));
             store.Save(new([track], track, 0, 124));
             Assert.Single(store.Load()!.Queue);
+            Assert.Null(store.Load()!.History);
         }
         finally { Directory.Delete(directory, true); }
     }
@@ -32,7 +46,7 @@ public class CatalogTests
         var runner = new FakeRunner("""{"entries":[]}""");
         await new YtDlpCatalog(runner).SearchAsync("--exec bad", default);
         Assert.Equal("--", runner.Arguments[^2]);
-        Assert.Equal("ytsearch15:--exec bad", runner.Arguments[^1]);
+        Assert.Equal("ytsearch30:--exec bad", runner.Arguments[^1]);
     }
     [Fact] public async Task ResolvePreservesPlaybackHeaders()
     {
@@ -71,7 +85,7 @@ public class CatalogTests
         var runner = new FakeRunner("") { ExitCode = 1 };
         await Assert.ThrowsAsync<InvalidOperationException>(() => new YtDlpCatalog(runner).SearchAsync("music", default));
     }
-    [Fact] public async Task CatalogUsesPrivateCacheAndImportedSession()
+    [Fact] public async Task CatalogUsesPrivateCacheWithoutImportedSession()
     {
         var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         try
@@ -82,7 +96,12 @@ public class CatalogTests
             var runner = new FakeRunner("{\"entries\":[]}");
             await new YtDlpCatalog(runner, directory).SearchAsync("music", default);
             Assert.Contains("--cache-dir", runner.Arguments);
-            Assert.Contains(cookies, runner.Arguments);
+            Assert.DoesNotContain(cookies, runner.Arguments);
+            Assert.DoesNotContain("--cookies", runner.Arguments);
+            runner = new FakeRunner("{\"url\":\"https://example.org/audio\"}");
+            await new YtDlpCatalog(runner, directory).ResolveAsync(new("id", "Song", "Artist", "https://www.youtube.com/watch?v=id"), default);
+            Assert.DoesNotContain(cookies, runner.Arguments);
+            Assert.DoesNotContain("--cookies", runner.Arguments);
             Assert.DoesNotContain("--no-cache-dir", runner.Arguments);
         }
         finally { Directory.Delete(directory, true); }

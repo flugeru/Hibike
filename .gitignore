@@ -9,3 +9,5 @@ src/Hibike.Android/Native/
 src/Hibike.Android/Assets/runtime/
 __pycache__/
 *.jks
+google-oauth-desktop.json*
+client_secret*.json

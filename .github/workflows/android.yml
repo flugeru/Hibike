@@ -2,7 +2,7 @@ name: Hibike • Android APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/experimental-player-lab]
     paths: ['src/**', 'tests/**', 'scripts/**', 'Directory.*', 'global.json', 'Hibike.slnx', '.github/**']
   pull_request:
     paths: ['src/**', 'tests/**', 'scripts/**', 'Directory.*', 'global.json', 'Hibike.slnx', '.github/**']
@@ -77,12 +77,14 @@ jobs:
           apk="$(find artifacts/android -maxdepth 1 -name '*-Signed.apk' -print -quit)"
           test -n "$apk"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$apk" | tee artifacts/android/signing-certificate.txt
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" | tee artifacts/android/package-info.txt
           grep -q "package: name='com.flugel.hibike'" artifacts/android/package-info.txt
           grep -q "sdkVersion:'24'" artifacts/android/package-info.txt
           python3 scripts/check_apk.py "$apk"
           mkdir -p artifacts/release
           cp "$apk" artifacts/release/Hibike-Android-arm64.apk
+          cp artifacts/android/signing-certificate.txt artifacts/release/signing-certificate.txt
       - name: Publish Android emulator test APK
         run: >-
           dotnet publish src/Hibike.Android/Hibike.Android.csproj
@@ -116,7 +118,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Hibike-Android-arm64
-          path: artifacts/release/Hibike-Android-arm64.apk
+          path: artifacts/release/*
           if-no-files-found: error
           retention-days: 30
       - name: Upload test results

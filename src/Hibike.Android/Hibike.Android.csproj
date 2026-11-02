@@ -11,6 +11,8 @@
     <RuntimeIdentifiers>android-arm64;android-x64</RuntimeIdentifiers>
     <AndroidEnableProfiledAot>false</AndroidEnableProfiledAot>
     <RunAOTCompilation>false</RunAOTCompilation>
+    <!-- ponytail: use dynamic JNI registration until optimized Release callbacks pass device startup checks. -->
+    <AndroidEnableMarshalMethods>false</AndroidEnableMarshalMethods>
     <PublishTrimmed>false</PublishTrimmed>
     <AndroidStripNativeLibraries>false</AndroidStripNativeLibraries>
     <DefineConstants Condition="'$(HibikeSmokeTests)' == 'true'">$(DefineConstants);HIBIKE_SMOKE_TEST</DefineConstants>
@@ -18,6 +20,8 @@
   <ItemGroup>
     <ProjectReference Include="../Hibike.App/Hibike.App.csproj" />
     <PackageReference Include="Avalonia.Android" />
+    <PackageReference Include="Xamarin.GooglePlayServices.Auth" />
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.Process" />
     <PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer" />
     <PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer.Hls" />
     <PackageReference Include="Xamarin.AndroidX.Media3.Session" />

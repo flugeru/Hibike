@@ -4,6 +4,7 @@ namespace Hibike.Core.Services;
 
 public sealed class YtDlpCatalog(ICommandRunner runner, string? dataDirectory = null) : IMusicCatalog
 {
+    public Task<IReadOnlyList<Track>> RadioAsync(Track seed, CancellationToken token) => YouTubeMusicRadio.FetchAsync(seed, token);
     private string[] Common
     {
         get
@@ -12,8 +13,6 @@ public sealed class YtDlpCatalog(ICommandRunner runner, string? dataDirectory = 
             if (dataDirectory is not null)
             {
                 args.AddRange(["--cache-dir", Path.Combine(dataDirectory, "extractor-cache")]);
-                var cookies = Path.Combine(dataDirectory, "youtube-cookies.txt");
-                if (File.Exists(cookies)) args.AddRange(["--cookies", cookies]);
             }
             return args.ToArray();
         }
@@ -24,9 +23,10 @@ public sealed class YtDlpCatalog(ICommandRunner runner, string? dataDirectory = 
         query = query.Trim();
         if (query.Length == 0) return [];
         // Explicit terminator keeps user input out of yt-dlp's option parser.
-        var target = Uri.TryCreate(query, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http"
-            ? query : "ytsearch15:" + query;
-        var result = await runner.RunAsync([..Common, "--flat-playlist", "--skip-download", "--quiet", "--dump-single-json", "--", target], cancellationToken);
+        var link = Uri.TryCreate(query, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http";
+        var target = link || query.StartsWith("ytsearch", StringComparison.Ordinal) || query.StartsWith("scsearch", StringComparison.Ordinal)
+            ? query : "ytsearch30:" + query;
+        var result = await runner.RunAsync([..Common, "--yes-playlist", "--playlist-end", "100", "--flat-playlist", "--skip-download", "--quiet", "--dump-single-json", "--", target], cancellationToken);
         PlaybackDiagnostics.Write("Busca", "Metadados recebidos; nenhum arquivo de áudio foi baixado.");
         EnsureSuccess(result);
         return ParseSearch(result.Output);
@@ -38,8 +38,8 @@ public sealed class YtDlpCatalog(ICommandRunner runner, string? dataDirectory = 
         var watch = System.Diagnostics.Stopwatch.StartNew();
         var options = new[] { "-f", "bestaudio", "--skip-download", "--dump-single-json" };
         ProcessResult result;
-        var hasCookies = dataDirectory is not null && File.Exists(Path.Combine(dataDirectory, "youtube-cookies.txt"));
-        if (!hasCookies)
+        var youtube = Uri.TryCreate(track.Source, UriKind.Absolute, out var provider) && (provider.Host == "youtube.com" || provider.Host.EndsWith(".youtube.com") || provider.Host == "youtu.be");
+        if (youtube)
         {
             // Official yt-dlp JS-less default client: avoids interpreting the web player on a cold start.
             result = await runner.RunAsync([..Common, ..options, "--extractor-args", "youtube:player_client=visionos", "--", track.Source], cancellationToken);
@@ -78,12 +78,18 @@ public sealed class YtDlpCatalog(ICommandRunner runner, string? dataDirectory = 
             var title = Text(item, "title");
             if (id is null || title is null) continue;
             var source = Text(item, "webpage_url") ?? Text(item, "url") ?? "https://www.youtube.com/watch?v=" + id;
-            if (!Uri.TryCreate(source, UriKind.Absolute, out _)) source = "https://www.youtube.com/watch?v=" + id;
+            if (!Uri.TryCreate(source, UriKind.Absolute, out _))
+            {
+                var extractor = Text(item, "ie_key") ?? Text(root, "extractor_key") ?? "Youtube";
+                if (!extractor.Contains("Youtube", StringComparison.OrdinalIgnoreCase)) continue;
+                source = "https://www.youtube.com/watch?v=" + id;
+            }
             var duration = item.TryGetProperty("duration", out var d) && d.ValueKind == JsonValueKind.Number && d.TryGetDouble(out var seconds) ? seconds : 0;
             var thumbnail = Text(item, "thumbnail");
             if (thumbnail is null && item.TryGetProperty("thumbnails", out var thumbs) && thumbs.ValueKind == JsonValueKind.Array)
                 thumbnail = thumbs.EnumerateArray().Select(t => Text(t, "url")).LastOrDefault(t => t is not null);
-            tracks.Add(new(id, title, Text(item, "artist") ?? Text(item, "uploader") ?? Text(item, "channel") ?? "YouTube", source, duration, thumbnail));
+            tracks.Add(new(id, title, Text(item, "artist") ?? Text(item, "uploader") ?? Text(item, "channel") ?? "YouTube", source, duration, thumbnail,
+                Album: Text(item, "album"), MusicTitle: Text(item, "track"), MusicArtist: Text(item, "artist")));
         }
         return tracks.DistinctBy(t => t.Id).ToArray();
     }
@@ -100,7 +106,7 @@ public sealed class YtDlpCatalog(ICommandRunner runner, string? dataDirectory = 
             {
             var message = result.Error.Trim();
             if (message.Contains("sign in", StringComparison.OrdinalIgnoreCase) || message.Contains("login required", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("O YouTube pediu verificação de sessão. Você pode importar cookies nas configurações. Veja o diagnóstico para o erro completo.");
+                throw new InvalidOperationException("O YouTube bloqueou reprodução anônima desta faixa ou rede. Login da biblioteca não autoriza o yt-dlp. Veja o diagnóstico para o erro completo.");
             var lastError = message.Split('\n').LastOrDefault(line => line.Contains("ERROR:", StringComparison.OrdinalIgnoreCase)) ?? message;
             throw new InvalidOperationException("YT-DLP: " + (lastError.Length == 0 ? "Não foi possível acessar o conteúdo." : lastError[..Math.Min(lastError.Length, 240)]));
         }

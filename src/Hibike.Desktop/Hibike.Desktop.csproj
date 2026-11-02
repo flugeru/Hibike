@@ -9,6 +9,9 @@
   <Compile Remove="WindowsMediaSession.cs" />
   <Compile Remove="WindowsAppIdentity.cs" />
  </ItemGroup>
+ <ItemGroup Condition="'$(HibikeGoogleOAuthConfig)' != ''">
+   <EmbeddedResource Include="$(HibikeGoogleOAuthConfig)" LogicalName="Hibike.GoogleOAuth.Desktop.json" />
+ </ItemGroup>
   <ItemGroup>
    <PackageReference Include="DiscordRichPresence" />
   <ProjectReference Include="../Hibike.App/Hibike.App.csproj" />
