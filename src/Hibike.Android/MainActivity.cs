@@ -5,6 +5,7 @@ using Hibike.App;
 
 namespace Hibike.Android;
 [Activity(Label = "Hibike", Theme = "@style/HibikeTheme", Icon = "@drawable/hibike_launcher", MainLauncher = true, LaunchMode = LaunchMode.SingleTop,
+    ScreenOrientation = ScreenOrientation.Portrait,
     ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.UiMode)]
 public sealed class MainActivity : AvaloniaMainActivity
 {

@@ -11,6 +11,8 @@
     <RuntimeIdentifiers>android-arm64;android-x64</RuntimeIdentifiers>
     <AndroidEnableProfiledAot>false</AndroidEnableProfiledAot>
     <RunAOTCompilation>false</RunAOTCompilation>
+    <!-- ponytail: use dynamic JNI registration until optimized Release callbacks pass device startup checks. -->
+    <AndroidEnableMarshalMethods>false</AndroidEnableMarshalMethods>
     <PublishTrimmed>false</PublishTrimmed>
     <AndroidStripNativeLibraries>false</AndroidStripNativeLibraries>
     <DefineConstants Condition="'$(HibikeSmokeTests)' == 'true'">$(DefineConstants);HIBIKE_SMOKE_TEST</DefineConstants>

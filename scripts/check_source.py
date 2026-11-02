@@ -21,3 +21,7 @@ theme = styles.find(".//style[@name='HibikeTheme']")
 assert theme is not None and theme.get("parent", "").startswith("Theme.AppCompat."), \
     "HibikeTheme must inherit AppCompat for AvaloniaMainActivity"
 print("Android activity theme is AppCompat-compatible.")
+
+android = ET.parse(root / "src/Hibike.Android/Hibike.Android.csproj")
+assert android.findtext(".//AndroidEnableMarshalMethods") == "false", \
+    "Keep dynamic JNI registration until Release startup is validated on Android"

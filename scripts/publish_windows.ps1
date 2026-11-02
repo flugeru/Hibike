@@ -1,8 +1,17 @@
-param([string]$Name = 'Hibike-win-x64')
+param([string]$Name = 'Hibike-win-x64', [string]$GoogleOAuthConfig = '')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $output = Join-Path $root "artifacts\$Name"
-dotnet publish (Join-Path $root 'src\Hibike.Desktop\Hibike.Desktop.csproj') -c Release -r win-x64 --self-contained true -o $output
+$googleOptions = @()
+if ($GoogleOAuthConfig) {
+    $configPath = (Resolve-Path $GoogleOAuthConfig).Path
+    $config = Get-Content $configPath -Raw | ConvertFrom-Json
+    if ($config.installed.client_id -ne '608800044236-2tpfrd9da8812kldg6j5jp6bk6qmemon.apps.googleusercontent.com' -or !$config.installed.client_secret) {
+        throw 'Google OAuth config must match the Desktop client and contain client_secret.'
+    }
+    $googleOptions = @("-p:HibikeGoogleOAuthConfig=$configPath")
+}
+dotnet publish (Join-Path $root 'src\Hibike.Desktop\Hibike.Desktop.csproj') -c Release -r win-x64 --self-contained true -o $output @googleOptions
 if ($LASTEXITCODE -ne 0) { throw 'Windows publish failed.' }
 $version = (Get-Content (Join-Path $PSScriptRoot 'runtime-lock.json') -Raw | ConvertFrom-Json).yt_dlp.version
 $release = "https://github.com/yt-dlp/yt-dlp/releases/download/$version"
@@ -18,7 +27,7 @@ if ((Get-FileHash $extractor -Algorithm SHA256).Hash -ne $expected) {
 }
 & $extractor --version
 if ($LASTEXITCODE -ne 0) { throw 'Bundled yt-dlp failed to start.' }
-Set-Content (Join-Path $output 'LEIA-ME.txt') 'Abra Hibike.Desktop.exe. Mantenha todos os arquivos desta pasta juntos. Inclui .NET, VLC e yt-dlp. Internet necessaria para busca e streaming. Login YouTube pode exigir cookies nas configuracoes.'
+Set-Content (Join-Path $output 'LEIA-ME.txt') 'Abra Hibike.Desktop.exe. Mantenha todos os arquivos desta pasta juntos. Inclui .NET, VLC e yt-dlp. Internet necessaria para busca e streaming. Login Google opcional para biblioteca; reproducao nao recebe credenciais da conta.'
 Add-Type -AssemblyName System.IO.Compression
 $archivePath = Join-Path $root "artifacts\$Name.zip"
 $archiveStream = [IO.File]::Open($archivePath, [IO.FileMode]::Create)

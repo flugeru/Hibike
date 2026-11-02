@@ -1,0 +1,91 @@
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Layout;
+using Avalonia.Media;
+
+namespace Hibike.App.Views;
+
+public sealed partial class MainView
+{
+    private Border? _googleWelcome;
+    private bool _googleWelcomeBusy;
+    private string GoogleWelcomePath => System.IO.Path.Combine(_music.DataDirectory, "google-welcome-seen");
+
+    private void ShowGoogleWelcome(bool firstRun = false)
+    {
+        if (_googleWelcome is not null || (firstRun && System.IO.File.Exists(GoogleWelcomePath))) return;
+        var items = new StackPanel { Spacing = 16, MaxWidth = 420, Margin = new Thickness(24), VerticalAlignment = VerticalAlignment.Center };
+        items.Children.Add(new Image
+        {
+            Source = new Avalonia.Media.Imaging.Bitmap(Avalonia.Platform.AssetLoader.Open(new Uri("avares://Hibike.App/Assets/hibike-desktop.png"))),
+            Width = 72, Height = 72, HorizontalAlignment = HorizontalAlignment.Center
+        });
+        var title = Text("Sua música no Hibiki", UiTheme.DialogTitle); title.TextAlignment = TextAlignment.Center; title.TextWrapping = TextWrapping.Wrap; items.Children.Add(title);
+        var note = Text("Conecte sua conta Google para ver playlists e músicas curtidas do YouTube. Acesso somente leitura; login opcional.", UiTheme.Body, Muted);
+        note.TextWrapping = TextWrapping.Wrap; note.TextAlignment = TextAlignment.Center; items.Children.Add(note);
+        var error = Text("", UiTheme.Caption, UiTheme.Error); error.TextWrapping = TextWrapping.Wrap; error.IsVisible = false;
+        Button? signIn = null, skip = null;
+        signIn = ActionButton("Entrar com Google", async () =>
+        {
+            if (_googleWelcomeBusy) return;
+            _googleWelcomeBusy = true; signIn!.IsEnabled = skip!.IsEnabled = false; error.IsVisible = false;
+            signIn.Content = "Aguardando Google…";
+            try
+            {
+                if (AppServices.ConnectYouTubeAccount is null) throw new InvalidOperationException("Login Google indisponível neste build.");
+                _account = await AppServices.ConnectYouTubeAccount();
+                if (!DismissGoogleWelcome()) return;
+                _page = "home"; Refresh(); await LoadAccountHomeAsync();
+            }
+            catch (OperationCanceledException)
+            {
+                error.Text = "Login cancelado ou tempo de autorização esgotado. Tente novamente.";
+                error.IsVisible = true;
+            }
+            catch (InvalidOperationException failure)
+            {
+                error.Text = failure.Message;
+                error.IsVisible = true;
+            }
+            catch (Exception)
+            {
+                error.Text = "Não foi possível conectar. Confira conexão e configuração Google do aplicativo e tente novamente. Você pode continuar sem conta.";
+                error.IsVisible = true;
+            }
+            finally { _googleWelcomeBusy = false; signIn.Content = "Entrar com Google"; signIn.IsEnabled = skip.IsEnabled = true; }
+        });
+        signIn.Classes.Add("primary"); items.Children.Add(signIn);
+        skip = ActionButton("Continuar sem conta", () => { DismissGoogleWelcome(); return Task.CompletedTask; }); items.Children.Add(skip); items.Children.Add(error);
+        var session = Text("Nesta versão, conexão vale durante sessão do aplicativo. Para reconectar depois, use Conta nas configurações.", UiTheme.Caption, Muted);
+        session.TextWrapping = TextWrapping.Wrap; items.Children.Add(session);
+        var legal = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 8 };
+        legal.Children.Add(ActionButton("Privacidade", () => OpenLegalAsync("privacy.html")));
+        legal.Children.Add(ActionButton("Termos", () => OpenLegalAsync("terms.html"))); items.Children.Add(legal);
+        var scroll = new ScrollViewer { Content = items, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
+        _googleWelcome = new Border { Background = Brushes.Black, Child = scroll };
+        Grid.SetColumnSpan(_googleWelcome, _root.ColumnDefinitions.Count); Grid.SetRowSpan(_googleWelcome, 3);
+        _root.Children.Add(_googleWelcome); Animate(items); signIn.Focus();
+    }
+
+    private async Task OpenLegalAsync(string page)
+    {
+        if (TopLevel.GetTopLevel(this)?.Launcher is { } launcher)
+            await launcher.LaunchUriAsync(new Uri("https://flugeru.github.io/Hibike/" + page));
+    }
+
+    private bool DismissGoogleWelcome()
+    {
+        try
+        {
+            System.IO.Directory.CreateDirectory(_music.DataDirectory);
+            System.IO.File.WriteAllText(GoogleWelcomePath, "1");
+        }
+        catch (Exception)
+        {
+            _music.SetStatus("Não foi possível salvar preferência de boas-vindas. Confira armazenamento disponível.");
+            return false;
+        }
+        if (_googleWelcome is not null) _root.Children.Remove(_googleWelcome);
+        _googleWelcome = null; return true;
+    }
+}

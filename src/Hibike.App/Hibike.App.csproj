@@ -1,5 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+ <PropertyGroup Condition="'$(HibikeDeveloperTools)' == 'true'">
+   <DefineConstants>$(DefineConstants);HIBIKE_DEVELOPER_TOOLS</DefineConstants>
+ </PropertyGroup>
  <ItemGroup>
   <AvaloniaResource Include="Assets/**" />
   <PackageReference Include="Avalonia" /><PackageReference Include="Avalonia.Themes.Fluent" /><PackageReference Include="Avalonia.Fonts.Inter" />

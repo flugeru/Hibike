@@ -8,6 +8,7 @@ public sealed class CachedMusicCatalog(IMusicCatalog inner) : IMusicCatalog
     private readonly ConcurrentDictionary<string, (AudioSource Source, DateTimeOffset Expires)> _cache = new();
     private readonly ConcurrentDictionary<string, Lazy<Task<AudioSource>>> _inflight = new();
     public Task<IReadOnlyList<Track>> SearchAsync(string query, CancellationToken token) => inner.SearchAsync(query, token);
+    public Task<IReadOnlyList<Track>> RadioAsync(Track seed, CancellationToken token) => inner.RadioAsync(seed, token);
     public async Task<AudioSource> ResolveAsync(Track track, CancellationToken token)
     {
         if (track.IsLocal) return await inner.ResolveAsync(track, token);
@@ -28,6 +29,7 @@ public sealed class CachedMusicCatalog(IMusicCatalog inner) : IMusicCatalog
         return await work.Value.WaitAsync(token);
     }
     public void Clear() => _cache.Clear();
+    public void Invalidate(Track track) => _cache.TryRemove(track.Source, out _);
     public async Task WarmAsync(IEnumerable<Track> tracks)
     {
         foreach (var track in tracks)

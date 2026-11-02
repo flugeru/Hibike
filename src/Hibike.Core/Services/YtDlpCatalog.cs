@@ -4,6 +4,7 @@ namespace Hibike.Core.Services;
 
 public sealed class YtDlpCatalog(ICommandRunner runner, string? dataDirectory = null) : IMusicCatalog
 {
+    public Task<IReadOnlyList<Track>> RadioAsync(Track seed, CancellationToken token) => YouTubeMusicRadio.FetchAsync(seed, token);
     private string[] Common
     {
         get
@@ -87,7 +88,8 @@ public sealed class YtDlpCatalog(ICommandRunner runner, string? dataDirectory = 
             var thumbnail = Text(item, "thumbnail");
             if (thumbnail is null && item.TryGetProperty("thumbnails", out var thumbs) && thumbs.ValueKind == JsonValueKind.Array)
                 thumbnail = thumbs.EnumerateArray().Select(t => Text(t, "url")).LastOrDefault(t => t is not null);
-            tracks.Add(new(id, title, Text(item, "artist") ?? Text(item, "uploader") ?? Text(item, "channel") ?? "YouTube", source, duration, thumbnail));
+            tracks.Add(new(id, title, Text(item, "artist") ?? Text(item, "uploader") ?? Text(item, "channel") ?? "YouTube", source, duration, thumbnail,
+                Album: Text(item, "album"), MusicTitle: Text(item, "track"), MusicArtist: Text(item, "artist")));
         }
         return tracks.DistinctBy(t => t.Id).ToArray();
     }
