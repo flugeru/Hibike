@@ -123,7 +123,15 @@ internal static class PlaybackProbe
                 await Task.Delay(500);
                 await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => AppServices.OpenPlayerView?.Invoke());
                 await Task.Delay(300);
-                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => { AppServices.BackHandler?.Invoke(); });
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    AppServices.BackHandler?.Invoke();
+                    var view = (Avalonia.Application.Current?.ApplicationLifetime as ISingleViewApplicationLifetime)?.MainView;
+                    if (view is null || !view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "Ouvir de novo" && t.IsEffectivelyVisible))
+                        throw new IOException("Home listening history shelf missing after player return.");
+                    var search = view.GetVisualDescendants().OfType<Button>().Single(b => b.Tag is ValueTuple<string, string, string, bool> tag && tag.Item1 == "explore" && tag.Item4);
+                    search.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                });
                 await Task.Delay(300);
                 var layoutOk = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                 {
@@ -132,8 +140,8 @@ internal static class PlaybackProbe
                     var title = view.GetVisualDescendants().OfType<TextBlock>().FirstOrDefault(t => t.Text == "Hikari — Clovis Reyes & VDYCD" && t.IsEffectivelyVisible);
                     var navigation = view.GetVisualDescendants().OfType<Button>().Where(b => b.Tag is ValueTuple<string, string, string, bool> tag && tag.Item4).ToArray();
                     global::Android.Util.Log.Info("HibikeProbe", "LAYOUT_BOUNDS title=" + title?.Bounds.ToString() + " nav=" + string.Join(",", navigation.Select(b => b.Bounds.Width)) + " view=" + view.Bounds.Width);
-                    return title is not null && title.Bounds.Width > 40 && title.Bounds.Height > 5 && navigation.Length == 3
-                        && navigation.All(b => b.Bounds.Width >= view.Bounds.Width / 3 - 2);
+                    return title is not null && title.Bounds.Width > 40 && title.Bounds.Height > 5 && navigation.Length == 4
+                        && navigation.All(b => b.IsEffectivelyVisible && b.Bounds.Width >= view.Bounds.Width / 4 - 2);
                 });
                 global::Android.Util.Log.Info("HibikeProbe", layoutOk ? "HIBIKE_PROBE_LAYOUT_OK titles/navigation/return" : "HIBIKE_PROBE_LAYOUT_FAILED titles/navigation/return");
                 await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => AppServices.OpenPlayerView?.Invoke());
