@@ -35,11 +35,14 @@ jobs:
           sudo chown -R "$(id -u):$(id -g)" _site
           mkdir -p _site/app
           cp -a web-publish/wwwroot/. _site/app/
+          cp _site/index.html _site/about.html
+          cp -a web-publish/wwwroot/. _site/
           touch _site/.nojekyll
           test -f _site/privacy.html
           test -f _site/terms.html
           test -f _site/googlef54a5400e34c1ee0.html
           test -f _site/app/index.html
+          test -f _site/about.html
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
