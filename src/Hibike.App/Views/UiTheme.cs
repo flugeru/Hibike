@@ -21,7 +21,7 @@ internal static class UiTheme
         ThumbnailSize = 52, MiniArtworkSize = 40, PlaySize = 72, TransportIconSize = 32,
         ProgressHeight = 8, ProgressRadius = 4, MiniProgressHeight = 4, SeekHeight = 6,
         SeekThumbSize = 16, SeekThumbPressedSize = 20, PageMaxWidth = 1280, PlayerMaxWidth = 440,
-        DialogMaxWidth = 520, CompactWidth = 390, DesktopWidth = 800, SidebarWidth = 200,
+        DialogMaxWidth = 560, CompactWidth = 390, DesktopWidth = 800, SidebarWidth = 224,
         NavHeight = 72, RowHeight = 76, TrackRowHeight = 70, MarkerSize = 7, EqualizerGap = 3, EqualizerBarWidth = 4, EqualizerStep = 5,
         PauseStroke = 4, StateTransitionMilliseconds = 160, EqualizerMilliseconds = 180,
         PlayerChromeHeight = 388, PlayerBottomWeight = .15, ListFadeHeight = 18,

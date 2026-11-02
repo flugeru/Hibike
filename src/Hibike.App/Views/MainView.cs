@@ -16,7 +16,7 @@ using Track = Hibike.Core.Models.Track;
 
 namespace Hibike.App.Views;
 
-public sealed class MainView : UserControl
+public sealed partial class MainView : UserControl
 {
     private readonly MusicController _music;
     private readonly Grid _root = new() { ColumnDefinitions = new($"{UiTheme.SidebarWidth},*"), RowDefinitions = new("*,Auto,Auto") };
@@ -74,7 +74,7 @@ public sealed class MainView : UserControl
         _music = music; Background = UiTheme.Brush(UiTheme.Background);
         TopLevel.SetAutoSafeAreaPadding(this, true);
         _sidebar = BuildSidebar(); _root.Children.Add(_sidebar); Grid.SetRowSpan(_sidebar, 3);
-        _main = new Border { Padding = UiTheme.ContentPadding, MaxWidth = UiTheme.PageMaxWidth, HorizontalAlignment = HorizontalAlignment.Stretch }; Put(_root, _main, 0, 1);
+        _main = new Border { Padding = UiTheme.ContentPadding, HorizontalAlignment = HorizontalAlignment.Stretch }; Put(_root, _main, 0, 1);
         var content = new Grid { RowDefinitions = new("Auto,Auto,Auto,Auto,Auto,*"), RowSpacing = UiTheme.PageGap }; _main.Child = content;
         var header = new Grid { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = UiTheme.CompactGap };
         _pageTitle.FontWeight = FontWeight.SemiBold; header.Children.Add(_pageTitle);
@@ -120,6 +120,7 @@ public sealed class MainView : UserControl
         _statusBox = new Border { Child = statusRow }; UiTheme.StateBanner(_statusBox, UiTheme.Warning); Put(content, _statusBox, 3, 0);
         _play = IconButton("play", "Reproduzir, pausar ou cancelar", _music.ToggleAsync, UiTheme.OnPrimary); _play.Classes.Add("primary"); _play.Classes.Add("miniPlay");
         _mini = BuildMiniPlayer(); Put(_root, _mini, 1, 1);
+        InitializeWorkspace(content);
         var navGrid = new Grid { ColumnDefinitions = new("*,*,*,*"), Height = UiTheme.NavHeight, Background = UiTheme.Brush(UiTheme.Surface) };
         var tabs = new[] { ("home", "Início", "home"), ("explore", "Buscar", "search"), ("library", "Biblioteca", "library"), ("queue", "Fila", "queue") };
         for (var index = 0; index < tabs.Length; index++)
@@ -137,6 +138,7 @@ public sealed class MainView : UserControl
             _main.IsVisible = !_showingPlayer;
             _bottom.IsVisible = compact && !_showingPlayer;
             _main.Padding = compact ? UiTheme.ContentPadding : new Thickness(32, 24, 32, 12);
+            ResizeWorkspace();
             // Title and two 48dp actions fit at 360dp; no artificial second toolbar row.
         };
         AppServices.BackHandler = HandleBack; AppServices.OpenPlayerView = ShowPlayer;
@@ -148,18 +150,18 @@ public sealed class MainView : UserControl
         };
         AttachedToVisualTree += async (_, _) =>
         {
-            _music.Changed -= Refresh; _music.Tick -= RefreshPlayback;
-            _music.Changed += Refresh; _music.Tick += RefreshPlayback;
+            _music.Changed -= Refresh; _music.Tick -= RefreshPlayback; _music.Tick -= RefreshDock;
+            _music.Changed += Refresh; _music.Tick += RefreshPlayback; _music.Tick += RefreshDock;
             _music.StartObserving(); _listFingerprint = null; Refresh(); await _music.InitializeAsync();
         };
-        DetachedFromVisualTree += (_, _) => { _music.Changed -= Refresh; _music.Tick -= RefreshPlayback; _music.StopObserving(); };
+        DetachedFromVisualTree += (_, _) => { _music.Changed -= Refresh; _music.Tick -= RefreshPlayback; _music.Tick -= RefreshDock; _music.StopObserving(); };
         Refresh();
     }
     private Border BuildSidebar()
     {
         var panel = new StackPanel { Spacing = UiTheme.CompactGap, Margin = UiTheme.PageMargin };
         var brand = new StackPanel { Spacing = 4, Margin = new Thickness(8, 10, 0, 24) };
-        brand.Children.Add(Text("Hibike", UiTheme.PageTitle)); brand.Children.Add(Text("SEU ESPAÇO DE MÚSICA", UiTheme.Label, Muted)); panel.Children.Add(brand);
+        brand.Children.Add(Text("Hibike", UiTheme.PageTitle)); brand.Children.Add(Text("BIBLIOTECA MUSICAL", UiTheme.Label, Muted)); panel.Children.Add(brand);
         panel.Children.Add(NavButton("home", "Início", "home", false));
         panel.Children.Add(NavButton("explore", "Buscar", "search", false));
         panel.Children.Add(NavButton("library", "Biblioteca", "library", false));
@@ -171,7 +173,7 @@ public sealed class MainView : UserControl
     }
     private Button NavButton(string key, string label, string icon, bool vertical)
     {
-        var button = ActionButton("", () => { _page = key; BuildListTools(); Refresh(); Animate(_tracks); return Task.CompletedTask; });
+        var button = ActionButton("", () => { _page = key; BuildListTools(); Refresh(); return Task.CompletedTask; });
         button.Classes.Add("nav"); button.Tag = (key, label, icon, vertical); _nav.Add(button);
         button.Padding = UiTheme.Zero; button.HorizontalContentAlignment = vertical ? HorizontalAlignment.Center : HorizontalAlignment.Left;
         return button;
@@ -230,6 +232,7 @@ public sealed class MainView : UserControl
 
     private void Refresh()
     {
+        if (_page == "queue" && Bounds.Width >= 1100) { _page = "home"; _queueOpen = true; }
         if (_page != "home" && _listTools.Children.Count == 0) BuildListTools();
         _statusBox.IsVisible = _music.Searching || _music.LoadingAudio || _music.HasError;
         UiTheme.StateBanner(_statusBox, _music.HasError ? UiTheme.Error : UiTheme.Warning);
@@ -237,7 +240,7 @@ public sealed class MainView : UserControl
         foreach (var button in _nav)
         {
             var (key, label, icon, vertical) = ((string, string, string, bool))button.Tag!;
-            var active = key == _page;
+            var active = key == _page || key == "queue" && _queueOpen;
             button.Background = active ? UiTheme.Brush(UiTheme.PrimaryContainer) : Brushes.Transparent;
             button.CornerRadius = new(UiTheme.ControlRadius); button.Padding = UiTheme.NavPadding;
             var stack = new StackPanel { Orientation = vertical ? Orientation.Vertical : Orientation.Horizontal, Spacing = UiTheme.ProgressRadius, HorizontalAlignment = vertical ? HorizontalAlignment.Center : HorizontalAlignment.Left };
@@ -254,10 +257,11 @@ public sealed class MainView : UserControl
             if (_librarySorted) tracks = tracks.OrderBy(t => t.Title, StringComparer.CurrentCultureIgnoreCase).ToArray();
         }
         _pageTitle.Text = _page switch { "home" => "Início", "library" => "Sua biblioteca", "queue" => "Sua fila", _ => "Buscar" };
-        if (_main.Child is Grid layout) layout.RowSpacing = _page == "home" ? 8 : UiTheme.PageGap;
+        if (_main.Child is Grid layout) layout.RowSpacing = 12;
         _listTools.IsVisible = _page != "home";
         _homeScroll.IsVisible = _page == "home"; _trackScroll.IsVisible = _listHeading.IsVisible = _page != "home";
         if (_page == "home") RefreshHome();
+        RefreshWorkspace();
         _heading.Text = _page switch { "library" => "Músicas salvas", "queue" => "A seguir", _ => "Resultados" };
         _count.Text = tracks.Count + (tracks.Count == 1 ? " faixa" : " faixas");
         var fingerprint = _page + ":" + string.Join("|", tracks.Select(t => t.Id + _music.IsFavorite(t)));
@@ -265,13 +269,15 @@ public sealed class MainView : UserControl
         {
         _listFingerprint = fingerprint; _rows.Clear(); _rowTitles.Clear(); _equalizers.Clear(); _tracks.ItemsSource = tracks;
         }
-        _emptyState.IsVisible = _page != "home" && tracks.Count == 0 && !_music.Searching;
+        _emptyState.IsVisible = _page is not ("home" or "queue" or "collection") && tracks.Count == 0 && !_music.Searching;
         if (_emptyState.IsVisible) _emptyState.Child = EmptyState(_page == "library" ? "library" : _page == "queue" ? "queue" : "search",
             _page == "library" ? "Sua coleção, do seu jeito" : _page == "queue" ? "O próximo som é com você" : "Encontre seu próximo som",
             _page == "library" ? "Salve favoritos ou importe arquivos. Use filtros para encontrar suas músicas." : _page == "queue" ? "Adicione faixas pelo menu de cada música ou toque sua seleção." : "Busque por música, artista ou cole um link de álbum ou playlist.",
             _page == "library" ? "Importar músicas" : "Explorar músicas", _page == "library" ? OpenLocalAsync : () => { _page = "explore"; BuildListTools(); Refresh(); _search.Focus(); return Task.CompletedTask; });
         var displayed = _music.Pending ?? _music.Current;
         _mini.IsVisible = displayed is not null && !_showingPlayer;
+        _desktopDock.IsVisible = displayed is not null && !_showingPlayer && Bounds.Width >= 1000;
+        if (_desktopDock.IsVisible) _mini.IsVisible = false;
         UpdateRows(displayed);
         if (!Equals(displayed, _shownTrack)) { _shownTrack = displayed; _nowArt.Content = new Artwork(displayed, UiTheme.MiniArtworkSize); }
         _nowTitle.Text = TrackTextFormatter.Title(displayed?.Title, displayed?.Artist);
@@ -286,11 +292,6 @@ public sealed class MainView : UserControl
             + ":" + string.Join("|", _accountPlaylists.Select(p => p.Id)) + ":" + _music.Current?.Source;
         if (fingerprint == _homeFingerprint) return;
         _homeFingerprint = fingerprint; _home.Children.Clear();
-        var intro = new StackPanel { Spacing = 8 };
-        intro.Children.Add(Text("MÚSICA NO SEU RITMO", UiTheme.Label, Muted));
-        var welcome = Text("Dê play no seu momento.", 32); welcome.FontWeight = FontWeight.SemiBold; welcome.TextWrapping = TextWrapping.Wrap; intro.Children.Add(welcome);
-        var description = Text("Sua coleção, suas descobertas. Sem sair do preto.", UiTheme.Body, Muted); description.TextWrapping = TextWrapping.Wrap; intro.Children.Add(description);
-        _home.Children.Add(intro);
         var shortcuts = new StackPanel { Orientation = Orientation.Horizontal, Spacing = UiTheme.CompactGap };
         foreach (var (label, query) in new[] { ("Relax", "relax music"), ("Foco", "instrumental focus"), ("Energia", "energetic music"), ("Para dormir", "sleep ambient"), ("Trilhas sonoras", "original soundtrack"), ("Jazz", "jazz music") })
         {
@@ -308,7 +309,7 @@ public sealed class MainView : UserControl
             var artist = Text(TrackTextFormatter.Artist(recent.Artist), UiTheme.Caption, Muted); artist.TextTrimming = TextTrimming.CharacterEllipsis; detail.Children.Add(artist);
             var resume = ActionButton("Abrir player", async () => { if (recent.Source != _music.Current?.Source) await _music.PlayAsync(recent); ShowPlayer(); });
             resume.Classes.Add("primary"); resume.HorizontalAlignment = HorizontalAlignment.Left; detail.Children.Add(resume); Put(feature, detail, 0, 1);
-            _home.Children.Add(UiTheme.Card(feature, 16));
+            var featureCard = UiTheme.Card(feature, 20); featureCard.MaxWidth = 640; featureCard.HorizontalAlignment = HorizontalAlignment.Left; _home.Children.Add(featureCard);
         }
         Shelf("Ouvir de novo", "Seu histórico no Hibike · salvo neste aparelho", _music.History.Take(20).Select(TrackCard));
         if (_music.History.Count == 0) _home.Children.Add(EmptyState("play", "Sua trilha começa aqui", "Suas últimas músicas aparecem aqui automaticamente. Comece com uma busca ou traga seus arquivos.", "Buscar música", () => { _page = "explore"; BuildListTools(); Refresh(); _search.Focus(); return Task.CompletedTask; }));
@@ -320,11 +321,11 @@ public sealed class MainView : UserControl
                 var art = new Track(p.Id, p.Title, "Playlist", "https://www.youtube.com/playlist?list=" + Uri.EscapeDataString(p.Id), Thumbnail: p.Thumbnail);
                 return CoverCard(art, "Playlist", () => ShowAccountTracksAsync(_account!, p.Id, p.Title));
             }));
-            _home.Children.Add(ActionButton(_accountLoading ? "Carregando biblioteca…" : "Atualizar biblioteca da conta", LoadAccountHomeAsync));
+            var update = ActionButton(_accountLoading ? "Carregando…" : "Atualizar biblioteca", LoadAccountHomeAsync); update.HorizontalAlignment = HorizontalAlignment.Left; _home.Children.Add(update);
         }
         Shelf("Sua seleção", "Favoritos e arquivos salvos no Hibike", _music.Favorites.Take(30).Select(TrackCard));
         if (_music.Favorites.Count == 0) _home.Children.Add(ActionButton("Importar músicas para sua coleção", OpenLocalAsync));
-        var accountLink = ActionButton(_account is null ? "Conectar biblioteca do YouTube (opcional)" : "Gerenciar conta YouTube", ShowAccountAsync); accountLink.Classes.Add("subtle"); _home.Children.Add(accountLink);
+        var accountLink = ActionButton(_account is null ? "Conectar biblioteca do YouTube" : "Gerenciar conta YouTube", ShowAccountAsync); accountLink.Classes.Add("subtle"); accountLink.HorizontalAlignment = HorizontalAlignment.Left; _home.Children.Add(accountLink);
 
         void Shelf(string title, string subtitle, IEnumerable<Control> cards)
         {
@@ -347,14 +348,14 @@ public sealed class MainView : UserControl
     private Control TrackCard(Track track) => CoverCard(track, TrackTextFormatter.Artist(track.Artist), async () => { await _music.PlayAsync(track); });
     private Control CoverCard(Track track, string subtitle, Func<Task> action)
     {
-        var panel = new StackPanel { Width = 160, Spacing = UiTheme.CompactGap };
-        var cover = new Grid { Width = 160, Height = 160 };
-        cover.Children.Add(new Artwork(track, 160));
+        var panel = new StackPanel { Width = 196, Spacing = 10 };
+        var cover = new Grid { Width = 196, Height = 196 };
+        cover.Children.Add(new Artwork(track, 196));
         cover.Children.Add(new Border { Background = UiTheme.Brush(UiTheme.Scrim), CornerRadius = new(24), Width = 44, Height = 44,
             HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(8), Child = Icons.Make("play") });
         panel.Children.Add(cover);
         var title = Text(TrackTextFormatter.Title(track.Title, track.Artist), UiTheme.Body);
-        title.TextWrapping = TextWrapping.Wrap; title.MaxLines = 2; title.TextTrimming = TextTrimming.CharacterEllipsis; panel.Children.Add(title);
+        title.TextWrapping = TextWrapping.Wrap; title.MaxLines = 2; title.Height = 42; title.VerticalAlignment = VerticalAlignment.Top; title.TextTrimming = TextTrimming.CharacterEllipsis; panel.Children.Add(title);
         var artist = Text(subtitle, UiTheme.Caption, Muted); artist.TextTrimming = TextTrimming.CharacterEllipsis; panel.Children.Add(artist);
         var button = ActionButton("", action); button.Content = panel; button.Classes.Add("cover");
         button.VerticalContentAlignment = VerticalAlignment.Top;
@@ -419,9 +420,9 @@ public sealed class MainView : UserControl
     private async Task PlayCollectionAsync(IEnumerable<Track> collection)
     {
         var tracks = collection.ToArray(); if (tracks.Length == 0) return;
-        foreach (var track in tracks) if (!_music.Queue.Any(t => t.Source == track.Source)) _music.Queue.Add(track);
-        _music.SetStatus("Seleção adicionada à fila.");
         await _music.PlayAsync(tracks[0]);
+        if (_music.HasError) return;
+        _music.ReplaceQueue(tracks);
     }
     private Control TrackRow(Track track)
     {
@@ -648,8 +649,8 @@ public sealed class MainView : UserControl
         host.SizeChanged += (_, _) => ArrangePlayer();
         transport.LayoutUpdated += (_, _) => ArrangeTransport();
         _playerPage = new Border { Background = UiTheme.Brush(UiTheme.Background), Child = host };
-        Grid.SetColumn(_playerPage, 1); Grid.SetRowSpan(_playerPage, 3); _root.Children.Add(_playerPage);
-        _main.IsVisible = false; _mini.IsVisible = false; _bottom.IsVisible = false;
+        Grid.SetColumn(_playerPage, 1); Grid.SetColumnSpan(_playerPage, 2); Grid.SetRowSpan(_playerPage, 3); _root.Children.Add(_playerPage);
+        _main.IsVisible = false; _mini.IsVisible = false; _desktopDock.IsVisible = false; _queuePane.IsVisible = false; _bottom.IsVisible = false;
         Animate(_playerPage); RefreshPlayback();
     }
     private void ClosePlayer()
@@ -662,6 +663,8 @@ public sealed class MainView : UserControl
     {
         if (_overlay is not null) { CloseSheet(); return true; }
         if (_showingPlayer) { ClosePlayer(); return true; }
+        if (_page == "collection") { _page = "home"; Refresh(); return true; }
+        if (_queueOpen || _page == "queue") { _queueOpen = false; _page = "home"; Refresh(); return true; }
         return false;
     }
     private static void Animate(Control control)
@@ -729,12 +732,7 @@ public sealed class MainView : UserControl
     private async Task ShowAccountTracksAsync(YouTubeAccountLibrary account, string? id, string title)
     {
         var tracks = await account.TracksAsync(id, CancellationToken.None);
-        var panel = new StackPanel { Spacing = UiTheme.CompactGap };
-        panel.Children.Add(Text($"{tracks.Count} faixas. Reprodução anônima; itens privados/restritos podem não tocar.", UiTheme.Caption, Muted));
-        foreach (var track in tracks)
-            panel.Children.Add(ActionButton(track.Artist + " — " + track.Title, async () => { CloseSheet(); await _music.PlayAsync(track); }));
-        panel.Children.Add(ActionButton("Voltar à conta", ShowAccountAsync));
-        ShowSheet(title, panel);
+        OpenCollection(title, tracks);
     }
     private CancellationTokenSource? _download;
     private void ShowExperimental()

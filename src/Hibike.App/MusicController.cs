@@ -248,7 +248,9 @@ public sealed class MusicController
         }
         else
         {
-            var target = Math.Clamp(index + direction, 0, Queue.Count - 1);
+            var currentIndex = Current is null ? -1 : Queue.IndexOf(Current);
+            if (index <= currentIndex) { SetStatus("Somente próximas faixas podem ser reordenadas."); return; }
+            var target = Math.Clamp(index + direction, currentIndex + 1, Queue.Count - 1);
             Queue.Move(index, target);
         }
         _queueIndex = Current is null ? -1 : Queue.IndexOf(Current);
@@ -259,9 +261,18 @@ public sealed class MusicController
         foreach (var track in Results.Where(t => !Queue.Any(q => q.Source == t.Source))) Queue.Add(track);
         SetStatus("Resultados adicionados à fila.");
     }
+    public void ReplaceQueue(IEnumerable<Track> tracks)
+    {
+        var items = tracks.DistinctBy(t => t.Source).ToArray();
+        Queue.Clear(); foreach (var item in items) Queue.Add(item);
+        _queueIndex = Current is null ? -1 : Queue.IndexOf(Current);
+        SetStatus("Fila substituída pela seleção.");
+    }
     public void ReorderQueue(bool random)
     {
-        var items = random ? Queue.OrderBy(_ => Random.Shared.Next()).ToArray() : Queue.OrderBy(t => t.Title, StringComparer.CurrentCultureIgnoreCase).ToArray();
+        var currentIndex = Current is null ? -1 : Queue.IndexOf(Current);
+        var upcoming = Queue.Skip(currentIndex + 1);
+        var items = Queue.Take(currentIndex + 1).Concat(random ? upcoming.OrderBy(_ => Random.Shared.Next()) : upcoming.OrderBy(t => t.Title, StringComparer.CurrentCultureIgnoreCase)).ToArray();
         Queue.Clear(); foreach (var track in items) Queue.Add(track);
         _queueIndex = Current is null ? -1 : Queue.IndexOf(Current);
         SetStatus(random ? "Fila embaralhada." : "Fila ordenada por título.");

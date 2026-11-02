@@ -16,6 +16,12 @@ Histórico do Hibike persiste até 100 faixas neste aparelho; sleep timer não p
 
 ## Início
 
+### Nova composição de reprodução e fila
+
+Desktop ocupa largura disponível, sem coluna central limitada a 1280dp. Barra de reprodução fixa atravessa janela com metadados, anterior/play/próxima, busca na timeline, tempo, volume e botão da fila. A partir de 1100dp, fila abre lateralmente sem substituir conteúdo; abaixo disso, usa página dedicada. Separa **Tocando agora** de **A seguir**, calcula duração das próximas faixas e permite organizar/remover itens. Embaralhar e mover próximas faixas preservam posição da faixa atual e histórico anterior da fila. Reproduzir coleção substitui fila apenas após primeira faixa iniciar com sucesso.
+
+Playlists da conta abrem página de coleção com capa, título, ações de reprodução/adicionar e lista virtualizada, não painel de botões. Cards maiores de 196dp têm títulos de altura uniforme; slogans removidos. Player expandido continua disponível. Checks locais incluem fila lateral/mobile, página de coleção, proteção da faixa atual e substituição da fila. Login existente preservado; nenhuma nova configuração Google necessária.
+
 Tela inicial AMOLED com navegação Início/Buscar/Biblioteca/Fila e fileiras horizontais de capas: **Ouvir de novo** (histórico local do Hibike), **Suas curtidas no YouTube**, **Suas playlists** e **Sua seleção** (favoritos locais). Login carrega biblioteca diretamente no Início; botão permite atualizar. Cards de músicas reproduzem e cards de playlists abrem faixas. Biblioteca da conta fica só em memória e é removida da interface ao desconectar. Não apresenta histórico ou recomendações do YT Music como se fossem fornecidos pela API oficial.
 
 Acabamento: Início com destaque de retomada, atalhos de busca por clima/gênero (não recomendações), setas de carrossel e cards com títulos acessíveis. Sidebar desktop ampliada; conteúdo usa até 1280dp. Biblioteca tem filtro título/artista, Todas/Locais/Online, ordem salva/A–Z e tocar seleção filtrada. Busca oferece tocar/adicionar resultados; fila oferece embaralhar, repetir e mover/remover faixas pelo menu, preservando faixa atual. Estados vazios orientam próxima ação. Botões têm foco visível; Escape fecha player/painel e Ctrl+F foca busca. Login Google é opcional, sem bloquear uso local. Checks visuais cobrem 360/390/430/1260/1920dp; aparelho Android físico continua pendente.

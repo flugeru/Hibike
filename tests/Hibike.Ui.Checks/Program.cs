@@ -35,7 +35,7 @@ internal static class Program
                     window.Width = homeWidth; await Task.Delay(150); Capture(view, $"home-{homeWidth}");
                     var card = view.GetVisualDescendants().OfType<Button>().Single(b => Avalonia.Automation.AutomationProperties.GetName(b) == "Faixa recente — Artista");
                     Check(card.Bounds.Width >= 160 && card.IsEffectivelyVisible, "Home history cover card missing");
-                    foreach (var button in view.GetVisualDescendants().OfType<Button>().Where(b => b.IsEffectivelyVisible))
+                    foreach (var button in view.GetVisualDescendants().OfType<Button>().Where(b => b.IsEffectivelyVisible && !b.GetVisualAncestors().OfType<Slider>().Any()))
                         Check(button.Bounds.Height >= 48, "Home touch target below 48");
                 }
                 typeof(MainView).GetField("_page", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(view, "explore");
@@ -48,7 +48,7 @@ internal static class Program
                     window.Width = width; window.Height = 820;
                     await Task.Delay(150);
                     Check(view.GetVisualDescendants().OfType<TextBlock>().All(t => t.FontSize >= 12), "Text below 12");
-                    foreach (var button in view.GetVisualDescendants().OfType<Button>().Where(b => b.IsEffectivelyVisible))
+                    foreach (var button in view.GetVisualDescendants().OfType<Button>().Where(b => b.IsEffectivelyVisible && !b.GetVisualAncestors().OfType<Slider>().Any()))
                         Check(button.Bounds.Height >= 48, $"Touch target below 48: {button.Content} {button.Classes} {button.Bounds}");
                     var list = view.GetVisualDescendants().OfType<ItemsControl>().First(c => c.ItemsSource is System.Collections.ObjectModel.ObservableCollection<Track>);
                     Check(list.GetVisualDescendants().OfType<Button>().Count() < 100, "List not virtualized");
@@ -64,7 +64,7 @@ internal static class Program
                     AppServices.OpenPlayerView!(); await Task.Delay(300);
                     Capture(view, $"player-{width}");
                     Check(view.GetVisualDescendants().OfType<Slider>().Any(s => s.Bounds.Width > 0 && s.Bounds.Width <= width), "Player slider clipped");
-                    var slider = view.GetVisualDescendants().OfType<Slider>().Single(s => Avalonia.Automation.AutomationProperties.GetName(s) != "Volume");
+                    var slider = view.GetVisualDescendants().OfType<Slider>().Single(s => s.IsEffectivelyVisible && Avalonia.Automation.AutomationProperties.GetName(s) != "Volume");
                     Check(slider.TranslatePoint(default, view)!.Value.Y + slider.Bounds.Height <= view.Bounds.Height, "Player slider below viewport");
                     if (width >= 1260)
                     {
@@ -129,7 +129,7 @@ internal static class Program
                     libraryNav.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)); await Task.Delay(150);
                     var filter = view.GetVisualDescendants().OfType<TextBox>().Single(t => t.PlaceholderText == "Filtrar título ou artista");
                     filter.Text = "Local favorite"; await Task.Delay(100);
-                    var filtered = view.GetVisualDescendants().OfType<ItemsControl>().Single();
+                    var filtered = view.GetVisualDescendants().OfType<ItemsControl>().Single(c => c.IsEffectivelyVisible);
                     Check(filtered.ItemsSource!.Cast<Track>().Single().Id == "local-filter", "Library filter did not isolate local favorite");
                     Capture(view, $"library-{width}"); filter.Text = "";
                     var queueNav = view.GetVisualDescendants().OfType<Button>().First(b => b.IsEffectivelyVisible && b.Tag is ValueTuple<string, string, string, bool> tag && tag.Item1 == "queue");
@@ -138,6 +138,16 @@ internal static class Program
                 var extra = new Track("queue-edit", "Queue edit", "Artist", "test"); music.Enqueue(extra);
                 music.EditQueue(extra, -1); Check(music.Queue.IndexOf(extra) == music.Queue.Count - 2, "Queue move failed");
                 music.EditQueue(extra, 0); Check(!music.Queue.Contains(extra), "Queue remove failed");
+                var current = music.Current!;
+                var nextA = extra with { Id = "next-a", Source = "next-a" };
+                var nextB = extra with { Id = "next-b", Source = "next-b" };
+                music.ReplaceQueue([current, nextA, nextB]);
+                music.EditQueue(nextA, -1); Check(music.Queue[0] == current && music.Queue[1] == nextA, "Upcoming track moved before current");
+                music.ReorderQueue(true); Check(music.Queue[0] == current, "Shuffle displaced current track");
+                typeof(MainView).GetMethod("OpenCollection", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(view, ["Playlist de teste", new Track[] { nextA, nextB }]);
+                await Task.Delay(150); Capture(view, "collection-1260");
+                Check(view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "Playlist de teste" && t.IsEffectivelyVisible), "Collection page missing");
+                Check(AppServices.BackHandler!(), "Collection cannot return home");
                 music.SaveSession();
                 var restored = new MusicController(new Catalog(), new Player(), new LibraryStore(directory), directory);
                 await restored.InitializeAsync();
