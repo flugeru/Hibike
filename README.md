@@ -1,94 +1,150 @@
+<div align="center">
+
+<img src="site/Assets/hibike.png" alt="Símbolo do Hibike" width="112" />
+
 # Hibike 響
 
-**Sua música. Seu ritmo. · Your music. Your rhythm. — by Flugel**
+### Sua música. Seu ritmo.
 
-## Português
+Um espaço para sua biblioteca, suas próximas descobertas e tudo o que você quer ouvir de novo.
 
-Player de música em **C# / .NET 10 e Avalonia UI 12**, com busca e streaming via **yt-dlp**, áudio local e interface adaptável para Android e desktop.
+[![Release](https://img.shields.io/github/v/release/flugeru/Hibike?label=vers%C3%A3o&color=b784f7)](https://github.com/flugeru/Hibike/releases/latest)
+[![Windows](https://img.shields.io/badge/Windows-x64-202020)](https://github.com/flugeru/Hibike/releases/latest)
+[![Android](https://img.shields.io/badge/Android-7.0%2B%20%C2%B7%20ARM64-202020)](https://github.com/flugeru/Hibike/releases/latest)
+[![MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-202020)](LICENSE)
 
-**Em desenvolvimento. Nenhuma release publicada ainda.**
+[**Baixar Hibike**](https://github.com/flugeru/Hibike/releases/latest) · [Site oficial](https://flugeru.github.io/Hibike/) · [Reportar um problema](https://github.com/flugeru/Hibike/issues)
 
-### Recursos
+</div>
 
-- Tema AMOLED, tipografia Inter, miniplayer e player adaptável com capa e controles de reprodução.
-- Busca por música, artista ou link do YouTube; streaming sem baixar a faixa inteira antes de tocar.
-- Fila, favoritos locais, reprodução aleatória, repetição e ajuste de volume.
-- Restauração da música, posição e fila ao reabrir, sem reprodução automática; opção de limpar fila mantendo faixa atual.
-- Importação de áudio local; leitura de título, artista, álbum, duração e capa embutida em FLAC.
-- Painel de informações do áudio.
-- Android: reprodução em segundo plano, notificação e controles na tela bloqueada com Media3/ExoPlayer. Python, QuickJS e yt-dlp incluídos no APK; sem Termux.
-- Desktop: áudio com LibVLC e Discord Rich Presence com **Listening**, faixa, artista, capa e tempo. Requer Discord desktop aberto; não usa token pessoal. Para FLAC, busca capa online por artista e álbum.
-- Windows: integração com controles de mídia do sistema, metadados, capa e comandos de reprodução.
+---
 
-### Testar
+## Feito para ouvir
 
-**Android 7.0+ / API 24, ARM64:** abra [Actions → Hibike • Android APK](https://github.com/flugeru/Hibike/actions/workflows/android.yml), selecione uma execução concluída e baixe `Hibike-Android-arm64` em **Artifacts**. Extraia e instale APK. São builds de desenvolvimento, não releases.
+Hibike é um player de música para **Windows e Android**, com interface AMOLED, biblioteca local e descoberta musical. Combina seus arquivos com a busca nos provedores integrados, sem exigir uma conta para começar.
 
-A assinatura Android depende da chave de desenvolvimento mantida no cache do Actions. Se ela mudar, será necessário desinstalar build anterior, perdendo dados locais.
+**A versão 0.1.0 é experimental.** Os recursos já estão disponíveis para uso, mas podem mudar durante o desenvolvimento.
 
-Pacote Android: `com.flugel.hibike`. Instala separado do antigo `com.flugel.hibiki`, sem transferir dados automaticamente.
+| Sua coleção | Seu próximo som | Sua experiência |
+| :--- | :--- | :--- |
+| Importe músicas, preserve tags e capas e organize favoritos e playlists locais. | Escolha artistas e gêneros, explore recomendações e crie rádios a partir de uma faixa. | Alterne entre miniplayer e player expandido, com controles adaptados a cada tela. |
 
-**Windows:** `scripts/publish_windows.ps1` gera pacote portátil com .NET, LibVLC e yt-dlp. Extraia pasta inteira e abra `Hibike.Desktop.exe`.
+## Música com a sua identidade
 
-**Linux:** host disponível no código; requer LibVLC, plugins de áudio e yt-dlp. Execução Linux ainda não validada. `HIBIKE_YTDLP` permite indicar executável do yt-dlp no desktop.
+### Um início mais pessoal
 
-### Limites e privacidade
+Na primeira abertura, escolha entre **3 e 20 artistas** e, se quiser, seus gêneros favoritos. Prefere explorar antes? Pule essa etapa e personalize depois.
 
-Sem sincronização de playlists locais. Downloads são experimentais e exclusivos do laboratório. Acesso ao YouTube depende das restrições do serviço; yt-dlp não recebe cookies nem credenciais Google. Configurações permitem remover cookies legados, não importá-los.
+A tela Início reúne conteúdo conforme sua disponibilidade:
 
-Áudios importados são copiados para armazenamento privado. Remover favorito não apaga arquivo; limpar dados do aplicativo apaga cópias. Desinstalar Android remove dados; desinstalador Windows preserva dados do usuário. Hibike não possui conta própria nem telemetria. Login Google é opcional; tokens ficam em memória. Busca, streaming e capas contatam provedores externos; capa de FLAC no Discord consulta iTunes com artista e álbum, sem enviar arquivo. `HIBIKE_DISCORD_RPC=0` desativa Rich Presence e essa consulta no desktop.
+- **Continuar ouvindo** — acesso às faixas recentes e ao histórico.
+- **Feito para você** — sugestões combinando preferências, favoritos e hábitos de reprodução.
+- **Seus artistas favoritos** — atalhos para explorar músicas dos artistas escolhidos.
+- **Porque você gosta de…** — descobertas relacionadas por meio do rádio do YouTube Music.
+- **Descubra algo novo** — espaço para artistas ainda não explorados.
+- **Álbuns e favoritos** — acesso à sua coleção e aos álbuns identificados nos metadados.
+- **Rankings e tendências** — listas públicas do YouTube Music, com região, fonte e horário de consulta.
 
-## English
+Recomendações usam pontuação local, limites por artista e feedback **“Não tenho interesse”**. Seções sem conteúdo não aparecem; resultados de busca não são apresentados como rankings.
 
-Music player built with **C# / .NET 10 and Avalonia UI 12**, featuring **yt-dlp** search and streaming, local audio and an adaptive Android/desktop interface.
+### Sua biblioteca, sem perder os detalhes
 
-**In development. No releases published yet.**
+- Importação de áudio local, incluindo leitura de tags e capas embutidas em FLAC.
+- Favoritos, playlists locais e fila persistente.
+- Restauração da faixa, posição e fila ao reabrir, sem iniciar a reprodução automaticamente.
+- Reprodução aleatória, repetição, volume e informações do áudio.
+- Busca por música, artista ou link, com streaming pelos provedores integrados.
 
-### Features
+### Controles onde você precisa
 
-- AMOLED theme, Inter typography, miniplayer and adaptive player with artwork and playback controls.
-- Search by song, artist or YouTube URL; streaming without downloading the entire track first.
-- Queue, local favorites, shuffle, repeat and volume control.
-- Restores song, position and queue on reopening without autoplay; clear queue keeps the current track.
-- Local audio import; embedded FLAC title, artist, album, duration and artwork support.
-- Audio information panel.
-- Android: Media3/ExoPlayer background playback, media notification and lockscreen controls. Python, QuickJS and yt-dlp bundled in APK; no Termux required.
-- Desktop: LibVLC audio and Discord Rich Presence with **Listening**, song, artist, artwork and playback time. Requires Discord desktop; no personal token. Local FLAC artwork is looked up online by artist and album.
-- Windows: system media controls with metadata, artwork and playback commands.
+**Windows:** reprodução com LibVLC, controles de mídia do sistema e Discord Rich Presence no cliente desktop, com faixa, artista, capa e tempo de reprodução.
 
-### Try it
+**Android:** reprodução em segundo plano com Media3/ExoPlayer, notificação de mídia e controles na tela bloqueada. O motor de extração acompanha o APK; não exige Termux.
 
-**Android 7.0+ / API 24, ARM64:** open [Actions → Hibike • Android APK](https://github.com/flugeru/Hibike/actions/workflows/android.yml), select a completed run and download `Hibike-Android-arm64` under **Artifacts**. Extract and install APK. These are development builds, not releases.
+## Baixar e instalar
 
-Android signing uses a development key cached by Actions. If that key changes, uninstalling the previous build is required, which removes local app data.
+Todos os arquivos estão na [página de releases](https://github.com/flugeru/Hibike/releases/latest).
 
-Android package: `com.flugel.hibike`. Installs separately from the previous `com.flugel.hibiki`, without automatic data migration.
+| Plataforma | Arquivo | Instalação |
+| :--- | :--- | :--- |
+| Windows x64 | `Hibike-Setup-x64.exe` | Execute o instalador. |
+| Windows x64 portátil | `Hibike-win-x64.zip` | Extraia a pasta inteira e abra `Hibike.Desktop.exe`. |
+| Android 7.0+ · ARM64 | `Hibike-Android-arm64.apk` | Abra o APK e autorize a instalação pela origem utilizada, se solicitado. |
 
-**Windows:** `scripts/publish_windows.ps1` builds a portable package with .NET, LibVLC and yt-dlp. Extract the entire folder and run `Hibike.Desktop.exe`.
+As releases incluem `SHA256SUMS.txt` para conferir a integridade dos downloads e `signing-certificate.txt` com o certificado Android.
 
-**Linux:** desktop host available in source; requires LibVLC, audio plugins and yt-dlp. Linux execution is not yet validated. Set `HIBIKE_YTDLP` to override the desktop yt-dlp executable path.
+> **Atualizações Android:** os APKs usam uma chave de desenvolvimento do CI. Builds locais ou assinados com outra chave podem não aceitar atualização sobre a instalação existente. Não desinstale o aplicativo sem preservar seus arquivos: a desinstalação remove os dados locais. O pacote atual é `com.flugel.hibike`; não há migração automática do antigo `com.flugel.hibiki`.
 
-### Limits and privacy
+## Privacidade e armazenamento
 
-No local playlist synchronization. Downloads are experimental and lab-only. YouTube access depends on service restrictions; yt-dlp receives neither cookies nor Google credentials. Settings can remove legacy cookies, not import them.
+Seu perfil musical, preferências, histórico, favoritos e playlists são armazenados **no aparelho**, sem conta Hibike ou telemetria própria. Conteúdo já salvo pode ser consultado sem conexão; busca e streaming exigem acesso à rede.
 
-Imported audio is copied into private app storage. Removing a favorite does not delete its file; clearing app data removes copies. Android uninstall removes app data; the Windows uninstaller preserves user data. Hibike has no account system or telemetry. Google login is optional; tokens stay in memory. Search, streaming and artwork contact external providers; Discord artwork lookup sends FLAC artist and album to iTunes, not the file. `HIBIKE_DISCORD_RPC=0` disables desktop Rich Presence and its artwork lookup.
+- Busca, reprodução, rankings e imagens fazem requisições aos respectivos serviços externos.
+- O yt-dlp não recebe cookies nem credenciais Google.
+- Arquivos importados são copiados para o armazenamento privado do aplicativo. Remover um favorito não apaga o arquivo; limpar os dados do app apaga as cópias.
+- O desinstalador Windows preserva os dados do usuário.
+- No desktop, a busca de capa para FLAC no Discord pode consultar o iTunes com artista e álbum, sem enviar o áudio. `HIBIKE_DISCORD_RPC=0` desativa o Rich Presence e essa consulta.
 
-## Source
+## Estado do projeto
 
-| Project | Purpose |
-|---|---|
-| `src/Hibike.Core` | Catalog, metadata, models and storage |
-| `src/Hibike.App` | Shared Avalonia interface and playback state |
-| `src/Hibike.Android` | Android host, bundled runtime and Media3 |
-| `src/Hibike.Desktop` | Desktop host, LibVLC and Discord Rich Presence |
-| `tests` | Core tests and native UI/audio checks |
+Hibike está em desenvolvimento ativo. Nesta versão:
 
-```sh
-dotnet test tests/Hibike.Core.Tests
-python scripts/prepare_android_runtime.py
-dotnet build src/Hibike.Android
-dotnet build src/Hibike.Desktop
+- **Login Google e seletor experimental de fontes estão ocultos.** Não há sincronização entre dispositivos.
+- Descoberta e rankings dependem de uma integração **não oficial do YouTube Music**, sujeita a mudanças. Falhas não impedem o acesso à biblioteca local.
+- Recomendações usam rádio e metadados; não há análise acústica ou IA externa. Lançamentos sem dados verificáveis permanecem ocultos.
+- A disponibilidade de streaming depende dos provedores, da região e das restrições de cada serviço.
+- Linux possui um host no código, mas sua execução ainda não foi validada. Os downloads publicados são para Windows e Android.
+- Diagnóstico e laboratório ficam desativados nos builds públicos.
+
+Use o aplicativo respeitando os termos dos provedores e os direitos sobre o conteúdo acessado.
+
+## Desenvolvimento
+
+Construído com **C#**, **.NET 10** e **Avalonia UI 12**. A interface e o estado de reprodução são compartilhados entre as plataformas, com integração nativa de áudio e mídia.
+
+| Projeto | Responsabilidade |
+| :--- | :--- |
+| `src/Hibike.Core` | Catálogo, metadados, descoberta, modelos e armazenamento. |
+| `src/Hibike.App` | Interface Avalonia, perfil local e controle de reprodução. |
+| `src/Hibike.Desktop` | Host desktop, LibVLC e integrações Windows/Discord. |
+| `src/Hibike.Android` | Host Android, runtime embarcado e Media3. |
+| `tests` | Testes Core e verificações de interface e áudio. |
+
+### Verificações
+
+```powershell
+dotnet test tests/Hibike.Core.Tests -c Release
+dotnet run --project tests/Hibike.Ui.Checks
+python scripts/check_source.py
 ```
 
-Android builds require .NET Android workload and Android SDK. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for upstream components.
+As verificações nativas de interface exigem Windows. Para compilar Android, instale o workload Android do .NET e o Android SDK.
+
+### Builds locais
+
+```powershell
+# Windows portátil
+./scripts/publish_windows.ps1
+
+# Android ARM64, sem emulador
+python scripts/prepare_android_runtime.py
+dotnet publish src/Hibike.Android/Hibike.Android.csproj -f net10.0-android -c Release -r android-arm64 -p:HibikeSmokeTests=false -o artifacts/android
+```
+
+No desktop, `HIBIKE_YTDLP` permite indicar outro executável do yt-dlp. Ferramentas de desenvolvimento podem ser habilitadas explicitamente com `-p:HibikeDeveloperTools=true`.
+
+## Contribuir
+
+Encontrou um problema? [Abra uma issue](https://github.com/flugeru/Hibike/issues) com plataforma, versão do app e passos para reproduzir. Não inclua tokens, cookies, credenciais ou dados pessoais em logs e capturas.
+
+## Licença
+
+Distribuído sob a [licença MIT](LICENSE). Componentes e avisos de terceiros estão em [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+---
+
+<div align="center">
+
+**Hibike 響** · Desenvolvido por [Flugel](https://github.com/flugeru)
+
+</div>
