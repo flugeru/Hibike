@@ -664,6 +664,9 @@ public sealed partial class MainView : UserControl
         var audioTools = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         audioTools.Children.Add(volumeGroup);
         audioTools.Children.Add(IconButton("more", "Informações do áudio", () => { ShowAudioInfo(); return Task.CompletedTask; }));
+        var sourceButton = IconButton("library", "Fonte de reprodução", ShowPlaybackSourcesAsync);
+        sourceButton.IsVisible = false;
+        audioTools.Children.Add(sourceButton);
         volumeButton.Classes.Add("subtle"); ((Button)audioTools.Children[1]).Classes.Add("subtle");
         var artworkSlot = new Grid();
         bool? wideLayout = null;

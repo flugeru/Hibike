@@ -5,6 +5,7 @@ using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Hibike.Core.Models;
+using Hibike.Core.Services;
 using Track = Hibike.Core.Models.Track;
 
 namespace Hibike.App.Views;
@@ -29,6 +30,31 @@ public sealed partial class MainView
     private readonly TextBlock _dockTime = Text("", UiTheme.Caption, Muted);
     private readonly TextBlock _dockDuration = Text("", UiTheme.Caption, Muted);
     private readonly TextBlock _dockQuality = Text("", UiTheme.Caption, Muted);
+    private Button _sourceButton = null!;
+    private async Task ShowPlaybackSourcesAsync()
+    {
+        if (_music.Current is not { } original) return;
+        var panel = new StackPanel { Spacing = 12 };
+        var warning = Text(PlaybackSources.Warning + " Trocar fonte reinicia faixa; introduções podem diferir.", UiTheme.Caption, Muted);
+        warning.TextWrapping = TextWrapping.Wrap; panel.Children.Add(warning);
+        void AddSource(Track track, bool alternative)
+        {
+            panel.Children.Add(ActionButton(PlaybackSources.Provider(track) + (alternative ? " · Correspondência provável" : " · Original"), async () =>
+            { CloseSheet(); await _music.SwitchPlaybackSourceAsync(track); }));
+        }
+        AddSource(original, false);
+        var status = Text("Buscando fontes compatíveis…", UiTheme.Caption, Muted); panel.Children.Add(status);
+        ShowSheet("Fonte de reprodução", panel);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        try
+        {
+            var sources = await _music.FindPlaybackSourcesAsync(timeout.Token);
+            if (_music.Current != original) return;
+            foreach (var source in sources) AddSource(source, true);
+            status.Text = sources.Count == 0 ? "Nenhuma alternativa com metadados compatíveis." : "YouTube é fonte principal. Identidade por áudio não verificada.";
+        }
+        catch (Exception) { status.Text = "Fontes alternativas indisponíveis; original preservada."; }
+    }
     private Border _dockQualityBadge = null!;
     private TextBlock? _expandedQuality;
     private Button _dockPlay = null!;
@@ -215,10 +241,15 @@ public sealed partial class MainView
         rightHost.Children.Add(_dockQualityBadge);
         _dockFavorite = IconButton("heart", "Alternar favorito", TogglePlaybackFavoriteAsync);
         right.Children.Add(_dockFavorite);
+        _sourceButton = IconButton("library", "Fonte de reprodução", ShowPlaybackSourcesAsync);
+        _sourceButton.IsVisible = false;
+        _sourceButton.VerticalAlignment = VerticalAlignment.Center;
+        var sourceAndControls = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = 12 };
+        sourceAndControls.Children.Add(_sourceButton); Put(sourceAndControls, rightHost, 0, 1);
         right.Children.Add(IconButton("queue", "Mostrar ou ocultar fila", () => { _queueOpen = !_queueOpen; Refresh(); return Task.CompletedTask; }));
         var volume = _dockVolume = new Slider { Minimum = 0, Maximum = 1, Value = _music.Player.Volume, Width = 88, MinHeight = 48 };
         Avalonia.Automation.AutomationProperties.SetName(volume, "Volume da barra"); volume.ValueChanged += (_, _) => _music.Player.Volume = volume.Value;
-        right.Children.Add(volume); Put(rightHost, right, 1, 0); Put(grid, rightHost, 0, 2);
+        right.Children.Add(volume); Put(rightHost, right, 1, 0); Put(grid, sourceAndControls, 0, 2);
         _desktopDock.Child = grid; _desktopDock.Padding = new Thickness(20, 12, 20, 8); _desktopDock.Background = UiTheme.Brush(UiTheme.Surface);
         _desktopDock.BorderBrush = UiTheme.Brush(UiTheme.Outline); _desktopDock.BorderThickness = UiTheme.TopBorder;
     }
@@ -245,6 +276,11 @@ public sealed partial class MainView
         if (_detailVolume is not null) _detailVolume.Value = _music.Player.Volume;
         var track = _music.Pending ?? _music.Current;
         var favorite = track is not null && _music.IsFavorite(track);
+        if (_sourceButton is not null)
+        {
+            ToolTip.SetTip(_sourceButton, "Fonte: " + ((_music.ActivePlaybackTrack ?? track) is { } active ? PlaybackSources.Provider(active) : "Original"));
+            _sourceButton.IsEnabled = track is { IsLocal: false } && !_music.LoadingAudio;
+        }
         void Update(Button? button, string icon, bool active, string label, bool repeatOne = false)
         {
             if (button is null) return;

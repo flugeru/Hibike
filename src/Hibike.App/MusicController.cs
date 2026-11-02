@@ -32,6 +32,20 @@ public sealed partial class MusicController
     public ObservableCollection<Track> Queue { get; } = [];
     public Track? Current { get; private set; }
     public AudioSource? CurrentSource { get; private set; }
+    public Track? ActivePlaybackTrack { get; private set; }
+    public Task<IReadOnlyList<Track>> FindPlaybackSourcesAsync(CancellationToken token) => Current is { } track
+        ? PlaybackSources.FindAsync(_catalog, track, token) : Task.FromResult<IReadOnlyList<Track>>([]);
+    private Track? _requestedPlaybackSource;
+    public async Task SwitchPlaybackSourceAsync(Track source)
+    {
+        var track = Current ?? throw new InvalidOperationException("Escolha uma faixa primeiro.");
+        if (source.Source != track.Source && !PlaybackSources.IsProbableMatch(track, source))
+            throw new InvalidOperationException("Fonte não corresponde aos metadados da faixa.");
+        _requestedPlaybackSource = source;
+        try { await PlayAsync(track, _queueIndex >= 0 ? _queueIndex : null); }
+        finally { _requestedPlaybackSource = null; }
+        // ponytail: metadata cannot align video intros; restart at zero until audio alignment exists.
+    }
     public Track? Pending { get; private set; }
     public bool HasError { get; private set; }
     public string Status { get; private set; } = "Pronto para descobrir seu próximo som.";
@@ -147,6 +161,7 @@ public sealed partial class MusicController
         if (Current is not null && Current.Source != track.Source) RecordSkip();
         _play?.Cancel();
         var request = new CancellationTokenSource();
+        var requestedSource = _requestedPlaybackSource;
         _play = request;
         HasError = false; Pending = track; LoadingAudio = true; SetStatus("Obtendo áudio…");
         var stage = "YT-DLP";
@@ -168,7 +183,11 @@ public sealed partial class MusicController
             PlaybackDiagnostics.Write("Reprodução", "Iniciando resolução de " + track.Id);
             using var extractTimeout = CancellationTokenSource.CreateLinkedTokenSource(request.Token);
             extractTimeout.CancelAfter(TimeSpan.FromSeconds(35));
-            var source = await _catalog.ResolveAsync(track, extractTimeout.Token);
+            var resolved = requestedSource is not null
+                ? (Track: requestedSource, Audio: await _catalog.ResolveAsync(requestedSource, extractTimeout.Token))
+                // ponytail: automatic alternatives disabled until matching is reliable; restore ResolveFirstAsync when reactivating selector.
+                : (Track: track, Audio: await _catalog.ResolveAsync(track, extractTimeout.Token));
+            var source = resolved.Audio with { Title = track.Title, Artist = track.Artist, Artwork = track.Thumbnail ?? resolved.Audio.Artwork };
             stage = "Player";
             SetStatus("Conectando ao áudio…");
             using var playerTimeout = CancellationTokenSource.CreateLinkedTokenSource(request.Token);
@@ -183,13 +202,14 @@ public sealed partial class MusicController
             }
             else _queueIndex = queueIndex.Value;
             Current = track;
+            ActivePlaybackTrack = resolved.Track;
             BeginListening(track);
             var previousHistory = History.FirstOrDefault(t => t.Source == track.Source);
             if (previousHistory is not null) History.Remove(previousHistory);
             History.Insert(0, track); if (History.Count > 100) History.RemoveAt(100);
             CurrentSource = Player.PlaybackSource ?? source;
             WarmNext();
-            Status = "Tocando agora";
+            Status = resolved.Track.Source == track.Source ? "Tocando agora" : "Fonte alternativa · Correspondência provável. Pode ser cover ou outra gravação.";
             if (_radio && _queueIndex + 1 >= Queue.Count) _ = FillRadioAsync();
         }
         catch (OperationCanceledException)
