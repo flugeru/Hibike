@@ -52,7 +52,6 @@ public sealed partial class MainView
         Add("plus", "Nova playlist local", () => { ShowNewPlaylist(); return Task.CompletedTask; });
         foreach (var playlist in _music.Playlists.Where(p => p.Pinned))
             Add("queue", playlist.Name, () => { ShowLocalPlaylist(playlist); return Task.CompletedTask; });
-        Add("library", "Conta YouTube", ShowAccountAsync);
         Add("settings", "Preferências", () => { ShowSettings(); return Task.CompletedTask; });
         _topMenuPanel.Child = new ScrollViewer { Content = items, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
         _topMenuVersion++; _topMenuOpen = true; _topMenuLayer.IsVisible = true;

@@ -207,6 +207,8 @@ public sealed partial class MusicController
             var previousHistory = History.FirstOrDefault(t => t.Source == track.Source);
             if (previousHistory is not null) History.Remove(previousHistory);
             History.Insert(0, track); if (History.Count > 100) History.RemoveAt(100);
+            RerankHome();
+            if (OnboardingCompleted) _ = RefreshRecommendationsAsync();
             CurrentSource = Player.PlaybackSource ?? source;
             WarmNext();
             Status = resolved.Track.Source == track.Source ? "Tocando agora" : "Fonte alternativa · Correspondência provável. Pode ser cover ou outra gravação.";

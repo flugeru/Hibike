@@ -27,24 +27,29 @@ internal static class Program
             {
                 var window = lifetime.MainWindow!; var view = (MainView)window.Content!;
                 await Task.Delay(300);
-                var welcomeField = typeof(MainView).GetField("_googleWelcome", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
-                Check(welcomeField.GetValue(view) is Border, "First-run Google welcome missing");
+                var welcomeField = typeof(MainView).GetField("_onboarding", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+                Check(welcomeField.GetValue(view) is Border, "First-run music onboarding missing");
                 var initialWidth = window.Width; var initialHeight = window.Height;
-                window.Width = 360; window.Height = 800; await Task.Delay(100); Capture(view, "google-welcome-360");
-                Check(AppServices.BackHandler!(), "Welcome ignores back");
-                Check(File.Exists(Path.Combine(directory, "google-welcome-seen")), "Welcome choice not persisted");
-                var welcomeMethod = typeof(MainView).GetMethod("ShowGoogleWelcome", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
-                welcomeMethod.Invoke(view, [true]); Check(welcomeField.GetValue(view) is null, "Welcome repeats after first run");
-                welcomeMethod.Invoke(view, [false]); Check(welcomeField.GetValue(view) is Border, "Manual reconnect welcome missing");
-                AppServices.ConnectYouTubeAccount = () => Task.FromException<YouTubeAccountLibrary>(new InvalidOperationException("OAuth configuration check"));
-                await Task.Delay(50);
+                window.Width = 360; window.Height = 800; await Task.Delay(100); Capture(view, "music-onboarding-360");
                 var welcome = (Border)welcomeField.GetValue(view)!;
-                welcome.GetVisualDescendants().OfType<Button>().Single(b => b.Content as string == "Entrar com Google")
-                    .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                Check(!view.GetVisualDescendants().OfType<Button>().Any(b => b.IsEffectivelyVisible && (b.Content as string)?.Contains("Google") == true), "Google login visible");
+                Check(!welcome.GetVisualDescendants().OfType<Button>().Single(b => b.Content as string == "Continuar").IsEnabled, "Continue allowed fewer than three artists");
+                welcome.GetVisualDescendants().OfType<Button>().Single(b => b.Content as string == "Pular")
+                     .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
                 await Task.Delay(50);
-                Check(welcome.GetVisualDescendants().OfType<TextBlock>().Any(t => t.IsVisible && t.Text == "OAuth configuration check"), "Login hides actionable error");
-                AppServices.ConnectYouTubeAccount = null;
-                AppServices.BackHandler!();
+                Check(File.ReadAllText(Path.Combine(directory, "personalization.json")).Contains("\"OnboardingCompleted\":true"), "Onboarding choice not persisted");
+                var welcomeMethod = typeof(MainView).GetMethod("ShowMusicOnboarding", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+                welcomeMethod.Invoke(view, [false]); Check(welcomeField.GetValue(view) is null, "Onboarding repeats after completion");
+                var profileDirectory = Path.Combine(directory, "music-profile");
+                var profile = new MusicController(new Catalog(), new Player(), new LibraryStore(profileDirectory), profileDirectory);
+                var artists = new[] { new MusicArtist("UCabcdefghijklmnopqrstuv", "Artist A", null), new MusicArtist("UCbcdefghijklmnopqrstuvw", "Artist B", null), new MusicArtist("UCcdefghijklmnopqrstuvwx", "Artist C", null) };
+                var invalidSelection = false;
+                try { profile.CompleteOnboarding(artists.Take(2), []); } catch (ArgumentException) { invalidSelection = true; }
+                Check(invalidSelection && !profile.OnboardingCompleted, "Invalid artist selection accepted");
+                profile.CompleteOnboarding(artists, ["Rock", "J-Pop"]); profile.StopObserving();
+                var restoredProfile = new MusicController(new Catalog(), new Player(), new LibraryStore(profileDirectory), profileDirectory);
+                Check(restoredProfile.OnboardingCompleted && restoredProfile.FavoriteArtists.Count == 3 && restoredProfile.FavoriteGenres.Contains("J-Pop"), "Music profile did not survive restart");
+                restoredProfile.StopObserving();
                 window.Width = initialWidth; window.Height = initialHeight; await Task.Delay(100);
                 var toolsEnabled = (bool)typeof(MainView).Assembly.GetType("Hibike.App.DeveloperFeatures")!.GetProperty("Enabled")!.GetValue(null)!;
                 typeof(MainView).GetMethod("ShowSettings", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(view, null);
@@ -154,9 +159,10 @@ internal static class Program
                 searchingField.SetValue(AppServices.Controller, false);
                 typeof(MainView).GetMethod("Refresh", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(view, null);
                 Check(!searchLoading.IsVisible, "Search loading remained after completion");
-                Check(view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "Ouvir de novo" && t.IsEffectivelyVisible), "Home listening history shelf missing");
+                Check(!view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "Continuar ouvindo" && t.IsEffectivelyVisible), "Empty history shelf visible");
                 AppServices.Controller!.History.Add(new("home-check", "Faixa recente", "Artista", "test"));
                 AppServices.Controller.SetStatus("Home check");
+                Check(view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "Continuar ouvindo"), "Home listening history shelf missing");
                 foreach (var homeWidth in new[] { 360, 1260 })
                 {
                     window.Width = homeWidth; await Task.Delay(150); Capture(view, $"home-{homeWidth}");

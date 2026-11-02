@@ -1,0 +1,149 @@
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Threading;
+using Hibike.Core.Models;
+using Hibike.Core.Services;
+
+namespace Hibike.App.Views;
+
+public sealed partial class MainView
+{
+    private Border? _onboarding;
+    private CancellationTokenSource? _artistSearch;
+    private readonly List<MusicArtist> _selectedArtists = [];
+    private readonly HashSet<string> _selectedGenres = [];
+    private const string OnboardingAccent = "#B784F7";
+    private static readonly string[] Genres = ["Pop", "Rock", "Metal", "Hip-Hop", "Rap", "Eletrônica", "Jazz", "Clássica", "J-Pop", "K-Pop", "Anime", "Indie", "Funk", "Sertanejo", "MPB"];
+    private void ShowMusicOnboarding(bool edit = false)
+    {
+        if (_onboarding is not null || !edit && _music.OnboardingCompleted) return;
+        _selectedArtists.Clear(); _selectedArtists.AddRange(_music.FavoriteArtists);
+        _selectedGenres.Clear(); _selectedGenres.UnionWith(_music.FavoriteGenres);
+        var genreStage = false;
+        var layout = new Grid { RowDefinitions = new("Auto,*,Auto"), MaxWidth = 1000, Margin = new Thickness(20, 24) };
+        var top = new Grid { ColumnDefinitions = new("*,Auto") };
+        top.Children.Add(Text("Hibike · Seu som, seu espaço", UiTheme.Body));
+        Put(top, ActionButton("Pular", () => FinishOnboardingAsync(!genreStage)), 0, 1); layout.Children.Add(top);
+        var body = new StackPanel { Spacing = 18, Margin = new Thickness(0, 24) };
+        var title = Text("Quais artistas você mais gosta?", UiTheme.DialogTitle); title.TextWrapping = TextWrapping.Wrap; body.Children.Add(title);
+        var description = Text("Escolha pelo menos 3 artistas para personalizarmos suas recomendações.", UiTheme.Body, Muted); description.TextWrapping = TextWrapping.Wrap; body.Children.Add(description);
+        var search = UiTheme.Field("Buscar artistas"); body.Children.Add(search);
+        var selected = new WrapPanel { ItemSpacing = 8, LineSpacing = 8 }; body.Children.Add(selected);
+        var state = Text("Busque artistas no catálogo YouTube Music. Sem conta Google.", UiTheme.Caption, Muted); state.TextWrapping = TextWrapping.Wrap; body.Children.Add(state);
+        var cards = new WrapPanel { ItemSpacing = 18, LineSpacing = 18 }; body.Children.Add(cards);
+        var scroll = new ScrollViewer { Content = body, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled }; Put(layout, scroll, 1, 0);
+        var footer = new StackPanel { Spacing = 8 }; var count = Text("", UiTheme.Caption, Muted); footer.Children.Add(count);
+        Button? continueButton = null;
+        continueButton = ActionButton("Continuar", async () =>
+        {
+            if (genreStage) { await FinishOnboardingAsync(false); return; }
+            genreStage = true; _artistSearch?.Cancel();
+            title.Text = "Quais estilos musicais combinam com você?"; description.Text = "Etapa opcional. Seus estilos complementam seus artistas favoritos.";
+            search.IsVisible = selected.IsVisible = false; cards.Children.Clear(); state.Text = "Escolha quantos estilos quiser, ou continue sem selecionar.";
+            foreach (var genre in Genres)
+            {
+                var button = ActionButton(genre, () => Task.CompletedTask);
+                void Style() { button.BorderBrush = UiTheme.Brush(_selectedGenres.Contains(genre) ? OnboardingAccent : UiTheme.Outline); button.BorderThickness = new Thickness(2); }
+                button.Click += (_, _) => { if (!_selectedGenres.Add(genre)) _selectedGenres.Remove(genre); Style(); };
+                Style(); cards.Children.Add(button);
+            }
+            count.Text = "Gêneros opcionais"; continueButton!.Content = "Começar a ouvir"; continueButton.IsEnabled = true;
+            scroll.Offset = default;
+        });
+        continueButton.Classes.Add("primary"); continueButton.Background = UiTheme.Brush(OnboardingAccent); continueButton.Foreground = Brushes.Black; continueButton.HorizontalAlignment = HorizontalAlignment.Stretch; footer.Children.Add(continueButton); Put(layout, footer, 2, 0);
+        void UpdateSelection()
+        {
+            count.Text = $"{_selectedArtists.Count} de 20 artistas selecionados"; continueButton.IsEnabled = _selectedArtists.Count >= 3;
+            selected.Children.Clear();
+            foreach (var artist in _selectedArtists.ToArray()) selected.Children.Add(ActionButton(artist.Name + " ×", () => { _selectedArtists.RemoveAll(a => a.Id == artist.Id); UpdateSelection(); Render(); return Task.CompletedTask; }));
+        }
+        IReadOnlyList<MusicArtist> results = [];
+        void Render()
+        {
+            cards.Children.Clear();
+            var available = Math.Max(250, layout.Bounds.Width);
+            var columns = available < 500 ? 2 : available < 750 ? 3 : 4;
+            var size = Math.Clamp((available - (columns - 1) * 18) / columns, 112, 220);
+            foreach (var artist in results)
+            {
+                var chosen = _selectedArtists.Any(a => a.Id == artist.Id);
+                var art = new Track(artist.Id, artist.Name, artist.Name, "https://music.youtube.com/channel/" + artist.Id, Thumbnail: artist.Image);
+                var image = new Artwork(art, size, highQuality: true) { CornerRadius = new(16) };
+                var overlay = new Grid { Width = size, Height = size }; overlay.Children.Add(image);
+                var label = Text(artist.Name, UiTheme.Body); label.FontWeight = FontWeight.SemiBold; label.TextWrapping = TextWrapping.Wrap; label.MaxLines = 2;
+                overlay.Children.Add(new Border { Background = new SolidColorBrush(Color.FromArgb(190, 0, 0, 0)), Padding = new Thickness(10), VerticalAlignment = VerticalAlignment.Bottom, Child = label });
+                var check = Text(chosen ? "✓" : "○", UiTheme.DialogTitle, chosen ? OnboardingAccent : UiTheme.OnPrimary); check.HorizontalAlignment = HorizontalAlignment.Right; check.Margin = new Thickness(8); overlay.Children.Add(check);
+                var button = ActionButton("", () =>
+                {
+                    if (chosen) _selectedArtists.RemoveAll(a => a.Id == artist.Id);
+                    else if (_selectedArtists.Count < 20) _selectedArtists.Add(artist);
+                    else state.Text = "Limite de 20 artistas. Remova um para escolher outro.";
+                    UpdateSelection(); Render(); return Task.CompletedTask;
+                });
+                button.Content = overlay; button.Padding = new Thickness(0); button.CornerRadius = new(16); button.ClipToBounds = true;
+                button.BorderBrush = UiTheme.Brush(chosen ? OnboardingAccent : UiTheme.Outline); button.BorderThickness = new Thickness(chosen ? 3 : 1);
+                Avalonia.Automation.AutomationProperties.SetName(button, artist.Name + (chosen ? ", selecionado" : ", selecionar")); cards.Children.Add(button);
+            }
+        }
+        search.TextChanged += async (_, _) =>
+        {
+            _artistSearch?.Cancel(); var request = new CancellationTokenSource(); _artistSearch = request;
+            try
+            {
+                var query = search.Text?.Trim() ?? "";
+                if (query.Length < 2) { results = []; Render(); state.Text = "Digite pelo menos 2 caracteres."; return; }
+                await Task.Delay(400, request.Token); state.Text = "Buscando artistas…";
+                var found = await _music.SearchArtistsAsync(query, request.Token);
+                if (!ReferenceEquals(_artistSearch, request) || genreStage) return;
+                results = found; Render(); state.Text = found.Count == 0 ? "Nenhum artista encontrado. Tente outro nome." : "Toque para selecionar. Suas escolhas permanecem ao buscar novamente.";
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception) { if (ReferenceEquals(_artistSearch, request)) state.Text = "Não foi possível buscar. Verifique conexão ou pule por enquanto."; }
+            finally { if (ReferenceEquals(_artistSearch, request)) _artistSearch = null; request.Dispose(); }
+        };
+        layout.SizeChanged += (_, _) => { if (!genreStage) Render(); };
+        UpdateSelection();
+        _onboarding = new Border { Background = Brushes.Black, Child = layout };
+        Grid.SetColumnSpan(_onboarding, _root.ColumnDefinitions.Count); Grid.SetRowSpan(_onboarding, 3); _root.Children.Add(_onboarding); Animate(body);
+        async Task LoadSuggestionsAsync()
+        {
+            var request = new CancellationTokenSource(TimeSpan.FromSeconds(20)); _artistSearch = request;
+            try
+            {
+                var found = await _music.SearchArtistsAsync("Brasil", request.Token);
+                if (!ReferenceEquals(_artistSearch, request) || genreStage || _onboarding is null) return;
+                results = found; Render();
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception) { if (ReferenceEquals(_artistSearch, request)) state.Text = "Sugestões indisponíveis. Busque um artista ou pule por enquanto."; }
+            finally { if (ReferenceEquals(_artistSearch, request)) _artistSearch = null; request.Dispose(); }
+        }
+        _ = LoadSuggestionsAsync();
+    }
+    private Task FinishOnboardingAsync(bool skip)
+    {
+        try
+        {
+            _music.CompleteOnboarding(skip ? [] : _selectedArtists, skip ? [] : _selectedGenres);
+            _artistSearch?.Cancel();
+            if (_onboarding is not null) _root.Children.Remove(_onboarding); _onboarding = null;
+            _ = _music.RefreshRecommendationsAsync(true);
+        }
+        catch (Exception e) { _music.SetStatus("Não foi possível salvar suas escolhas: " + e.Message); }
+        return Task.CompletedTask;
+    }
+    private async Task ShowArtistAsync(MusicArtist artist)
+    {
+        var panel = new StackPanel { Spacing = 12 }; var status = Text("Buscando músicas…", UiTheme.Caption, Muted); panel.Children.Add(status); ShowSheet(artist.Name, panel);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+        try
+        {
+            var tracks = await _music.SearchArtistTracksAsync(artist, timeout.Token);
+            status.Text = "Resultados do catálogo · " + artist.Name;
+            foreach (var track in tracks.Take(20)) panel.Children.Add(TrackRow(track));
+        }
+        catch (Exception) { status.Text = "Catálogo indisponível. Tente novamente mais tarde."; }
+    }
+}

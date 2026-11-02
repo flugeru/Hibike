@@ -11,6 +11,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
+using Avalonia.VisualTree;
 using Hibike.Core.Models;
 using Hibike.Core.Services;
 using Track = Hibike.Core.Models.Track;
@@ -177,7 +178,8 @@ public sealed partial class MainView : UserControl
             _music.Changed -= Refresh; _music.Tick -= RefreshPlayback; _music.Tick -= RefreshDock;
             _music.Changed += Refresh; _music.Tick += RefreshPlayback; _music.Tick += RefreshDock;
             _music.StartObserving(); _listFingerprint = null; Refresh(); await _music.InitializeAsync();
-            ShowGoogleWelcome(firstRun: true);
+            ShowMusicOnboarding();
+            if (_music.OnboardingCompleted) _ = _music.RefreshRecommendationsAsync();
         };
         DetachedFromVisualTree += (_, _) => { _music.Changed -= Refresh; _music.Tick -= RefreshPlayback; _music.Tick -= RefreshDock; _music.StopObserving(); };
         Refresh();
@@ -348,23 +350,44 @@ public sealed partial class MainView : UserControl
             + ":" + string.Join("|", _music.Pins.Select(t => t.Source)) + ":" + string.Join("|", _music.Playlists.Select(p => p.Name + p.Tracks.Count))
             + ":" + (_account is not null) + ":" + _accountLoading + ":" + string.Join("|", _accountLikes.Select(t => t.Id))
             + ":" + string.Join("|", _accountPlaylists.Select(p => p.Id)) + ":" + _music.Current?.Source + ":" + (Bounds.Width < UiTheme.DesktopWidth)
-            + ":" + string.Join("|", _music.Queue.Select(t => t.Source));
+            + ":" + string.Join("|", _music.Queue.Select(t => t.Source))
+            + ":" + string.Join("|", _music.FavoriteArtists.Select(a => a.Id)) + ":" + string.Join("|", _music.HomeRecommendations.Select(t => t.Source))
+            + ":" + _music.HomeLoading + ":" + _music.HomeMessage + ":" + _music.RegionalChart?.RetrievedUtc + ":" + _music.GlobalChart?.RetrievedUtc + ":" + _music.TrendingChart?.RetrievedUtc;
         if (fingerprint == _homeFingerprint) return;
         _homeFingerprint = fingerprint;
         var previous = _home.Children.ToArray();
         var next = new List<Control>();
-        Shelf("Ouvir de novo", "Fixadas e histórico · neste aparelho", _music.Pins.Concat(_music.History).DistinctBy(t => t.Source).Take(20).Select(TrackCard));
-        var chosen = _music.History.Concat(_music.Favorites).DistinctBy(t => MusicController.SongKey(t)).OrderByDescending(_music.Affinity).Take(12).ToArray();
-        if (chosen.Length > 0)
+        var shownRecommendations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        Shelf("Continuar ouvindo", "Fixadas e histórico · neste aparelho", _music.Pins.Concat(_music.History).DistinctBy(t => t.Source).Take(20).Select(t => CoverCard(t, TrackTextFormatter.Artist(t.Artist), async () => { if (_music.Current?.Source == t.Source) await _music.ToggleAsync(); else await _music.PlayAsync(t); })));
+        if (_music.History.Count > 0) next.Add(ActionButton("Ver histórico", () => { OpenLocalCollection("Histórico", _music.History); return Task.CompletedTask; }));
+        Shelf("Feito para você", "Suas preferências, favoritos e histórico · neste aparelho", _music.HomeRecommendations.Take(12).Select(TrackCard));
+        Shelf("Seus artistas favoritos", "Suas escolhas · toque para explorar", _music.FavoriteArtists.Select(a =>
         {
-            var selection = new StackPanel { Spacing = 8 };
-            selection.Children.Add(Text("Escolhidas para você", UiTheme.DialogTitle));
-            selection.Children.Add(ActionButton("Tocar tudo", () => PlayCollectionAsync(chosen)));
-            foreach (var item in chosen) selection.Children.Add(TrackRow(item));
-            var selectionKey = "chosen:" + string.Join("|", chosen.Select(t => t.ToString()));
-            selection.Tag = selectionKey;
-            next.Add(previous.FirstOrDefault(c => Equals(c.Tag, selectionKey)) ?? selection);
+            var artist = new Track(a.Id, a.Name, a.Name, "https://music.youtube.com/channel/" + a.Id, Thumbnail: a.Image);
+            var card = CoverCard(artist, "Artista", () => ShowArtistAsync(a), songActions: false);
+            foreach (var artwork in card.GetVisualDescendants().OfType<Artwork>()) artwork.CornerRadius = new(120);
+            return card;
+        }));
+        Shelf("Porque você gosta de " + _music.HomeSeed, "Rádio YouTube Music · sugestões relacionadas", _music.HomeRelated.Take(12).Select(TrackCard));
+        var familiar = _music.History.Select(t => TrackTextFormatter.Artist(t.Artist)).Concat(_music.FavoriteArtists.Select(a => a.Name)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        Shelf("Descubra algo novo", "Artistas ainda não explorados", _music.HomeRecommendations.Skip(12).Where(t => !familiar.Contains(TrackTextFormatter.Artist(t.Artist))).Take(12).Select(TrackCard));
+        var albumTracks = _music.HomeRecommendations.Concat(_music.Favorites).Where(t => !string.IsNullOrWhiteSpace(t.Album)).GroupBy(t => (t.Artist, t.Album));
+        Shelf("Álbuns para você", "Álbuns identificados no catálogo · faixas disponíveis", albumTracks.Take(12).Select(g => CoverCard(g.First() with { Title = g.Key.Album! }, g.Key.Artist, () => { OpenLocalCollection(g.Key.Album!, g); return Task.CompletedTask; }, songActions: false)));
+        void ChartShelf(MusicChart? chart, string title)
+        {
+            if (chart is null || DateTime.UtcNow - chart.RetrievedUtc > TimeSpan.FromDays(7)) return;
+            Shelf(title, chart.Title + " · YouTube Music · consultado " + chart.RetrievedUtc.ToLocalTime().ToString("g"), chart.Tracks.Take(20).Select(TrackCard));
         }
+        ChartShelf(_music.RegionalChart, _music.ChartRegion == "BR" ? "Em alta no Brasil" : "Em alta · " + _music.ChartRegion);
+        ChartShelf(_music.GlobalChart, "Em alta no mundo");
+        if (_music.TrendingChart is { } trending && DateTime.UtcNow - trending.RetrievedUtc <= TimeSpan.FromHours(12))
+        {
+            Shelf("Bombando agora", trending.Title + " · YouTube Music · atualizado algumas vezes ao dia · consultado " + trending.RetrievedUtc.ToLocalTime().ToString("g"), trending.Tracks.Take(20).Select(TrackCard));
+            Shelf("Tendências para você", trending.Title + " · seus artistas e descobertas", trending.Tracks.OrderByDescending(t => familiar.Contains(TrackTextFormatter.Artist(t.Artist))).Take(12).Select(TrackCard));
+        }
+        if (_music.HomeLoading || !string.IsNullOrEmpty(_music.HomeMessage)) next.Add(Text(_music.HomeLoading ? "Preparando descobertas… Sua biblioteca já está disponível." : _music.HomeMessage, UiTheme.Caption, Muted));
+        next.Add(ActionButton("Personalizar meu som", () => { ShowMusicOnboarding(edit: true); return Task.CompletedTask; }));
+        next.Add(ActionButton("Atualizar recomendações", () => _music.RefreshRecommendationsAsync(true)));
         var recommended = _music.Queue.Where(_music.IsRecommended).Take(12).ToArray();
         if (recommended.Length > 0) Shelf("Porque você ouviu…", _music.PlaybackContext, recommended.Select(TrackCard));
         if (_music.History.Count >= 5)
@@ -382,9 +405,8 @@ public sealed partial class MainView : UserControl
         }
         if (Bounds.Width >= UiTheme.DesktopWidth && _music.Queue.Count > 0)
             Shelf("A seguir", "Próximas músicas da sua fila", _music.Queue.Skip(_music.Current is null ? 0 : _music.Queue.IndexOf(_music.Current) + 1).Take(20).Select(TrackCard));
-        Shelf("Sua seleção", "Favoritos e arquivos salvos no Hibike", _music.Favorites.Take(30).Select(TrackCard));
+        Shelf("Suas músicas favoritas", "Favoritos e arquivos salvos no Hibike", _music.Favorites.OrderByDescending(t => _music.Listening.GetValueOrDefault(MusicController.SongKey(t))?.LastPlayed).Take(30).Select(TrackCard));
         if (_music.Favorites.Count == 0) next.Add(ActionButton("Importar músicas para sua coleção", OpenLocalAsync));
-        var accountLink = ActionButton(_account is null ? "Conectar biblioteca do YouTube" : "Gerenciar conta YouTube", ShowAccountAsync); accountLink.Classes.Add("subtle"); accountLink.HorizontalAlignment = HorizontalAlignment.Left; next.Add(accountLink);
         foreach (var removed in previous.Where(c => !next.Contains(c))) _home.Children.Remove(removed);
         for (var i = 0; i < next.Count; i++)
         {
@@ -397,7 +419,9 @@ public sealed partial class MainView : UserControl
 
         void Shelf(string title, string subtitle, IEnumerable<Control> cards)
         {
-            var cardList = cards.ToArray();
+            var personalized = title == "Feito para você" || title == "Descubra algo novo" || title.StartsWith("Porque você gosta de ") || title == "Tendências para você";
+            var cardList = cards.Where(c => !personalized || c.Tag is not Track t || shownRecommendations.Add(t.Source)).ToArray();
+            if (cardList.Length == 0) return;
             var key = title + ":" + subtitle + ":" + (Bounds.Width < UiTheme.DesktopWidth) + ":" + string.Join("|", cardList.Select(c => c.Tag?.ToString()));
             var old = previous.OfType<StackPanel>().FirstOrDefault(c => c.Tag is ValueTuple<string, string> tag && tag.Item1 == title);
             if (old?.Tag is ValueTuple<string, string> oldTag && oldTag.Item2 == key) { next.Add(old); return; }
@@ -835,7 +859,11 @@ public sealed partial class MainView : UserControl
     private void ShowSettings()
     {
         var panel = new StackPanel { Spacing = UiTheme.ControlRadius };
-        panel.Children.Add(ActionButton("Biblioteca da conta YouTube", ShowAccountAsync));
+        panel.Children.Add(ActionButton("Personalizar meu som", () => { CloseSheet(); ShowMusicOnboarding(edit: true); return Task.CompletedTask; }));
+        var region = new ComboBox { ItemsSource = new[] { "BR", "ZZ", "US", "JP", "KR", "PT", "GB", "DE", "FR", "MX", "AR" }, SelectedItem = _music.ChartRegion, MinHeight = 48 };
+        region.SelectionChanged += (_, _) => { if (region.SelectedItem is string code) { _music.SetChartRegion(code); _ = _music.RefreshRecommendationsAsync(true); } };
+        panel.Children.Add(Text("Região dos rankings · ZZ = mundo", UiTheme.Caption, Muted)); panel.Children.Add(region);
+        panel.Children.Add(ActionButton("Limpar feedback Não tenho interesse", () => { _music.ResetRecommendationFeedback(); return _music.RefreshRecommendationsAsync(true); }));
         panel.Children.Add(ActionButton("Histórico de escuta", () =>
         {
             var history = new StackPanel { Spacing = 8 };

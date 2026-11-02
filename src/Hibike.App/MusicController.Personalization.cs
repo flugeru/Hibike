@@ -71,6 +71,12 @@ public sealed partial class MusicController
         public List<LocalPlaylist> Playlists { get; set; } = [];
         public bool Autoplay { get; set; } = true;
         public string Discovery { get; set; } = "Tudo";
+        public bool OnboardingCompleted { get; set; }
+        public List<MusicArtist> Artists { get; set; } = [];
+        public List<string> Genres { get; set; } = [];
+        public HashSet<string> Dismissed { get; set; } = [];
+        public string Region { get; set; } = "BR";
+        public RecommendationWeights Weights { get; set; } = new();
     }
     private Personalization _personal = new();
     private readonly HashSet<string> _recommended = new(StringComparer.OrdinalIgnoreCase);
@@ -97,6 +103,10 @@ public sealed partial class MusicController
             if (!File.Exists(path)) return;
             var data = JsonSerializer.Deserialize<Personalization>(File.ReadAllText(path));
             if (data is null || data.Listening is null || data.Pins is null || data.Playlists is null
+                || data.Artists is null || data.Genres is null || data.Dismissed is null || data.Weights is null
+                || data.Artists.Count > 20 || data.Artists.Any(a => a is null || string.IsNullOrWhiteSpace(a.Name) || !System.Text.RegularExpressions.Regex.IsMatch(a.Id ?? "", "^UC[\\w-]{22}$"))
+                || data.Genres.Any(g => string.IsNullOrWhiteSpace(g) || g.Length > 60)
+                || !System.Text.RegularExpressions.Regex.IsMatch(data.Region ?? "", "^[A-Z]{2}$")
                 || data.Pins.Any(t => t is null || string.IsNullOrWhiteSpace(t.Source))
                 || data.Playlists.Any(p => p is null || string.IsNullOrWhiteSpace(p.Name) || p.Tracks is null || p.Tracks.Any(t => t is null || string.IsNullOrWhiteSpace(t.Source)))
                 || data.Listening.Any(p => p.Value is null || !double.IsFinite(p.Value.Seconds) || p.Value.Seconds < 0))

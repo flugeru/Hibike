@@ -75,15 +75,15 @@ public sealed partial class MainView
     private Task ShowAccountMenuAsync()
     {
         var panel = new StackPanel { Spacing = 8 };
-        panel.Children.Add(Text(_account is null ? "Biblioteca YouTube desconectada" : "Biblioteca YouTube conectada · somente leitura", UiTheme.Caption, Muted));
-        panel.Children.Add(ActionButton("Gerenciar biblioteca YouTube", ShowAccountAsync));
+        panel.Children.Add(ActionButton("Personalizar meu som", () => { CloseSheet(); ShowMusicOnboarding(edit: true); return Task.CompletedTask; }));
         panel.Children.Add(ActionButton("Configurações", () => { ShowSettings(); return Task.CompletedTask; }));
-        ShowSheet("Conta e preferências", panel); return Task.CompletedTask;
+        ShowSheet("Preferências", panel); return Task.CompletedTask;
     }
 
     private Control SongActions(Track track)
     {
         var actions = new StackPanel { Spacing = 8 };
+        actions.Children.Add(ActionButton("Não tenho interesse", () => { _music.DismissRecommendation(track); CloseSheet(); return Task.CompletedTask; }));
         actions.Children.Add(ActionButton("Tocar a seguir", () => { _music.PlayNext(track); CloseSheet(); return Task.CompletedTask; }));
         actions.Children.Add(ActionButton("Adicionar à fila", () => { _music.Enqueue(track); CloseSheet(); return Task.CompletedTask; }));
         if (!track.IsLocal) actions.Children.Add(ActionButton("Criar rádio desta música", async () => { CloseSheet(); await _music.StartRadioAsync(track); }));
