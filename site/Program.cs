@@ -50,7 +50,7 @@ internal sealed class LandingView : UserControl
         var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
         brand.Children.Add(new Image { Source = new Bitmap(AssetLoader.Open(new Uri("avares://Hibike.Web/Assets/hibike.png"))), Width = 44, Height = 44 });
         brand.Children.Add(Label("Hibike", 28, true));
-        var switchLanguage = new Button { Content = pt ? "EN" : "PT-BR", Padding = new Thickness(12, 8) };
+        var switchLanguage = new Button { Content = pt ? "EN" : "PT-BR", MinWidth = 68, MinHeight = 36, Padding = new Thickness(14, 7), CornerRadius = new CornerRadius(18), Background = Brush.Parse("#0D0D0D"), Foreground = Brushes.White, BorderBrush = Brush.Parse("#292929"), BorderThickness = new Thickness(1), FontSize = 12, FontWeight = FontWeight.SemiBold, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
         switchLanguage.Click += (_, _) => { pt = !pt; switchLanguage.Content = pt ? "EN" : "PT-BR"; foreach (var (block, en, br) in localized) block.Text = pt ? br : en; };
         brand.Children.Add(switchLanguage); content.Children.Add(brand);
         content.Children.Add(T("YOUR MUSIC. YOUR RHYTHM.", "SUA MÚSICA. SEU RITMO.", 13, color: "#AAAAAA"));
