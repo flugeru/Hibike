@@ -7,7 +7,12 @@
   <title>{{ page.title | escape }} · Hibike</title>
   <style>
     :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #000; color: #eee; }
-    body { max-width: 820px; margin: auto; padding: 24px; line-height: 1.7; overflow-wrap: anywhere; }
+    body { max-width: 960px; margin: auto; padding: 24px; line-height: 1.7; overflow-wrap: anywhere; }
+    main { padding: 16px 0 32px; }
+    h1 { font-size: clamp(32px, 6vw, 56px); letter-spacing: -.04em; }
+    p, li { color: #bbb; }
+    nav a { display: inline-flex; align-items: center; min-height: 48px; }
+    nav a:first-child { font-size: 24px; font-weight: 650; text-decoration: none; }
     nav, footer { display: flex; flex-wrap: wrap; gap: 12px 24px; padding: 16px 0; }
     nav { border-bottom: 1px solid #333; }
     footer { border-top: 1px solid #333; margin-top: 40px; }
@@ -26,6 +31,7 @@
   <a class="skip" href="#content">Skip to content</a>
   <nav aria-label="Main navigation">
     <a href="{{ '/' | relative_url }}">Hibike</a>
+    <a href="{{ '/app/' | relative_url }}">Avalonia experience</a>
     <a href="{{ '/privacy.html' | relative_url }}">Privacy Policy</a>
     <a href="{{ '/terms.html' | relative_url }}">Terms of Service</a>
     <a href="https://github.com/flugeru/Hibike">Source code</a>

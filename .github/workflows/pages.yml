@@ -1,0 +1,47 @@
+name: Hibike website
+on:
+  push:
+    branches: [main]
+    paths: ['docs/**', 'site/**', '.github/workflows/pages.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet workload install wasm-tools
+      - uses: actions/configure-pages@v5
+      - uses: actions/jekyll-build-pages@v1
+        with:
+          source: docs
+          destination: _site
+      - run: dotnet publish site/Hibike.Web.csproj -c Release -o web-publish
+      - run: python3 site/check_publish.py
+      - name: Assemble site
+        run: |
+          mkdir -p _site/app
+          cp -a web-publish/wwwroot/. _site/app/
+          touch _site/.nojekyll
+          test -f _site/privacy.html
+          test -f _site/terms.html
+          test -f _site/googlef54a5400e34c1ee0.html
+          test -f _site/app/index.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

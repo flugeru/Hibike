@@ -5,6 +5,8 @@ title: Open-source music player
 
 # Hibike
 
+[Open the Avalonia experience](app/)
+
 Your music. Your rhythm. An open-source music player for desktop and Android, maintained by Flugel.
 
 Hibike plays local audio and offers online music search and playback, an adaptive pure-black interface, favorites, a playback queue and system media controls. Features vary by platform and build. The project is under active development; experimental builds may be unstable.
