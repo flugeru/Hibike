@@ -14,7 +14,7 @@ Downloads limitados a stream HTTPS direto de até 1 GB, um por vez, com prazo de
 
 Histórico e sleep timer não persistem. Recursos ainda sem validação ponta a ponta em serviços reais e Android físico. Workflows desta branch geram artefatos de teste, não releases.
 
-## Biblioteca da conta YouTube (Desktop)
+## Biblioteca da conta YouTube (Desktop e Android)
 
 Configurações → Biblioteca da conta YouTube. API oficial com `youtube.readonly`: playlists da conta e vídeos curtidos, até 1000 entradas por lista, incluindo metadados autorizados de playlists privadas. Não fornece feed personalizado, histórico, uploads musicais ou biblioteca completa do YT Music. Reprodução continua anônima: itens privados/restritos podem não tocar. Cookies antigos não são mais utilizados pelo yt-dlp; botão nas configurações permite apagá-los.
 
@@ -23,4 +23,8 @@ Configurações → Biblioteca da conta YouTube. API oficial com `youtube.readon
 3. Crie cliente OAuth do tipo **Desktop app**, baixe JSON e importe pelo botão **Importar configuração OAuth Desktop**. Não publique esse arquivo no Git.
 4. Clique **Conectar com Google**, autorize leitura no navegador e volte ao Hibike.
 
-PKCE S256 e validação de state protegem retorno local. Token fica apenas em memória, sem refresh ou armazenamento; reconecte após expirar/fechar. Desconectar remove referência local, não revoga autorização no Google; revogação disponível em https://myaccount.google.com/permissions. Configuração OAuth fica no diretório de dados e pode ser apagada pela interface. Nenhum token é entregue ao yt-dlp. Android ainda não tem login: precisa integração nativa de autorização Google, pacote/assinatura registrados e configuração própria; fluxo Desktop não é usado no celular.
+Desktop: PKCE S256 e validação de state protegem retorno local. Token fica apenas em memória, sem refresh ou armazenamento; reconecte após expirar/fechar. Desconectar remove referência local, não revoga autorização no Google; revogação disponível em https://myaccount.google.com/permissions. Configuração OAuth fica no diretório de dados e pode ser apagada pela interface. Nenhum token é entregue ao yt-dlp.
+
+Android: Configurações → Biblioteca da conta YouTube → Entrar com Google. Usa AuthorizationClient do Google Play Services e solicita somente `youtube.readonly`, com seleção/consentimento nativo quando necessário. Não precisa importar JSON nem embutir segredo: Google identifica aplicativo pelo pacote `com.flugel.hibike` e certificado de assinatura. Registre cliente OAuth Android com esses dados no mesmo projeto com API ativada e usuário de teste. Dispositivo precisa Google Play Services. Token fica somente em memória; após expiração, desconecte e entre novamente.
+
+Artefato Android no GitHub inclui `signing-certificate.txt` com SHA-1 do APK gerado. SHA-1 do APK local não serve para APK do GitHub. Assinatura de desenvolvimento do CI ainda depende de cache: se chave for recriada, cadastro OAuth precisa ser atualizado. Não confundir esse certificado com assinatura estável de produção. Login real Android ainda precisa validação em aparelho com conta autorizada; check automatizado confirma registro da entrada de autorização, não consentimento real.

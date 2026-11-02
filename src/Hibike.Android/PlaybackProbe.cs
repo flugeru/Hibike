@@ -18,6 +18,7 @@ internal static class PlaybackProbe
         var player = AppServices.Player!;
         try
         {
+            if (AppServices.ConnectYouTubeAccount is null) throw new IOException("Android Google authorization entry point missing.");
             var path = Path.Combine(context.CacheDir!.AbsolutePath, "probe.wav");
             using (var stream = File.Create(path))
             using (var writer = new BinaryWriter(stream))

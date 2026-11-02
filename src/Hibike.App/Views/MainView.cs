@@ -508,15 +508,15 @@ public sealed class MainView : UserControl
         var panel = new StackPanel { Spacing = UiTheme.CompactGap };
         var supported = AppServices.ConnectYouTubeAccount is not null;
         var note = Text(supported
-            ? "API oficial: playlists e vídeos curtidos, somente leitura. Não inclui feed, histórico ou catálogo completo do YT Music. Login abre Google no navegador; sessão fica só na memória e pode expirar. yt-dlp não recebe credenciais. Até 1000 entradas por lista."
+            ? "API oficial: playlists e vídeos curtidos, somente leitura. Não inclui feed, histórico ou catálogo completo do YT Music. Autorize acesso na tela do Google; token fica só na memória e pode expirar. yt-dlp não recebe credenciais. Até 1000 entradas por lista."
             : "Login Android ainda indisponível: exige autorização nativa Google e configuração do pacote/assinatura. Não usamos fluxo Desktop no Android.", UiTheme.Caption, Muted);
         note.TextWrapping = TextWrapping.Wrap; panel.Children.Add(note);
         if (supported && _account is null)
         {
-            panel.Children.Add(ActionButton("Importar configuração OAuth Desktop", ImportGoogleConfigAsync));
-            panel.Children.Add(ActionButton("Conectar com Google", async () =>
+            if (!OperatingSystem.IsAndroid()) panel.Children.Add(ActionButton("Importar configuração OAuth Desktop", ImportGoogleConfigAsync));
+            panel.Children.Add(ActionButton("Entrar com Google", async () =>
             {
-                _music.SetStatus("Autorize leitura do YouTube no navegador (até 3 minutos).");
+                _music.SetStatus("Autorize leitura do YouTube na tela do Google (até 3 minutos).");
                 _account = await AppServices.ConnectYouTubeAccount!(); await ShowAccountAsync();
             }));
         }
