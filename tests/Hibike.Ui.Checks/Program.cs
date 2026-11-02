@@ -26,6 +26,17 @@ internal static class Program
             try
             {
                 var window = lifetime.MainWindow!; var view = (MainView)window.Content!;
+                await Task.Delay(200);
+                Check(view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "Ouvir de novo" && t.IsEffectivelyVisible), "Home listening history shelf missing");
+                AppServices.Controller!.History.Add(new("home-check", "Faixa recente", "Artista", "test"));
+                AppServices.Controller.SetStatus("Home check");
+                foreach (var homeWidth in new[] { 360, 1260 })
+                {
+                    window.Width = homeWidth; await Task.Delay(150); Capture(view, $"home-{homeWidth}");
+                    var card = view.GetVisualDescendants().OfType<Button>().Single(b => Avalonia.Automation.AutomationProperties.GetName(b) == "Faixa recente — Artista");
+                    Check(card.Bounds.Width >= 160 && card.IsEffectivelyVisible, "Home history cover card missing");
+                }
+                typeof(MainView).GetField("_page", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(view, "explore");
                 var imageUrl = typeof(MainView).Assembly.GetType("Hibike.App.Views.Artwork")!.GetMethod("PlayerImageUrl")!;
                 Check((string)imageUrl.Invoke(null, ["https://i.ytimg.com/vi/abc/hqdefault.jpg"])! == "https://i.ytimg.com/vi/abc/maxresdefault.jpg", "Player did not request high-resolution YouTube artwork");
                 Check((string)imageUrl.Invoke(null, ["https://example.org/cover.jpg"])! == "https://example.org/cover.jpg", "Unrelated artwork URL rewritten");
@@ -55,7 +66,7 @@ internal static class Program
                     Check(slider.TranslatePoint(default, view)!.Value.Y + slider.Bounds.Height <= view.Bounds.Height, "Player slider below viewport");
                     if (width >= 1260)
                     {
-                        var artwork = view.GetVisualDescendants().OfType<Border>().Single(b => b.GetType().Name == "Artwork" && b.Bounds.Width > 100);
+                        var artwork = view.GetVisualDescendants().OfType<Border>().Single(b => b.GetType().Name == "Artwork" && b.Bounds.Width > 100 && b.IsEffectivelyVisible);
                         Check(artwork.Bounds.Width <= 500, "Desktop artwork exceeds size cap");
                         var slot = (Grid)artwork.Parent!;
                         Check(Math.Abs(artwork.Bounds.Center.Y - slot.Bounds.Height / 2) < 1, "Artwork not vertically centered");
@@ -69,7 +80,7 @@ internal static class Program
                         Check(((Avalonia.Media.TranslateTransform)movingTitle.RenderTransform!).X < 0, "Overflow title did not scroll");
                         window.Width = 390; await Task.Delay(300); Capture(view, "player-resized-mobile");
                         window.Width = width; await Task.Delay(300); Capture(view, "player-resized-desktop");
-                        var artwork = view.GetVisualDescendants().OfType<Border>().Single(b => b.GetType().Name == "Artwork" && b.Bounds.Width > 100);
+                        var artwork = view.GetVisualDescendants().OfType<Border>().Single(b => b.GetType().Name == "Artwork" && b.Bounds.Width > 100 && b.IsEffectivelyVisible);
                         window.Width = width + 1; await Task.Delay(300);
                         Check(Math.Abs(artwork.Bounds.Width - artwork.Bounds.Height) < 1, "Player artwork not square");
                         Check(artwork.GetVisualDescendants().OfType<Image>().Single().Stretch == Avalonia.Media.Stretch.UniformToFill, "Player artwork not filling square");

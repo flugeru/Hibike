@@ -73,6 +73,7 @@ public sealed class MusicController
                 if (_session.Load() is { } session)
                 {
                     Queue.Clear(); foreach (var item in session.Queue) Queue.Add(item);
+                    History.Clear(); foreach (var item in session.History ?? []) History.Add(item);
                     Current = session.Current; _queueIndex = session.Index >= 0 && session.Index < Queue.Count ? session.Index : -1;
                     _resumePosition = session.Position; _restored = Current is not null;
                     if (_restored) Status = "Sessão restaurada. Toque para continuar.";
@@ -253,7 +254,7 @@ public sealed class MusicController
     public void SaveSession()
     {
         if (!_initialized) return;
-        try { _session.Save(new(Queue.ToArray(), Current, _queueIndex, Math.Max(0, Position))); _lastSave = DateTime.UtcNow; }
+        try { _session.Save(new(Queue.ToArray(), Current, _queueIndex, Math.Max(0, Position), History.Take(100).ToArray())); _lastSave = DateTime.UtcNow; }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         { PlaybackDiagnostics.Write("Salvar sessão", ex.Message); }
     }

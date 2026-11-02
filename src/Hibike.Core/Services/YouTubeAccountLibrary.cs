@@ -4,7 +4,7 @@ using Hibike.Core.Models;
 
 namespace Hibike.Core.Services;
 
-public sealed record AccountPlaylist(string Id, string Title);
+public sealed record AccountPlaylist(string Id, string Title, string? Thumbnail = null);
 
 public sealed class YouTubeAccountLibrary(HttpClient client, string accessToken)
 {
@@ -12,7 +12,12 @@ public sealed class YouTubeAccountLibrary(HttpClient client, string accessToken)
     {
         var results = new List<AccountPlaylist>();
         await foreach (var item in ItemsAsync("playlists?part=snippet&mine=true&maxResults=50", token))
-            results.Add(new(item.GetProperty("id").GetString()!, item.GetProperty("snippet").GetProperty("title").GetString()!));
+        {
+            var snippet = item.GetProperty("snippet");
+            var image = snippet.TryGetProperty("thumbnails", out var thumbs) && thumbs.TryGetProperty("medium", out var thumb)
+                ? thumb.GetProperty("url").GetString() : null;
+            results.Add(new(item.GetProperty("id").GetString()!, snippet.GetProperty("title").GetString()!, image));
+        }
         return results;
     }
 

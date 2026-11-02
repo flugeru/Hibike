@@ -24,11 +24,13 @@ public class CatalogTests
         {
             var store = new PlaybackSessionStore(directory);
             var track = new Track("one", "Song", "Artist", "https://example.org/song");
-            store.Save(new([track, track with { Id = "two" }], track, 0, 123.75));
+            store.Save(new([track, track with { Id = "two" }], track, 0, 123.75, [track]));
             var saved = store.Load()!;
             Assert.Equal(123.75, saved.Position); Assert.Equal(track, saved.Current); Assert.Equal(2, saved.Queue.Length);
+            Assert.Equal(track, Assert.Single(saved.History!));
             store.Save(new([track], track, 0, 124));
             Assert.Single(store.Load()!.Queue);
+            Assert.Null(store.Load()!.History);
         }
         finally { Directory.Delete(directory, true); }
     }

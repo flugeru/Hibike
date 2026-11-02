@@ -13,6 +13,7 @@ internal static class Icons
         Data = Geometry.Parse(name switch
         {
             "play" => "M8,4 L20,12 L8,20 Z",
+            "home" => "M2,11 L12,2 L22,11 M5,9 L5,22 L10,22 L10,15 L14,15 L14,22 L19,22 L19,9",
             "pause" => "M7,4 L7,20 M17,4 L17,20",
             "next" => "M5,5 L16,12 L5,19 Z M20,4 L20,20",
             "previous" => "M19,5 L8,12 L19,19 Z M4,4 L4,20",

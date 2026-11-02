@@ -22,6 +22,14 @@ public sealed class MainView : UserControl
     private readonly Grid _root = new() { ColumnDefinitions = new($"{UiTheme.SidebarWidth},*"), RowDefinitions = new("*,Auto,Auto") };
     private readonly Border _sidebar;
     private readonly Border _main;
+    private readonly StackPanel _home = new() { Spacing = UiTheme.SectionGap };
+    private ScrollViewer _homeScroll = null!;
+    private ScrollViewer _trackScroll = null!;
+    private Control _listHeading = null!;
+    private IReadOnlyList<AccountPlaylist> _accountPlaylists = [];
+    private IReadOnlyList<Track> _accountLikes = [];
+    private string? _homeFingerprint;
+    private bool _accountLoading;
     private readonly TextBox _search = UiTheme.Field("Música, artista ou link");
     private readonly TextBlock _heading = Text("Resultados", UiTheme.SectionTitle);
     private readonly TextBlock _count = Text("", UiTheme.Label, Muted);
@@ -52,7 +60,7 @@ public sealed class MainView : UserControl
     private bool _seeking;
     private Track? _shownTrack;
     private Track? _detailTrack;
-    private string _page = "explore";
+    private string _page = "home";
     private const string Muted = UiTheme.TextSecondary, Accent = UiTheme.Primary;
 
     public MainView(MusicController music)
@@ -89,19 +97,22 @@ public sealed class MainView : UserControl
         _heading.PropertyChanged += (_, e) => { if (e.Property == TextBlock.TextProperty) clearQueue.IsVisible = _page == "queue"; };
         clearQueue.IsVisible = false;
         headingActions.Children.Add(clearQueue); headingActions.Children.Add(countChip);
-        Put(heading, headingActions, 0, 1); Put(content, heading, 2, 0);
+        Put(heading, headingActions, 0, 1); Put(content, heading, 2, 0); _listHeading = heading;
         _tracks.ItemTemplate = new FuncDataTemplate<Track>((track, _) => track is null ? new Border() : TrackRow(track));
         var trackScroll = new ScrollViewer { Content = _tracks, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden };
         trackScroll.SizeChanged += (_, _) => trackScroll.OpacityMask = UiTheme.ListMask(trackScroll.Bounds.Height);
         Put(content, trackScroll, 4, 0);
+        _trackScroll = trackScroll;
+        _homeScroll = new ScrollViewer { Content = _home, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        Put(content, _homeScroll, 4, 0);
         var statusRow = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.CompactGap };
         _status.TextWrapping = TextWrapping.Wrap; _status.MaxLines = 2; _status.VerticalAlignment = VerticalAlignment.Center; statusRow.Children.Add(_status);
         Put(statusRow, IconButton("info", "Ver diagnóstico", () => { ShowDiagnostics(); return Task.CompletedTask; }), 0, 1);
         _statusBox = new Border { Child = statusRow }; UiTheme.StateBanner(_statusBox, UiTheme.Warning); Put(content, _statusBox, 3, 0);
         _play = IconButton("play", "Reproduzir, pausar ou cancelar", _music.ToggleAsync, UiTheme.OnPrimary); _play.Classes.Add("primary"); _play.Classes.Add("miniPlay");
         _mini = BuildMiniPlayer(); Put(_root, _mini, 1, 1);
-        var navGrid = new Grid { ColumnDefinitions = new("*,*,*"), Height = UiTheme.NavHeight, Background = UiTheme.Brush(UiTheme.Surface) };
-        var tabs = new[] { ("explore", "Buscar", "search"), ("library", "Biblioteca", "library"), ("queue", "Fila", "queue") };
+        var navGrid = new Grid { ColumnDefinitions = new("*,*,*,*"), Height = UiTheme.NavHeight, Background = UiTheme.Brush(UiTheme.Surface) };
+        var tabs = new[] { ("home", "Início", "home"), ("explore", "Buscar", "search"), ("library", "Biblioteca", "library"), ("queue", "Fila", "queue") };
         for (var index = 0; index < tabs.Length; index++)
         {
             var (key, label, icon) = tabs[index];
@@ -133,6 +144,7 @@ public sealed class MainView : UserControl
     {
         var panel = new StackPanel { Spacing = UiTheme.CompactGap, Margin = UiTheme.PageMargin };
         var title = Text("Sua música", UiTheme.SectionTitle); panel.Children.Add(title);
+        panel.Children.Add(NavButton("home", "Início", "home", false));
         panel.Children.Add(NavButton("explore", "Buscar", "search", false));
         panel.Children.Add(NavButton("library", "Biblioteca", "library", false));
         panel.Children.Add(NavButton("queue", "Fila", "queue", false));
@@ -214,6 +226,8 @@ public sealed class MainView : UserControl
             stack.Children.Add(UiTheme.Text(label, UiTheme.Label, active ? UiTheme.TextPrimary : Muted, FontWeight.Medium)); button.Content = stack;
         }
         IReadOnlyList<Track> tracks = _page switch { "library" => _music.Favorites, "queue" => _music.Queue, _ => _music.Results };
+        _homeScroll.IsVisible = _page == "home"; _trackScroll.IsVisible = _listHeading.IsVisible = _page != "home";
+        if (_page == "home") RefreshHome();
         _heading.Text = _page switch { "library" => "Biblioteca", "queue" => "Fila de reprodução", _ => "Resultados" };
         _count.Text = tracks.Count + (tracks.Count == 1 ? " faixa" : " faixas");
         var fingerprint = _page + ":" + string.Join("|", tracks.Select(t => t.Id + _music.IsFavorite(t)));
@@ -221,7 +235,7 @@ public sealed class MainView : UserControl
         {
         _listFingerprint = fingerprint; _rows.Clear(); _rowTitles.Clear(); _equalizers.Clear(); _tracks.ItemsSource = tracks;
         }
-        if (tracks.Count == 0 && !_music.Searching && !_music.LoadingAudio && !_music.HasError)
+        if (_page != "home" && tracks.Count == 0 && !_music.Searching && !_music.LoadingAudio && !_music.HasError)
             {
                 _statusBox.IsVisible = true; UiTheme.StateBanner(_statusBox, UiTheme.Success);
                 _status.Text = _page switch { "library" => "Suas favoritas ficam aqui. Abra um áudio local ou salve uma faixa.", "queue" => "Adicione músicas à fila pelo menu de cada faixa.", _ => "Busque uma música ou artista para começar a ouvir." };
@@ -234,6 +248,79 @@ public sealed class MainView : UserControl
         _nowArtist.Text = _music.LoadingAudio ? _music.Status : TrackTextFormatter.Artist(displayed?.Artist);
         if (_detailPlay is not null && displayed is not null && !Equals(_detailTrack, displayed)) ShowPlayer();
         RefreshPlayback();
+    }
+    private void RefreshHome()
+    {
+        var fingerprint = string.Join("|", _music.History.Select(t => t.Source)) + ":" + string.Join("|", _music.Favorites.Select(t => t.Source))
+            + ":" + (_account is not null) + ":" + _accountLoading + ":" + string.Join("|", _accountLikes.Select(t => t.Id))
+            + ":" + string.Join("|", _accountPlaylists.Select(p => p.Id));
+        if (fingerprint == _homeFingerprint) return;
+        _homeFingerprint = fingerprint; _home.Children.Clear();
+        var shortcuts = new StackPanel { Orientation = Orientation.Horizontal, Spacing = UiTheme.CompactGap };
+        shortcuts.Children.Add(ActionButton(_account is null ? "Entrar com Google" : "Conta YouTube", ShowAccountAsync));
+        shortcuts.Children.Add(ActionButton("Abrir áudio", OpenLocalAsync));
+        _home.Children.Add(new ScrollViewer { Content = shortcuts, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled });
+        Shelf("Ouvir de novo", "Seu histórico no Hibike · salvo neste aparelho", _music.History.Take(20).Select(TrackCard));
+        if (_music.History.Count == 0) HomeNote("Toque uma música para montar sua seleção de ouvir de novo. Histórico do YouTube não é fornecido pela API oficial.");
+        if (_account is not null)
+        {
+            Shelf("Suas curtidas no YouTube", "Biblioteca da conta · não são recomendações", _accountLikes.Take(30).Select(TrackCard));
+            Shelf("Suas playlists", "Playlists da conta YouTube", _accountPlaylists.Take(50).Select(p =>
+            {
+                var art = new Track(p.Id, p.Title, "Playlist", "https://www.youtube.com/playlist?list=" + Uri.EscapeDataString(p.Id), Thumbnail: p.Thumbnail);
+                return CoverCard(art, "Playlist", () => ShowAccountTracksAsync(_account!, p.Id, p.Title));
+            }));
+            _home.Children.Add(ActionButton(_accountLoading ? "Carregando biblioteca…" : "Atualizar biblioteca da conta", LoadAccountHomeAsync));
+        }
+        else HomeNote("Conecte Google para ver curtidas e playlists aqui. Reprodução continua sem acesso à conta.");
+        Shelf("Sua seleção", "Favoritos e arquivos salvos no Hibike", _music.Favorites.Take(30).Select(TrackCard));
+
+        void Shelf(string title, string subtitle, IEnumerable<Control> cards)
+        {
+            _home.Children.Add(Text(title, UiTheme.PageTitle)); HomeNote(subtitle);
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = UiTheme.CardGap };
+            foreach (var card in cards) row.Children.Add(card);
+            if (row.Children.Count > 0) _home.Children.Add(new ScrollViewer { Content = row, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled });
+        }
+        void HomeNote(string text)
+        {
+            var note = Text(text, UiTheme.Caption, Muted); note.TextWrapping = TextWrapping.Wrap; _home.Children.Add(note);
+        }
+    }
+    private Control TrackCard(Track track) => CoverCard(track, TrackTextFormatter.Artist(track.Artist), async () => { await _music.PlayAsync(track); });
+    private Control CoverCard(Track track, string subtitle, Func<Task> action)
+    {
+        var panel = new StackPanel { Width = 160, Spacing = UiTheme.CompactGap };
+        var cover = new Grid { Width = 160, Height = 160 };
+        cover.Children.Add(new Artwork(track, 160));
+        cover.Children.Add(new Border { Background = UiTheme.Brush(UiTheme.Scrim), CornerRadius = new(24), Width = 44, Height = 44,
+            HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(8), Child = Icons.Make("play") });
+        panel.Children.Add(cover);
+        var title = Text(TrackTextFormatter.Title(track.Title, track.Artist), UiTheme.Body);
+        title.TextWrapping = TextWrapping.Wrap; title.MaxLines = 2; title.TextTrimming = TextTrimming.CharacterEllipsis; panel.Children.Add(title);
+        var artist = Text(subtitle, UiTheme.Caption, Muted); artist.TextTrimming = TextTrimming.CharacterEllipsis; panel.Children.Add(artist);
+        var button = ActionButton("", action); button.Content = panel; button.Padding = UiTheme.Zero;
+        button.VerticalContentAlignment = VerticalAlignment.Top;
+        Avalonia.Automation.AutomationProperties.SetName(button, track.Title + " — " + subtitle);
+        return button;
+    }
+    private async Task LoadAccountHomeAsync()
+    {
+        if (_account is not { } account || _accountLoading) return;
+        _accountLoading = true; Refresh();
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            var playlists = await account.PlaylistsAsync(timeout.Token);
+            var likes = await account.TracksAsync(null, timeout.Token);
+            if (!ReferenceEquals(_account, account)) return;
+            _accountPlaylists = playlists; _accountLikes = likes;
+        }
+        finally { _accountLoading = false; Refresh(); }
+    }
+    private void DisconnectAccount()
+    {
+        _account = null; _accountPlaylists = []; _accountLikes = []; Refresh();
     }
     private Control TrackRow(Track track)
     {
@@ -517,15 +604,15 @@ public sealed class MainView : UserControl
             panel.Children.Add(ActionButton("Entrar com Google", async () =>
             {
                 _music.SetStatus("Autorize leitura do YouTube na tela do Google (até 3 minutos).");
-                _account = await AppServices.ConnectYouTubeAccount!(); await ShowAccountAsync();
+                _account = await AppServices.ConnectYouTubeAccount!(); CloseSheet(); _page = "home"; Refresh(); await LoadAccountHomeAsync();
             }));
         }
         var configPath = System.IO.Path.Combine(_music.DataDirectory, "google-oauth-desktop.json");
         if (System.IO.File.Exists(configPath)) panel.Children.Add(ActionButton("Apagar configuração local e desconectar", async () =>
-        { System.IO.File.Delete(configPath); _account = null; await ShowAccountAsync(); }));
+        { System.IO.File.Delete(configPath); DisconnectAccount(); await ShowAccountAsync(); }));
         if (_account is { } account)
         {
-            panel.Children.Add(ActionButton("Desconectar conta", async () => { _account = null; await ShowAccountAsync(); }));
+            panel.Children.Add(ActionButton("Desconectar conta", async () => { DisconnectAccount(); await ShowAccountAsync(); }));
             panel.Children.Add(ActionButton("Vídeos curtidos", () => ShowAccountTracksAsync(account, null, "Vídeos curtidos")));
             foreach (var playlist in await account.PlaylistsAsync(CancellationToken.None))
                 panel.Children.Add(ActionButton(playlist.Title, () => ShowAccountTracksAsync(account, playlist.Id, playlist.Title)));
@@ -615,7 +702,7 @@ public sealed class MainView : UserControl
         var path = System.IO.Path.Combine(_music.DataDirectory, "google-oauth-desktop.json");
         await System.IO.File.WriteAllTextAsync(path + ".tmp", text);
         System.IO.File.Move(path + ".tmp", path, true);
-        _account = null;
+        DisconnectAccount();
         _music.SetStatus("Configuração OAuth importada. Conecte com Google."); await ShowAccountAsync();
     }
     private void ShowDiagnostics()
