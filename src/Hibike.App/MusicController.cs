@@ -197,7 +197,7 @@ public sealed partial class MusicController
             if (ReferenceEquals(_play, request))
             {
                 if (request.IsCancellationRequested) Status = "Reprodução cancelada.";
-                else Fail(stage == "YT-DLP" ? "O YT-DLP não respondeu em 35 s. Abra o diagnóstico para ver a última etapa." : "O servidor de áudio não respondeu em 18 s. Tente outra faixa ou abra o diagnóstico.");
+                else Fail(stage == "YT-DLP" ? "O YT-DLP não respondeu em 35 s. Tente novamente ou escolha outra faixa." : "O servidor de áudio não respondeu em 18 s. Tente outra faixa.");
             }
         }
         catch (Exception ex) { if (ReferenceEquals(_play, request)) Fail(ex.Message); }

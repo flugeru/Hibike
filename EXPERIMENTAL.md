@@ -1,13 +1,13 @@
 # Hibike — laboratório
 
-Branch `feat/experimental-player-lab`; não integrada à main.
-Acesso: Configurações → Laboratório experimental.
+Integrado à `main`. Ferramentas de laboratório e diagnóstico ficam ocultas por padrão.
+Acesso em build local com `-p:HibikeDeveloperTools=true`: Configurações → Laboratório experimental.
 
 - Links HTTP/HTTPS de extratores yt-dlp, playlists limitadas a 100 entradas.
 - Busca YouTube e SoundCloud, até 30 resultados.
 - Adicionar resultados, ordenar e embaralhar fila; limpar preservando faixa atual.
 - Repetir fila, pular -10/+10/+30 segundos, sleep timer 15/30/60 min.
-- Histórico em memória da sessão, até 100 faixas.
+- Histórico local persistente, até 100 faixas.
 - Download de áudio original para biblioteca privada, progresso no status e cancelamento.
 
 Downloads limitados a stream HTTPS direto de até 1 GB, um por vez, com prazo de 30 minutos. Sem FFmpeg, conversão, manifestos HLS/DASH ou retomada. Cancelamento remove arquivo parcial. Não é garantia de suporte a todo serviço; DRM e restrições de acesso não são contornados. Baixe apenas conteúdo autorizado.
@@ -32,10 +32,10 @@ Configurações → Biblioteca da conta YouTube. API oficial com `youtube.readon
 
 1. Crie projeto no Google Cloud e ative YouTube Data API v3.
 2. Configure tela de consentimento e adicione sua conta como usuário de teste.
-3. Crie cliente OAuth do tipo **Desktop app**, baixe JSON e importe pelo botão **Importar configuração OAuth Desktop**. Não publique esse arquivo no Git.
-4. Clique **Conectar com Google**, autorize leitura no navegador e volte ao Hibike.
+3. Build Windows precisa da configuração OAuth Desktop correspondente ao Client ID do aplicativo. Usuário final não importa JSON.
+4. Clique **Entrar com Google**, autorize leitura no navegador e volte ao Hibike.
 
-Desktop: PKCE S256 e validação de state protegem retorno local. Token fica apenas em memória, sem refresh ou armazenamento; reconecte após expirar/fechar. Desconectar remove referência local, não revoga autorização no Google; revogação disponível em https://myaccount.google.com/permissions. Configuração OAuth fica no diretório de dados e pode ser apagada pela interface. Nenhum token é entregue ao yt-dlp.
+Desktop: PKCE S256 e validação de state protegem retorno local. Token fica apenas em memória, sem refresh ou armazenamento; reconecte após expirar/fechar. Desconectar remove referência local, não revoga autorização no Google; revogação disponível em https://myaccount.google.com/permissions. Configuração legada no diretório de dados continua aceita para mesmo cliente e pode ser apagada pela interface; recurso embutido só muda recompilando. Nenhum token é entregue ao yt-dlp.
 
 Android: Configurações → Biblioteca da conta YouTube → Entrar com Google. Usa AuthorizationClient do Google Play Services e solicita somente `youtube.readonly`, com seleção/consentimento nativo quando necessário. Não precisa importar JSON nem embutir segredo: Google identifica aplicativo pelo pacote `com.flugel.hibike` e certificado de assinatura. Registre cliente OAuth Android com esses dados no mesmo projeto com API ativada e usuário de teste. Dispositivo precisa Google Play Services. Token fica somente em memória; após expiração, desconecte e entre novamente.
 

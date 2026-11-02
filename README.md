@@ -15,7 +15,7 @@ Player de música em **C# / .NET 10 e Avalonia UI 12**, com busca e streaming vi
 - Fila, favoritos locais, reprodução aleatória, repetição e ajuste de volume.
 - Restauração da música, posição e fila ao reabrir, sem reprodução automática; opção de limpar fila mantendo faixa atual.
 - Importação de áudio local; leitura de título, artista, álbum, duração e capa embutida em FLAC.
-- Painel de informações do áudio e diagnóstico de reprodução.
+- Painel de informações do áudio.
 - Android: reprodução em segundo plano, notificação e controles na tela bloqueada com Media3/ExoPlayer. Python, QuickJS e yt-dlp incluídos no APK; sem Termux.
 - Desktop: áudio com LibVLC e Discord Rich Presence com **Listening**, faixa, artista, capa e tempo. Requer Discord desktop aberto; não usa token pessoal. Para FLAC, busca capa online por artista e álbum.
 - Windows: integração com controles de mídia do sistema, metadados, capa e comandos de reprodução.
@@ -34,9 +34,9 @@ Pacote Android: `com.flugel.hibike`. Instala separado do antigo `com.flugel.hibi
 
 ### Limites e privacidade
 
-Sem downloads offline, sincronização ou playlists persistentes. Acesso ao YouTube depende das restrições do serviço; configurações permitem importar e remover cookies Netscape existentes.
+Sem sincronização de playlists locais. Downloads são experimentais e exclusivos do laboratório. Acesso ao YouTube depende das restrições do serviço; yt-dlp não recebe cookies nem credenciais Google. Configurações permitem remover cookies legados, não importá-los.
 
-Áudios importados são copiados para armazenamento privado. Remover favorito não apaga arquivo; limpar dados ou desinstalar apaga cópias. Hibike não possui conta nem telemetria. Busca, streaming e capas contatam provedores externos; capa de FLAC no Discord consulta iTunes com artista e álbum, sem enviar arquivo. `HIBIKE_DISCORD_RPC=0` desativa Rich Presence e essa consulta no desktop.
+Áudios importados são copiados para armazenamento privado. Remover favorito não apaga arquivo; limpar dados do aplicativo apaga cópias. Desinstalar Android remove dados; desinstalador Windows preserva dados do usuário. Hibike não possui conta própria nem telemetria. Login Google é opcional; tokens ficam em memória. Busca, streaming e capas contatam provedores externos; capa de FLAC no Discord consulta iTunes com artista e álbum, sem enviar arquivo. `HIBIKE_DISCORD_RPC=0` desativa Rich Presence e essa consulta no desktop.
 
 ## English
 
@@ -51,7 +51,7 @@ Music player built with **C# / .NET 10 and Avalonia UI 12**, featuring **yt-dlp*
 - Queue, local favorites, shuffle, repeat and volume control.
 - Restores song, position and queue on reopening without autoplay; clear queue keeps the current track.
 - Local audio import; embedded FLAC title, artist, album, duration and artwork support.
-- Audio information panel and playback diagnostics.
+- Audio information panel.
 - Android: Media3/ExoPlayer background playback, media notification and lockscreen controls. Python, QuickJS and yt-dlp bundled in APK; no Termux required.
 - Desktop: LibVLC audio and Discord Rich Presence with **Listening**, song, artist, artwork and playback time. Requires Discord desktop; no personal token. Local FLAC artwork is looked up online by artist and album.
 - Windows: system media controls with metadata, artwork and playback commands.
@@ -70,9 +70,9 @@ Android package: `com.flugel.hibike`. Installs separately from the previous `com
 
 ### Limits and privacy
 
-No offline downloads, synchronization or persistent playlists. YouTube access depends on service restrictions; settings support importing and removing existing Netscape cookies.
+No local playlist synchronization. Downloads are experimental and lab-only. YouTube access depends on service restrictions; yt-dlp receives neither cookies nor Google credentials. Settings can remove legacy cookies, not import them.
 
-Imported audio is copied into private app storage. Removing a favorite does not delete its file; clearing app data or uninstalling removes copies. Hibike has no account or telemetry. Search, streaming and artwork contact external providers; Discord artwork lookup sends FLAC artist and album to iTunes, not the file. `HIBIKE_DISCORD_RPC=0` disables desktop Rich Presence and its artwork lookup.
+Imported audio is copied into private app storage. Removing a favorite does not delete its file; clearing app data removes copies. Android uninstall removes app data; the Windows uninstaller preserves user data. Hibike has no account system or telemetry. Google login is optional; tokens stay in memory. Search, streaming and artwork contact external providers; Discord artwork lookup sends FLAC artist and album to iTunes, not the file. `HIBIKE_DISCORD_RPC=0` disables desktop Rich Presence and its artwork lookup.
 
 ## Source
 
@@ -86,6 +86,7 @@ Imported audio is copied into private app storage. Removing a favorite does not 
 
 ```sh
 dotnet test tests/Hibike.Core.Tests
+python scripts/prepare_android_runtime.py
 dotnet build src/Hibike.Android
 dotnet build src/Hibike.Desktop
 ```

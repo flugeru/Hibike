@@ -65,12 +65,10 @@ public sealed class AndroidCommandRunner(Context context) : ICommandRunner
                 await File.WriteAllTextAsync(marker, "1", token);
             }
             var script = Path.Combine(baseDir, "yt-dlp");
-            if (!File.Exists(script))
-            {
-                using var input = context.Assets!.Open("runtime/yt-dlp");
-                using (var output = File.Create(script + ".tmp")) await input.CopyToAsync(output, token);
-                File.Move(script + ".tmp", script, true);
-            }
+            // Refresh on process initialization so app updates cannot keep an older extractor.
+            using (var input = context.Assets!.Open("runtime/yt-dlp"))
+            using (var output = File.Create(script + ".tmp")) await input.CopyToAsync(output, token);
+            File.Move(script + ".tmp", script, true);
             _script = script;
             _pythonHome = Path.Combine(python, "usr");
         }

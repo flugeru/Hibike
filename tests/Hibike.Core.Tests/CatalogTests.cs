@@ -122,6 +122,52 @@ public class CatalogTests
         Assert.Equal(1, runner.Calls);
         Assert.Contains("--skip-download", runner.Arguments);
     }
+    [Fact] public async Task CachedResolutionRetriesAfterSynchronousFailure()
+    {
+        var runner = new FakeRunner("not json");
+        var catalog = new CachedMusicCatalog(new YtDlpCatalog(runner));
+        var track = new Track("id", "Title", "Artist", "https://example.org/video");
+        await Assert.ThrowsAnyAsync<System.Text.Json.JsonException>(() => catalog.ResolveAsync(track, default));
+        await Assert.ThrowsAnyAsync<System.Text.Json.JsonException>(() => catalog.ResolveAsync(track, default));
+        Assert.Equal(2, runner.Calls);
+    }
+    [Fact] public async Task CachedResolutionHonorsCanceledRequests()
+    {
+        var runner = new FakeRunner("{\"url\":\"https://example.org/audio\"}");
+        var catalog = new CachedMusicCatalog(new YtDlpCatalog(runner));
+        var track = new Track("id", "Title", "Artist", "https://example.org/video");
+        await catalog.ResolveAsync(track, default);
+        using var cancellation = new CancellationTokenSource(); cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => catalog.ResolveAsync(track, cancellation.Token));
+        Assert.Equal(1, runner.Calls);
+    }
+    [Fact] public void PlaybackSessionRejectsInvalidCurrentTrack()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        try
+        {
+            var store = new PlaybackSessionStore(directory);
+            store.Save(new([], new Track("id", "Title", "Artist", ""), -1, 0));
+            Assert.Throws<InvalidDataException>(() => store.Load());
+        }
+        finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+    }
+    [Theory]
+    [InlineData("[null]")]
+    [InlineData("[{\"Id\":\"id\",\"Title\":\"Song\",\"Artist\":\"Artist\"}]")]
+    public async Task FavoritesRejectInvalidTracksWithoutChangingFile(string json)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        try
+        {
+            Directory.CreateDirectory(directory);
+            var path = Path.Combine(directory, "favorites.json");
+            await File.WriteAllTextAsync(path, json);
+            await Assert.ThrowsAsync<InvalidDataException>(() => new LibraryStore(directory).LoadAsync());
+            Assert.Equal(json, await File.ReadAllTextAsync(path));
+        }
+        finally { Directory.Delete(directory, true); }
+    }
     private sealed class FakeRunner(string output) : ICommandRunner
     {
         public IReadOnlyList<string> Arguments { get; private set; } = [];

@@ -106,7 +106,7 @@ public sealed class YtDlpCatalog(ICommandRunner runner, string? dataDirectory = 
             {
             var message = result.Error.Trim();
             if (message.Contains("sign in", StringComparison.OrdinalIgnoreCase) || message.Contains("login required", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("O YouTube bloqueou reprodução anônima desta faixa ou rede. Login da biblioteca não autoriza o yt-dlp. Veja o diagnóstico para o erro completo.");
+                throw new InvalidOperationException("O YouTube bloqueou reprodução anônima desta faixa ou rede. Login da biblioteca não autoriza o yt-dlp. Tente outra faixa ou rede.");
             var lastError = message.Split('\n').LastOrDefault(line => line.Contains("ERROR:", StringComparison.OrdinalIgnoreCase)) ?? message;
             throw new InvalidOperationException("YT-DLP: " + (lastError.Length == 0 ? "Não foi possível acessar o conteúdo." : lastError[..Math.Min(lastError.Length, 240)]));
         }

@@ -886,14 +886,6 @@ public sealed partial class MainView : UserControl
             ? "API oficial: playlists e vídeos curtidos, somente leitura. Não inclui feed, histórico ou catálogo completo do YT Music. Autorize acesso na tela do Google; token fica só na memória e pode expirar. yt-dlp não recebe credenciais. Até 1000 entradas por lista."
             : "Login Android ainda indisponível: exige autorização nativa Google e configuração do pacote/assinatura. Não usamos fluxo Desktop no Android.", UiTheme.Caption, Muted);
         note.TextWrapping = TextWrapping.Wrap; panel.Children.Add(note);
-        if (supported && _account is null)
-        {
-            panel.Children.Add(ActionButton("Entrar com Google", async () =>
-            {
-                _music.SetStatus("Autorize leitura do YouTube na tela do Google (até 3 minutos).");
-                _account = await AppServices.ConnectYouTubeAccount!(); CloseSheet(); _page = "home"; Refresh(); await LoadAccountHomeAsync();
-            }));
-        }
         var configPath = System.IO.Path.Combine(_music.DataDirectory, "google-oauth-desktop.json");
         if (System.IO.File.Exists(configPath)) panel.Children.Add(ActionButton("Apagar configuração local e desconectar", async () =>
         { System.IO.File.Delete(configPath); DisconnectAccount(); await ShowAccountAsync(); }));
@@ -964,29 +956,6 @@ public sealed partial class MainView : UserControl
         }
         catch (OperationCanceledException) { _music.SetStatus("Download cancelado ou tempo esgotado."); }
         finally { _download = null; }
-    }
-    private async Task ImportGoogleConfigAsync()
-    {
-        var top = TopLevel.GetTopLevel(this); if (top is null) return;
-        var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions { Title = "JSON OAuth Google — aplicativo Desktop", AllowMultiple = false });
-        if (files.Count == 0) return;
-        using var file = files[0]; await using var input = await file.OpenReadAsync();
-        using var reader = new System.IO.StreamReader(input);
-        var buffer = new char[1_000_001]; var length = await reader.ReadBlockAsync(buffer, 0, buffer.Length);
-        if (length > 1_000_000) throw new IOException("Arquivo de configuração muito grande.");
-        var text = new string(buffer, 0, length);
-        using var json = System.Text.Json.JsonDocument.Parse(text);
-        if (!json.RootElement.TryGetProperty("installed", out var installed)
-            || !installed.TryGetProperty("client_id", out var clientId)
-            || clientId.ValueKind != System.Text.Json.JsonValueKind.String
-            || !clientId.GetString()!.EndsWith(".apps.googleusercontent.com", StringComparison.Ordinal))
-            throw new IOException("Selecione JSON OAuth do tipo Desktop exportado pelo Google Cloud.");
-        System.IO.Directory.CreateDirectory(_music.DataDirectory);
-        var path = System.IO.Path.Combine(_music.DataDirectory, "google-oauth-desktop.json");
-        await System.IO.File.WriteAllTextAsync(path + ".tmp", text);
-        System.IO.File.Move(path + ".tmp", path, true);
-        DisconnectAccount();
-        _music.SetStatus("Configuração OAuth importada. Conecte com Google."); await ShowAccountAsync();
     }
     private void ShowDiagnostics()
     {

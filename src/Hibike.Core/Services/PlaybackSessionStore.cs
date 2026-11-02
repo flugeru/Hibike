@@ -13,6 +13,7 @@ public sealed class PlaybackSessionStore(string directory)
         if (!File.Exists(PathName)) return null;
         var session = JsonSerializer.Deserialize<PlaybackSession>(File.ReadAllText(PathName));
         if (session is null || session.Queue is null || session.Queue.Any(t => t is null || string.IsNullOrWhiteSpace(t.Source))
+            || session.Current is { } current && string.IsNullOrWhiteSpace(current.Source)
             || session.History is { } history && (history.Length > 100 || history.Any(t => t is null || string.IsNullOrWhiteSpace(t.Source)))
             || !double.IsFinite(session.Position) || session.Position < 0) throw new InvalidDataException("Sessão de reprodução inválida.");
         return session;

@@ -20,7 +20,7 @@ public sealed partial class MainView
             Source = new Avalonia.Media.Imaging.Bitmap(Avalonia.Platform.AssetLoader.Open(new Uri("avares://Hibike.App/Assets/hibike-desktop.png"))),
             Width = 72, Height = 72, HorizontalAlignment = HorizontalAlignment.Center
         });
-        var title = Text("Sua música no Hibiki", UiTheme.DialogTitle); title.TextAlignment = TextAlignment.Center; title.TextWrapping = TextWrapping.Wrap; items.Children.Add(title);
+        var title = Text("Sua música no Hibike", UiTheme.DialogTitle); title.TextAlignment = TextAlignment.Center; title.TextWrapping = TextWrapping.Wrap; items.Children.Add(title);
         var note = Text("Conecte sua conta Google para ver playlists e músicas curtidas do YouTube. Acesso somente leitura; login opcional.", UiTheme.Body, Muted);
         note.TextWrapping = TextWrapping.Wrap; note.TextAlignment = TextAlignment.Center; items.Children.Add(note);
         var error = Text("", UiTheme.Caption, UiTheme.Error); error.TextWrapping = TextWrapping.Wrap; error.IsVisible = false;

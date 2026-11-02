@@ -19,6 +19,12 @@ internal static class PlaybackProbe
         try
         {
             if (AppServices.ConnectYouTubeAccount is null) throw new IOException("Android Google authorization entry point missing.");
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                var view = (Avalonia.Application.Current?.ApplicationLifetime as ISingleViewApplicationLifetime)?.MainView;
+                var skip = view?.GetVisualDescendants().OfType<Button>().SingleOrDefault(b => b.Content as string == "Continuar sem conta");
+                skip?.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            });
             var path = Path.Combine(context.CacheDir!.AbsolutePath, "probe.wav");
             using (var stream = File.Create(path))
             using (var writer = new BinaryWriter(stream))
@@ -30,7 +36,6 @@ internal static class PlaybackProbe
                 writer.Write((short)2); writer.Write((short)16); writer.Write(Encoding.ASCII.GetBytes("data")); writer.Write(samples * 2);
                 for (var i = 0; i < samples; i++) writer.Write((short)(Math.Sin(i * 2 * Math.PI * 440 / rate) * 1000));
             }
-            using var localTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
             var watch = System.Diagnostics.Stopwatch.StartNew();
             await AppServices.Controller!.PlayAsync(new("local-probe", "Streaming test", "Hibike CI", path, 90, IsLocal: true));
             var startupMs = watch.ElapsedMilliseconds;

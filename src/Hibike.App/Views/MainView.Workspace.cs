@@ -312,7 +312,7 @@ public sealed partial class MainView
         labels.Children.Add(Text($"{tracks.Count} faixas · {Time(tracks.Sum(t => Math.Max(0, t.DurationSeconds)))}", UiTheme.Caption, Muted)); Put(hero, labels, 0, 1); grid.Children.Add(hero);
         var actions = new WrapPanel { ItemSpacing = 8, LineSpacing = 8 };
         var play = ActionButton("Reproduzir playlist", () => PlayCollectionAsync(_collectionTracks)); play.Classes.Add("primary"); actions.Children.Add(play);
-        actions.Children.Add(ActionButton("Adicionar à fila", () => { foreach (var track in _collectionTracks) _music.Queue.Add(track); _music.SetStatus("Playlist adicionada à fila."); return Task.CompletedTask; }));
+        actions.Children.Add(ActionButton("Adicionar à fila", () => { foreach (var track in _collectionTracks) _music.Enqueue(track); _music.SetStatus("Playlist adicionada à fila."); return Task.CompletedTask; }));
         actions.Children.Add(ActionButton("Voltar ao início", () => { _page = "home"; Refresh(); return Task.CompletedTask; })); Put(grid, actions, 1, 0);
         var list = new ItemsControl { ItemsSource = tracks, ItemsPanel = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel()), ItemTemplate = new FuncDataTemplate<Track>((track, _) => track is null ? new Border() : TrackRow(track)) };
         Put(grid, UiTheme.FadingScroll(list), 2, 0);

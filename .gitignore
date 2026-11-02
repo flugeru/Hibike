@@ -3,6 +3,7 @@
 .vs/
 .idea/
 artifacts/
+web-publish/
 *.user
 *.keystore
 src/Hibike.Android/Native/

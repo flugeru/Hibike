@@ -412,6 +412,11 @@ internal static class Program
                 typeof(MainView).GetMethod("OpenCollection", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(view, ["Playlist de teste", new Track[] { nextA, nextB }]);
                 await Task.Delay(150); Capture(view, "collection-1260");
                 Check(view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "Playlist de teste" && t.IsEffectivelyVisible), "Collection page missing");
+                var queueCount = music.Queue.Count;
+                var addCollection = view.GetVisualDescendants().OfType<Button>().Single(b => b.IsEffectivelyVisible && b.Content as string == "Adicionar à fila");
+                addCollection.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                addCollection.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                Check(music.Queue.Count == queueCount, "Adding collection duplicated existing queued tracks");
                 Check(AppServices.BackHandler!(), "Collection cannot return home");
                 music.SaveSession();
                 var restored = new MusicController(new Catalog(), new Player(), new LibraryStore(directory), directory);

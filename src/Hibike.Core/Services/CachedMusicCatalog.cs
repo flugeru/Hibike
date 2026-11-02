@@ -11,6 +11,7 @@ public sealed class CachedMusicCatalog(IMusicCatalog inner) : IMusicCatalog
     public Task<IReadOnlyList<Track>> RadioAsync(Track seed, CancellationToken token) => inner.RadioAsync(seed, token);
     public async Task<AudioSource> ResolveAsync(Track track, CancellationToken token)
     {
+        token.ThrowIfCancellationRequested();
         if (track.IsLocal) return await inner.ResolveAsync(track, token);
         if (_cache.TryGetValue(track.Source, out var entry) && entry.Expires > DateTimeOffset.UtcNow)
         { PlaybackDiagnostics.Write("Cache", "Link de áudio reutilizado; sem nova extração."); return entry.Source; }

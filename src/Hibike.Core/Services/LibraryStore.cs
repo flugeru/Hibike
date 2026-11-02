@@ -12,7 +12,10 @@ public sealed class LibraryStore(string directory)
         try
         {
             if (!File.Exists(_path)) return [];
-            return JsonSerializer.Deserialize<List<Track>>(await File.ReadAllTextAsync(_path)) ?? [];
+            var tracks = JsonSerializer.Deserialize<List<Track>>(await File.ReadAllTextAsync(_path)) ?? [];
+            if (tracks.Any(t => t is null || string.IsNullOrWhiteSpace(t.Source)))
+                throw new InvalidDataException("Biblioteca contém faixa inválida.");
+            return tracks;
         }
         catch (JsonException) { return []; }
         finally { _gate.Release(); }
