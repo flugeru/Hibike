@@ -1,6 +1,6 @@
 ; Build after scripts/publish_windows.ps1 using Inno Setup 6.
 #ifndef AppVersion
-  #define AppVersion "1.0.0"
+  #define AppVersion "0.1.0"
 #endif
 #ifndef PublishDir
   #define PublishDir "..\..\artifacts\Hibike-win-x64"

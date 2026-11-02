@@ -12,6 +12,7 @@ on:
         description: Run optional Android emulator smoke test
         type: boolean
         default: false
+  workflow_call:
 
 permissions:
   contents: read
