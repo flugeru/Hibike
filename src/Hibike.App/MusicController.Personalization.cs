@@ -158,6 +158,7 @@ public sealed partial class MusicController
     }
     public void SetAutoplay(bool enabled)
     {
+        CancelRadioRequest();
         _personal.Autoplay = enabled; _radio = enabled;
         _radioRetryAt = enabled ? DateTime.MinValue : DateTime.MaxValue;
         if (enabled) _radioSeed ??= Current;
@@ -167,21 +168,33 @@ public sealed partial class MusicController
     public void SetDiscovery(string mode)
     {
         if (mode is not ("Tudo" or "Familiar" or "Descobrir")) throw new ArgumentException("Modo inválido.");
+        CancelRadioRequest();
         _personal.Discovery = mode; PersistPersonalization();
     }
-    public Task RetryRadioAsync() { _radioRetryAt = DateTime.MinValue; return FillRadioAsync(); }
+    public Task RetryRadioAsync()
+    {
+        if (Current is null)
+        { RadioStatus = "Escolha uma música para buscar sugestões."; Changed?.Invoke(); return Task.CompletedTask; }
+        if (RadioLoading) return _radioTask ?? Task.CompletedTask;
+        _personal.Autoplay = true;
+        _radio = true; _radioSeed ??= Current; _radioRetryAt = DateTime.MinValue;
+        PersistPersonalization();
+        return FillRadioAsync(refresh: true);
+    }
     public async Task StartRadioAsync(Track track)
     {
         ReplaceQueue([track]); _personal.Autoplay = true; _radio = true; _radioSeed = track;
-        await PlayAsync(track, 0); if (!HasError) await FillRadioAsync();
+        _radioRetryAt = DateTime.MinValue;
+        await PlayAsync(track, 0);
+        if (!HasError && _radio && _radioSeed?.Source == track.Source && Current?.Source == track.Source) await FillRadioAsync();
     }
     public void PlayNext(Track track)
     {
         var existing = Queue.ToList().FindIndex(t => t.Source == track.Source);
-        if (existing >= 0 && track == Current) return;
+        if (track.Source == Current?.Source) return;
         if (existing >= 0) Queue.RemoveAt(existing);
         _recommended.Remove(track.Source);
-        _queueIndex = Current is null ? -1 : Queue.IndexOf(Current);
+        _queueIndex = CurrentQueueIndex;
         Queue.Insert(_queueIndex + 1, track); SetStatus("Tocará a seguir: " + track.Title);
     }
     public void TogglePin(Track track)

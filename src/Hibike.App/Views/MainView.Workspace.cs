@@ -158,18 +158,17 @@ public sealed partial class MainView
             content.RowSpacing = queue || collection || _page == "home" ? 4 : Bounds.Width < UiTheme.DesktopWidth ? 8 : 12;
         }
         _pageTitle.Text = collection ? "Coleção" : queue ? "Sua fila" : _pageTitle.Text;
-        var fingerprint = string.Join("|", _music.Queue.Select(t => t.Id + ":" + t.Source + _music.IsRecommended(t))) + ":" + _music.Current?.Id + ":" + (Bounds.Width < UiTheme.DesktopWidth) + ":" + _relatedTab;
+        var fingerprint = string.Join("|", _music.Queue.Select(t => t.Id + ":" + t.Source + _music.IsRecommended(t))) + ":" + _music.Current?.Source + ":" + (Bounds.Width < UiTheme.DesktopWidth) + ":" + _relatedTab;
         if (_queueFingerprint != fingerprint)
         {
             _queueFingerprint = fingerprint;
-            var index = _music.Current is null ? -1 : _music.Queue.IndexOf(_music.Current);
-            var upcoming = _music.Queue.Skip(index + 1).ToArray();
+            var upcoming = _music.Upcoming.ToArray();
             if (_relatedTab) upcoming = upcoming.Where(_music.IsRecommended).ToArray();
             _upNext.ItemsSource = upcoming;
             var duration = upcoming.Sum(t => Math.Max(0, t.DurationSeconds));
             var mobile = Bounds.Width < UiTheme.DesktopWidth;
             var total = duration > 0 ? $" · {Time(duration)}" : "";
-            _queueSummary.Text = upcoming.Length == 0 ? "Sua fila terminou. Adicione músicas para continuar." : $"{(mobile ? "" : "A SEGUIR · ")}{upcoming.Length} {(upcoming.Length == 1 ? "faixa" : "faixas")}{total}";
+            _queueSummary.Text = upcoming.Length == 0 ? (_relatedTab ? "Nenhuma recomendação na fila. Busque novas sugestões no rádio." : "Nenhuma próxima faixa. Adicione músicas ou busque sugestões no rádio.") : $"{(mobile ? "" : "A SEGUIR · ")}{upcoming.Length} {(upcoming.Length == 1 ? "faixa" : "faixas")}{total}";
             var current = new StackPanel { Spacing = 12 };
             current.Children.Add(Text("TOCANDO AGORA", UiTheme.Label, Muted));
             if (_music.Current is { } track)
@@ -199,7 +198,7 @@ public sealed partial class MainView
     {
         var section = Text(_music.IsRecommended(track) ? "RECOMENDADA" : "ADICIONADA POR VOCÊ", UiTheme.Label, Muted);
         var index = _music.Queue.IndexOf(track);
-        section.IsVisible = index <= 0 || _music.Queue[index - 1] == _music.Current || _music.IsRecommended(_music.Queue[index - 1]) != _music.IsRecommended(track);
+        section.IsVisible = index <= 0 || index == _music.CurrentQueueIndex + 1 || _music.IsRecommended(_music.Queue[index - 1]) != _music.IsRecommended(track);
         var grouped = new StackPanel { Spacing = 4 }; grouped.Children.Add(section); grouped.Children.Add(TrackRow(track));
         return grouped;
     }

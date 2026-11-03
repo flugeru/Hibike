@@ -2,6 +2,13 @@
 
 Run `dotnet run --project tests/Hibike.Ui.Checks/Hibike.Ui.Checks.csproj` from repository root.
 
+Run the focused queue/radio regressions with `dotnet run --project tests/Hibike.Ui.Checks -- --queue-only`.
+Add `--headless` on machines without a display; Skia still renders the layout screenshots.
+The focused checks cover retry after provider/fallback failure, manual refresh with upcoming
+tracks, preservation on empty/failed refreshes, cancelled/stale requests, station switching,
+manual queue priority, reordering during audio resolution, session restore, and radio controls
+at 360/390/430/1260 widths. Providers and audio are faked; no live radio service is required.
+
 Uses native Avalonia desktop rendering and fake catalog/player. Checks 360/390/430 widths,
 minimum text size, visible button height, search clear state, virtualization with 1,000 tracks,
 and opening/closing player. Writes `ui-check-result.txt` beside executable. No network or real audio.

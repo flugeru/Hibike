@@ -1,0 +1,33 @@
+name: Hibike • Queue and radio regression checks
+
+on:
+  push:
+    branches: [queue-fix]
+  pull_request:
+    paths: ['src/**', 'tests/**', 'Directory.*', 'global.json', '.github/workflows/queue-checks.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  queue-radio:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Test core
+        run: dotnet test tests/Hibike.Core.Tests -c Release
+      - name: Test queue, radio recovery and desktop/mobile controls
+        run: dotnet run --project tests/Hibike.Ui.Checks -c Release -- --queue-only
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: queue-radio-checks
+          path: |
+            tests/Hibike.Ui.Checks/bin/**/queue-*.png
+            tests/Hibike.Ui.Checks/bin/**/ui-check-result.txt
+          if-no-files-found: ignore

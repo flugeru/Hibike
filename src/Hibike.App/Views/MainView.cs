@@ -404,7 +404,7 @@ public sealed partial class MainView : UserControl
             var update = ActionButton(_accountLoading ? "Carregando…" : "Atualizar biblioteca", LoadAccountHomeAsync); update.HorizontalAlignment = HorizontalAlignment.Left; next.Add(update);
         }
         if (Bounds.Width >= UiTheme.DesktopWidth && _music.Queue.Count > 0)
-            Shelf("A seguir", "Próximas músicas da sua fila", _music.Queue.Skip(_music.Current is null ? 0 : _music.Queue.IndexOf(_music.Current) + 1).Take(20).Select(TrackCard));
+            Shelf("A seguir", "Próximas músicas da sua fila", _music.Upcoming.Take(20).Select(TrackCard));
         Shelf("Suas músicas favoritas", "Favoritos e arquivos salvos no Hibike", _music.Favorites.OrderByDescending(t => _music.Listening.GetValueOrDefault(MusicController.SongKey(t))?.LastPlayed).Take(30).Select(TrackCard));
         if (_music.Favorites.Count == 0) next.Add(ActionButton("Importar músicas para sua coleção", OpenLocalAsync));
         foreach (var removed in previous.Where(c => !next.Contains(c))) _home.Children.Remove(removed);
@@ -648,9 +648,8 @@ public sealed partial class MainView : UserControl
         foreach (var button in new[] { shuffle, previous, next, repeat }) button.Classes.Add("subtle");
         var upcoming = new StackPanel { Spacing = UiTheme.CompactGap };
         upcoming.Children.Add(UiTheme.Text("Próxima", UiTheme.Label, Muted, FontWeight.Medium));
-        var currentIndex = _music.Queue.ToList().FindIndex(item => item.Id == track.Id);
-        var nextTrack = _music.Queue.Skip(currentIndex + 1).FirstOrDefault();
-        var nextTitle = Text(nextTrack is null ? "Nenhuma faixa na sequência" : TrackTextFormatter.Title(nextTrack.Title, nextTrack.Artist), UiTheme.ButtonText);
+        var nextTrack = _music.Upcoming.FirstOrDefault();
+        var nextTitle = _detailNext = Text(nextTrack is null ? "Nenhuma faixa na sequência" : TrackTextFormatter.Title(nextTrack.Title, nextTrack.Artist), UiTheme.ButtonText);
         nextTitle.TextTrimming = TextTrimming.CharacterEllipsis; upcoming.Children.Add(nextTitle);
         var upcomingBox = UiTheme.Inner(upcoming); Put(panel, upcomingBox, 6, 0);
         panel.RowDefinitions[1].Height = new GridLength(1, GridUnitType.Star);
@@ -661,14 +660,16 @@ public sealed partial class MainView : UserControl
         var queuePanel = new Grid { RowDefinitions = new("Auto,Auto,*"), RowSpacing = UiTheme.SectionGap };
         desktopLayout.HorizontalAlignment = HorizontalAlignment.Stretch;
         var queueHeader = new Grid { ColumnDefinitions = new("*,Auto") };
-        var queueHeading = UiTheme.Text(_music.PlaybackContext, UiTheme.SectionTitle, weight: FontWeight.SemiBold); queueHeading.TextTrimming = TextTrimming.CharacterEllipsis; queueHeader.Children.Add(queueHeading);
+        var queueHeading = _detailQueueHeading = UiTheme.Text(_music.PlaybackContext, UiTheme.SectionTitle, weight: FontWeight.SemiBold); queueHeading.TextTrimming = TextTrimming.CharacterEllipsis; queueHeader.Children.Add(queueHeading);
         Put(queueHeader, ActionButton("Limpar fila", () => { _music.ClearQueue(); return Task.CompletedTask; }), 0, 1);
         queuePanel.Children.Add(queueHeader);
         var playerRadio = new WrapPanel { ItemSpacing = 8 };
-        playerRadio.Children.Add(ActionButton("Reprodução automática: " + (_music.Autoplay ? "ligada" : "desligada"), () => { _music.SetAutoplay(!_music.Autoplay); ShowPlayer(); return Task.CompletedTask; }));
+        playerRadio.Children.Add(_detailRadioToggle = ActionButton("Reprodução automática: " + (_music.Autoplay ? "ligada" : "desligada"), () => { _music.SetAutoplay(!_music.Autoplay); return Task.CompletedTask; }));
         playerRadio.Children.Add(ActionButton("Relacionadas", () => { ClosePlayer(); _relatedTab = true; _page = "queue"; _queueOpen = true; Refresh(); return Task.CompletedTask; }));
+        playerRadio.Children.Add(_detailRadioRetry = CreateRadioRetryButton());
         Put(queuePanel, playerRadio, 1, 0);
-        var queueItems = new ItemsControl { ItemsSource = _music.Queue,
+        _detailQueueFingerprint = null;
+        var queueItems = _detailQueue = new ItemsControl { ItemsSource = _music.Upcoming.ToArray(),
             ItemsPanel = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel()),
             ItemTemplate = new FuncDataTemplate<Track>((item, _) => item is null ? new Border() : TrackRow(item)) };
         Put(queuePanel, UiTheme.FadingScroll(queueItems), 2, 0);
@@ -796,6 +797,7 @@ public sealed partial class MainView : UserControl
         if (_playerPage is not null) _root.Children.Remove(_playerPage);
         _playerPage = null; _showingPlayer = false; _listFingerprint = null; _main.IsVisible = true; _bottom.IsVisible = Bounds.Width < UiTheme.DesktopWidth;
         _detailShuffle = _detailRepeat = _detailFavorite = null; _detailVolume = null;
+        _detailQueue = null; _detailNext = _detailQueueHeading = null; _detailRadioToggle = _detailRadioRetry = null;
         _detailTrack = null; _detailSeek = null; _detailPlay = null; _detailTime = null; _detailDuration = null; _seeking = false; Refresh(); Animate(_main);
     }
     private bool HandleBack()
@@ -815,9 +817,28 @@ public sealed partial class MainView : UserControl
         control.Transitions = new Transitions { new DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(180), Easing = new Avalonia.Animation.Easings.CubicEaseOut() } };
         Dispatcher.UIThread.Post(() => control.Opacity = 1, DispatcherPriority.Render);
     }
+    private ItemsControl? _detailQueue;
+    private TextBlock? _detailNext, _detailQueueHeading;
+    private Button? _detailRadioToggle, _detailRadioRetry;
+    private string? _detailQueueFingerprint;
+    private void RefreshPlayerQueue()
+    {
+        if (_detailQueue is null) return;
+        var upcoming = _music.Upcoming.ToArray();
+        var fingerprint = string.Join("|", upcoming.Select(t => t.Source + ":" + _music.IsRecommended(t)));
+        if (_detailQueueFingerprint != fingerprint)
+        { _detailQueueFingerprint = fingerprint; _detailQueue.ItemsSource = upcoming; }
+        var next = upcoming.FirstOrDefault();
+        _detailNext!.Text = next is null ? "Nenhuma faixa na sequência" : TrackTextFormatter.Title(next.Title, next.Artist);
+        _detailQueueHeading!.Text = _music.PlaybackContext;
+        _detailRadioToggle!.Content = "Reprodução automática: " + (_music.Autoplay ? "ligada" : "desligada");
+        _detailRadioRetry!.Content = _music.RadioLoading ? "Buscando sugestões…" : "Buscar sugestões novamente";
+        _detailRadioRetry.IsEnabled = _music.Current is not null && !_music.RadioLoading && !_music.LoadingAudio;
+    }
     private void RefreshPlayback()
     {
         RefreshPlaybackActions();
+        RefreshPlayerQueue();
         UpdateRows(_music.Pending ?? _music.Current);
         RefreshPlayButton(_play);
         if (_detailPlay is not null) RefreshPlayButton(_detailPlay);

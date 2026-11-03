@@ -143,6 +143,59 @@ public sealed partial class MainView
         }));
         ShowSheet(playlist.Name + " · Local", new ScrollViewer { Content = panel, MaxHeight = Math.Max(220, Bounds.Height * .65) });
     }
+    private CheckBox CreateRadioToggle()
+    {
+        var toggle = new CheckBox { Content = "Reprodução automática", IsChecked = _music.Autoplay, MinHeight = 48 };
+        toggle.IsCheckedChanged += (_, _) => { CloseSheet(); _music.SetAutoplay(toggle.IsChecked == true); };
+        return toggle;
+    }
+    private WrapPanel CreateRadioTabs()
+    {
+        var tabs = new WrapPanel { ItemSpacing = 8 };
+        foreach (var related in new[] { false, true })
+        {
+            var button = ActionButton(related ? "Relacionadas" : "Fila", () =>
+            { CloseSheet(); _relatedTab = related; _queueFingerprint = null; Refresh(); return Task.CompletedTask; });
+            if (_relatedTab == related) button.Classes.Add("primary");
+            tabs.Children.Add(button);
+        }
+        return tabs;
+    }
+    private WrapPanel CreateRadioModes()
+    {
+        var modes = new WrapPanel { ItemSpacing = 6 };
+        foreach (var mode in new[] { "Tudo", "Familiar", "Descobrir" })
+        {
+            var button = ActionButton(mode, () => { CloseSheet(); _music.SetDiscovery(mode); return Task.CompletedTask; });
+            if (_music.DiscoveryMode == mode) button.Classes.Add("primary");
+            modes.Children.Add(button);
+        }
+        return modes;
+    }
+    private Button CreateRadioRetryButton()
+    {
+        var button = ActionButton(_music.RadioLoading ? "Buscando sugestões…" : "Buscar sugestões novamente", async () =>
+        { CloseSheet(); await _music.RetryRadioAsync(); });
+        button.IsEnabled = _music.Current is not null && !_music.RadioLoading && !_music.LoadingAudio;
+        return button;
+    }
+    private void ShowRadioOptions()
+    {
+        // Every opening owns fresh controls; reusing sheet children breaks reopening on mobile.
+        var options = new StackPanel { Spacing = 8 };
+        options.Children.Add(CreateRadioToggle()); options.Children.Add(CreateRadioTabs()); options.Children.Add(CreateRadioModes());
+        var state = Text("", UiTheme.Caption, Muted); state.TextWrapping = TextWrapping.Wrap;
+        var retry = CreateRadioRetryButton(); options.Children.Add(state); options.Children.Add(retry);
+        void UpdateState()
+        {
+            state.Text = _music.RadioStatus;
+            retry.Content = _music.RadioLoading ? "Buscando sugestões…" : "Buscar sugestões novamente";
+            retry.IsEnabled = _music.Current is not null && !_music.RadioLoading && !_music.LoadingAudio;
+        }
+        options.AttachedToVisualTree += (_, _) => { _music.Changed += UpdateState; UpdateState(); };
+        options.DetachedFromVisualTree += (_, _) => _music.Changed -= UpdateState;
+        UpdateState(); ShowSheet("Rádio", options);
+    }
     private void RefreshDiscovery()
     {
         var pinsKey = string.Join("|", _music.Playlists.Where(p => p.Pinned).Select(p => p.Name));
@@ -152,34 +205,22 @@ public sealed partial class MainView
             foreach (var playlist in _music.Playlists.Where(p => p.Pinned))
                 _sidebarPins.Children.Add(ActionButton(playlist.Name, () => { ShowLocalPlaylist(playlist); return Task.CompletedTask; }));
         }
-        var key = _music.Autoplay + ":" + _music.RadioLoading + ":" + _music.RadioStatus + ":" + _music.DiscoveryMode + ":" + _music.PlaybackContext + ":" + _relatedTab + ":" + (Bounds.Width < UiTheme.DesktopWidth);
+        var key = _music.Autoplay + ":" + _music.RadioLoading + ":" + _music.LoadingAudio + ":" + _music.Current?.Source + ":" + _music.RadioStatus + ":" + _music.DiscoveryMode + ":" + _music.PlaybackContext + ":" + _relatedTab + ":" + (Bounds.Width < UiTheme.DesktopWidth);
         if (_radioControlsKey != key)
         {
             _radioControlsKey = key; _radioControls.Children.Clear();
-            var toggle = new CheckBox { Content = "Reprodução automática", IsChecked = _music.Autoplay, MinHeight = 48 };
-            toggle.IsCheckedChanged += (_, _) => _music.SetAutoplay(toggle.IsChecked == true); _radioControls.Children.Add(toggle);
-            var tabs = new WrapPanel { ItemSpacing = 8 };
-            foreach (var related in new[] { false, true })
-                tabs.Children.Add(ActionButton(related ? "Relacionadas" : "Fila", () => { _relatedTab = related; _queueFingerprint = null; Refresh(); return Task.CompletedTask; }));
-            var compact = Bounds.Width < UiTheme.DesktopWidth;
-            if (!compact) _radioControls.Children.Add(tabs);
-            var modes = new WrapPanel { ItemSpacing = 6 };
-            foreach (var mode in new[] { "Tudo", "Familiar", "Descobrir" })
-            { var button = ActionButton(mode, () => { _music.SetDiscovery(mode); return Task.CompletedTask; }); if (_music.DiscoveryMode == mode) button.Classes.Add("primary"); modes.Children.Add(button); }
-            if (!compact) _radioControls.Children.Add(modes);
-            else _radioControls.Children.Add(ActionButton("Opções do rádio · " + _music.DiscoveryMode, () =>
-            { var options = new StackPanel { Spacing = 8 }; options.Children.Add(tabs); options.Children.Add(modes); options.Children.Add(ActionButton("Buscar sugestões novamente", _music.RetryRadioAsync)); ShowSheet("Rádio", options); return Task.CompletedTask; }));
-            var state = Text(_music.RadioLoading ? "Buscando sugestões…" : _music.RadioStatus, UiTheme.Caption, Muted); state.TextWrapping = TextWrapping.Wrap; _radioControls.Children.Add(state);
-            if (_music.RadioLoading) _radioControls.Children.Add(LoadingRing(22, UiTheme.Primary));
-            else if (!compact) _radioControls.Children.Add(ActionButton("Buscar sugestões novamente", _music.RetryRadioAsync));
-            if (compact)
+            if (Bounds.Width < UiTheme.DesktopWidth)
+                _radioControls.Children.Add(ActionButton(_music.RadioLoading ? "Buscando sugestões…" : "Rádio · " + (_music.Autoplay ? "Ligado" : "Desligado") + " · " + _music.DiscoveryMode,
+                    () => { ShowRadioOptions(); return Task.CompletedTask; }));
+            else
             {
-                _radioControls.Children.Clear();
-                _radioControls.Children.Add(ActionButton(_music.RadioLoading ? "Buscando sugestões…" : "Rádio · " + (_music.Autoplay ? "Ligado" : "Desligado") + " · " + _music.DiscoveryMode, () =>
-                {
-                    var options = new StackPanel { Spacing = 8 }; options.Children.Add(toggle); options.Children.Add(tabs); options.Children.Add(modes); options.Children.Add(state);
-                    options.Children.Add(ActionButton("Buscar sugestões novamente", _music.RetryRadioAsync)); ShowSheet("Rádio", options); return Task.CompletedTask;
-                }));
+                _radioControls.Children.Add(CreateRadioToggle());
+                _radioControls.Children.Add(CreateRadioTabs());
+                _radioControls.Children.Add(CreateRadioModes());
+                var state = Text(_music.RadioStatus, UiTheme.Caption, Muted); state.TextWrapping = TextWrapping.Wrap;
+                _radioControls.Children.Add(state);
+                if (_music.RadioLoading) _radioControls.Children.Add(LoadingRing(22, UiTheme.Primary));
+                _radioControls.Children.Add(CreateRadioRetryButton());
             }
         }
         _libraryGroups.IsVisible = _page == "library" && _librarySection != "Músicas";

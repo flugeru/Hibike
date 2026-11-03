@@ -4,28 +4,50 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Avalonia.Headless;
 using Hibike.App;
 using Hibike.App.Views;
 using Hibike.Core.Models;
 using Hibike.Core.Services;
 
 // Native Windows check. No network, real audio, or changes to the user's library.
-internal static class Program
+internal static partial class Program
 {
     [STAThread]
-    public static int Main()
+    public static int Main(string[] args)
     {
         var directory = Path.Combine(Path.GetTempPath(), "hibike-ui-check-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
+        if (args.Contains("--queue-only"))
+        {
+            // Keep onboarding and home discovery offline before the view is attached.
+            File.WriteAllText(Path.Combine(directory, "personalization.json"), "{\"OnboardingCompleted\":true}");
+            File.WriteAllText(Path.Combine(directory, "discovery-cache.json"), System.Text.Json.JsonSerializer.Serialize(new
+            {
+                SavedUtc = DateTime.UtcNow, Region = "BR", Recommendations = Array.Empty<Track>(),
+                Related = Array.Empty<Track>(), Seed = "", Regional = (MusicChart?)null, Global = (MusicChart?)null
+            }));
+        }
         AppServices.Configure(new Catalog(), new Player(), directory);
         var result = 1;
-        var builder = AppBuilder.Configure<Hibike.App.App>().UsePlatformDetect().WithInterFont();
+        var builder = AppBuilder.Configure<Hibike.App.App>().WithInterFont();
+        if (args.Contains("--headless"))
+            builder.UseSkia().UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
+        else builder.UsePlatformDetect();
         builder.AfterSetup(_ => Dispatcher.UIThread.Post(async () =>
         {
             var lifetime = (IClassicDesktopStyleApplicationLifetime)Application.Current!.ApplicationLifetime!;
             try
             {
                 var window = lifetime.MainWindow!; var view = (MainView)window.Content!;
+                if (args.Contains("--queue-only"))
+                {
+                    await RunQueueRegressionChecksAsync(directory, view, window);
+                    result = 0;
+                    Console.WriteLine("Queue and radio regression checks passed.");
+                    File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "ui-check-result.txt"), "PASS: queue/radio recovery, concurrent requests, manual queue edits, session restore and desktop/mobile controls.");
+                    return;
+                }
                 await Task.Delay(300);
                 var welcomeField = typeof(MainView).GetField("_onboarding", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
                 Check(welcomeField.GetValue(view) is Border, "First-run music onboarding missing");
