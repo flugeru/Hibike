@@ -8,9 +8,6 @@ namespace Hibike.Core.Services;
 public sealed record MusicArtist(string Id, string Name, string? Image);
 public sealed record MusicChart(string Region, string Title, DateTime RetrievedUtc, IReadOnlyList<Track> Tracks, string? PlaylistId = null);
 
-public enum CatalogKind { Artist, Album, Playlist }
-public sealed record CatalogEntry(string Id, string Title, string? Image, CatalogKind Kind);
-
 public static class MusicDiscovery
 {
     private static readonly HttpClient Client = new() { Timeout = TimeSpan.FromSeconds(15), MaxResponseContentBufferSize = 8_000_000 };
@@ -56,56 +53,6 @@ public static class MusicDiscovery
         if (string.IsNullOrWhiteSpace(query) || query.Length > 200) return [];
         return ParseArtists(await RequestAsync("search", new { query = query.Trim(), @params = "EgWKAQIgAQ==" }, token));
     }
-    public static async Task<IReadOnlyList<CatalogEntry>> SearchCatalogAsync(string query, CatalogKind kind, CancellationToken token)
-    {
-        if (string.IsNullOrWhiteSpace(query) || query.Length > 200) return [];
-        if (kind == CatalogKind.Artist)
-            return (await SearchArtistsAsync(query, token)).Select(a => new CatalogEntry(a.Id, a.Name, a.Image, kind)).ToArray();
-        var filter = kind == CatalogKind.Album ? "EgWKAQIYAQ==" : "EgWKAQIoAQ==";
-        using var doc = JsonDocument.Parse(await RequestAsync("search", new { query = query.Trim(), @params = filter }, token));
-        return Nodes(doc.RootElement, "musicResponsiveListItemRenderer").Select(item =>
-        {
-            var ids = Nodes(item, "browseId").Where(id => id.ValueKind == JsonValueKind.String).Select(id => id.GetString()!);
-            var id = ids.FirstOrDefault(id => kind == CatalogKind.Album ? IsAlbumId(id) : Regex.IsMatch(id, @"^VL[\w-]{8,100}$"));
-            var title = Nodes(item, "musicResponsiveListItemFlexColumnRenderer").Select(Text).FirstOrDefault();
-            var image = Nodes(item, "url").Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString()).LastOrDefault(url => url?.StartsWith("https://", StringComparison.Ordinal) == true);
-            return id is not null && !string.IsNullOrWhiteSpace(title) ? new CatalogEntry(id, title, image, kind) : null;
-        }).OfType<CatalogEntry>().DistinctBy(item => item.Id).Take(30).ToArray();
-    }
-
-    private static bool IsAlbumId(string id) => Regex.IsMatch(id, @"^MPRE[\w-]{5,100}$");
-
-    public static async Task<IReadOnlyList<Track>> BrowseTracksAsync(CatalogEntry entry, CancellationToken token)
-    {
-        var valid = entry.Kind switch
-        {
-            CatalogKind.Artist => Regex.IsMatch(entry.Id, @"^UC[\w-]{22}$"),
-            CatalogKind.Album => IsAlbumId(entry.Id),
-            _ => Regex.IsMatch(entry.Id, @"^VL[\w-]{8,100}$")
-        };
-        if (!valid) return [];
-        using var doc = JsonDocument.Parse(await RequestAsync("browse", new { browseId = entry.Id }, token));
-        var tracks = new List<Track>();
-        foreach (var item in Nodes(doc.RootElement, "musicResponsiveListItemRenderer"))
-        {
-            var columns = Nodes(item, "musicResponsiveListItemFlexColumnRenderer").ToArray();
-            var id = Nodes(item, "videoId").Where(n => n.ValueKind == JsonValueKind.String)
-                .Select(n => n.GetString()!).FirstOrDefault(value => Regex.IsMatch(value, @"^[\w-]{11}$"));
-            if (id is null || columns.Length == 0) continue;
-            var title = Text(columns[0]);
-            if (string.IsNullOrWhiteSpace(title)) continue;
-            var artist = columns.Length > 1 ? Text(columns[1]) : "";
-            if (string.IsNullOrWhiteSpace(artist) && entry.Kind == CatalogKind.Artist) artist = entry.Title;
-            var browseIds = Nodes(item, "browseId").Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString()!).ToArray();
-            var artistId = entry.Kind == CatalogKind.Artist ? entry.Id : browseIds.FirstOrDefault(value => Regex.IsMatch(value, @"^UC[\w-]{22}$"));
-            var albumId = entry.Kind == CatalogKind.Album ? entry.Id : browseIds.FirstOrDefault(IsAlbumId);
-            var image = Nodes(item, "url").Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString()).LastOrDefault(url => url?.StartsWith("https://", StringComparison.Ordinal) == true);
-            tracks.Add(new(id, title, artist, "https://www.youtube.com/watch?v=" + id, Thumbnail: image ?? entry.Image,
-                Album: entry.Kind == CatalogKind.Album ? entry.Title : null, ArtistId: artistId, AlbumId: albumId));
-        }
-        return tracks.DistinctBy(t => t.Id).Take(100).ToArray();
-    }
-
     public static async Task<MusicChart?> ChartAsync(string region, CancellationToken token, bool trending = false)
     {
         if (!Regex.IsMatch(region, "^[A-Z]{2}$")) throw new ArgumentException("Região inválida.");

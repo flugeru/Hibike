@@ -23,7 +23,6 @@ public sealed partial class MusicController
     private Personalization PersonalSnapshot() => new()
     {
         Autoplay = _personal.Autoplay, Discovery = _personal.Discovery,
-        Downloads = new(_personal.Downloads), NormalizeAudio = _personal.NormalizeAudio, Equalizer = _personal.Equalizer,
         OnboardingCompleted = _personal.OnboardingCompleted, Region = _personal.Region, Weights = _personal.Weights,
         Pins = [.. _personal.Pins], Artists = [.. _personal.Artists], Genres = [.. _personal.Genres],
         Dismissed = new(_personal.Dismissed),

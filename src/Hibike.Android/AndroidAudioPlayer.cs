@@ -5,11 +5,9 @@ using Hibike.Core.Services;
 
 namespace Hibike.Android;
 
-public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPreparation, IBackgroundSleepTimer
+public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPreparation
 {
     private PlaybackService? _service;
-    private DateTime? _deadline;
-    public void SetDeadline(DateTime? utc) { _deadline = utc; Main(() => PlaybackService.Instance?.SetSleepDeadline(utc)); }
     private double _volume = 0.8;
     public event EventHandler? Ended;
     public event EventHandler<string>? Failed;
@@ -37,7 +35,7 @@ public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPr
         try
         {
             var artwork = await NotificationArtwork.LoadAsync(source.Artwork, cancellationToken);
-            await MainAsync(() => { service.SetSleepDeadline(_deadline); service.Open(source, _volume, artwork); }).WaitAsync(cancellationToken);
+            await MainAsync(() => service.Open(source, _volume, artwork)).WaitAsync(cancellationToken);
             while (service.State != 3 || !service.Playing)
             {
                 if (service.Error is { } error) throw new IOException(error);

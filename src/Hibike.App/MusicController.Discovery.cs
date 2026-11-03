@@ -51,6 +51,7 @@ public sealed partial class MusicController
             History.ToArray(), Favorites.ToArray(), _personal.Dismissed, Affinity, _personal.Weights);
     }
     public Task<IReadOnlyList<MusicArtist>> SearchArtistsAsync(string query, CancellationToken token) => MusicDiscovery.SearchArtistsAsync(query, token);
+    public Task<IReadOnlyList<Track>> SearchArtistTracksAsync(MusicArtist artist, CancellationToken token) => _catalog.SearchAsync(artist.Name, token);
     public async Task RefreshRecommendationsAsync(bool force = false)
     {
         if (HomeLoading) return;

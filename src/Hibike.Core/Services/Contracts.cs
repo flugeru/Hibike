@@ -8,8 +8,6 @@ public interface ICommandRunner
 public interface IMusicCatalog
 {
     Task<IReadOnlyList<Track>> RadioAsync(Track seed, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<Track>>([]);
-    async Task<RadioPage> RadioPageAsync(Track seed, string? continuation, CancellationToken token) =>
-        new(continuation is null ? await RadioAsync(seed, token) : [], null);
     Task<IReadOnlyList<Track>> SearchAsync(string query, CancellationToken cancellationToken);
     Task<AudioSource> ResolveAsync(Track track, CancellationToken cancellationToken);
 }
@@ -32,9 +30,4 @@ public interface IAudioPreparation
 {
     Task BeginPreparationAsync(Track track, CancellationToken cancellationToken);
     void CancelPreparation();
-}
-
-public interface IBackgroundSleepTimer
-{
-    void SetDeadline(DateTime? utc);
 }

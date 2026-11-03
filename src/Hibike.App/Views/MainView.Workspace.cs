@@ -109,7 +109,7 @@ public sealed partial class MainView
 
     private void ResizeWorkspace()
     {
-        var desktop = Bounds.Width >= 1100;
+        var desktop = !_mobileCollections && Bounds.Width >= 1100;
         var mobile = Bounds.Width < UiTheme.DesktopWidth;
         _queuePane.Padding = mobile ? UiTheme.Zero : new Thickness(20);
         ((Control)_queueTitle.Parent!).IsVisible = !mobile;
@@ -136,10 +136,10 @@ public sealed partial class MainView
         {
             _root.ColumnDefinitions[2].Width = new GridLength(0);
         }
-        _queuePane.IsVisible = !_showingPlayer && (desktop ? _queueOpen || _page == "queue" : _page == "queue");
+        _queuePane.IsVisible = !_mobileCollections && !_showingPlayer && (desktop ? _queueOpen || _page == "queue" : _page == "queue");
         var display = _music.Pending ?? _music.Current;
-        _desktopDock.IsVisible = display is not null && !_showingPlayer && Bounds.Width >= 1000;
-        _mini.IsVisible = display is not null && !_showingPlayer && !_desktopDock.IsVisible;
+        _desktopDock.IsVisible = display is not null && !_showingPlayer && Bounds.Width >= 1000 && !(_mobileCollections && _page == "queue");
+        _mini.IsVisible = display is not null && !_showingPlayer && !_desktopDock.IsVisible && !(_mobileCollections && _page == "queue");
         if (_showingPlayer) _queuePane.IsVisible = false;
         if (_overlay is not null) Grid.SetColumnSpan(_overlay, 3);
     }
@@ -157,6 +157,7 @@ public sealed partial class MainView
             content.Children[1].IsVisible = !queue && !collection;
             content.RowSpacing = queue || collection || _page == "home" ? 4 : Bounds.Width < UiTheme.DesktopWidth ? 8 : 12;
         }
+        if (_mobileCollections && queue) return;
         _pageTitle.Text = collection ? "Coleção" : queue ? "Sua fila" : _pageTitle.Text;
         var fingerprint = string.Join("|", _music.Queue.Select(t => t.Id + ":" + t.Source + _music.IsRecommended(t))) + ":" + _music.Current?.Source + ":" + (Bounds.Width < UiTheme.DesktopWidth) + ":" + _relatedTab;
         if (_queueFingerprint != fingerprint)

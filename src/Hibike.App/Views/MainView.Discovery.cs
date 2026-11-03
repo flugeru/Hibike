@@ -86,29 +86,18 @@ public sealed partial class MainView
         actions.Children.Add(ActionButton("Não tenho interesse", () => { _music.DismissRecommendation(track); CloseSheet(); return Task.CompletedTask; }));
         actions.Children.Add(ActionButton("Tocar a seguir", () => { _music.PlayNext(track); CloseSheet(); return Task.CompletedTask; }));
         actions.Children.Add(ActionButton("Adicionar à fila", () => { _music.Enqueue(track); CloseSheet(); return Task.CompletedTask; }));
-        if (!track.IsLocal && OperatingSystem.IsAndroid())
-            actions.Children.Add(_music.GetOfflineFile(track) is not null
-                ? ActionButton("Gerenciar download", () => { ShowDownloads(); return Task.CompletedTask; })
-                : ActionButton("Baixar para ouvir offline", () => DownloadOfflineAsync(track)));
         if (!track.IsLocal) actions.Children.Add(ActionButton("Criar rádio desta música", async () => { CloseSheet(); await _music.StartRadioAsync(track); }));
         actions.Children.Add(ActionButton(_music.IsFavorite(track) ? "Remover dos favoritos" : "Salvar nos favoritos", async () => { await _music.ToggleFavoriteAsync(track); CloseSheet(); }));
         actions.Children.Add(ActionButton(_music.Pins.Any(t => t.Source == track.Source) ? "Desafixar de Ouvir de novo" : "Fixar em Ouvir de novo", () => { _music.TogglePin(track); CloseSheet(); return Task.CompletedTask; }));
         actions.Children.Add(ActionButton("Salvar na playlist local", () => { ShowPlaylistPicker(track); return Task.CompletedTask; }));
-        actions.Children.Add(ActionButton("Abrir artista", async () =>
-        {
-            CloseSheet();
-            if (track.ArtistId is { } artistId) await ShowCatalogEntryAsync(new(artistId, track.Artist, null, CatalogKind.Artist));
-            else if (OperatingSystem.IsAndroid()) await ShowCatalogSearchAsync(CatalogKind.Artist, track.Artist);
-            else { _search.Text = track.Artist; _searchScope = "Online"; await SearchAsync(); }
-        }));
-        if (!string.IsNullOrWhiteSpace(track.Album))
-            actions.Children.Add(ActionButton("Abrir álbum", async () =>
+        if (_mobileCollections && _page == "library" && _mobileLibraryGroup?.Playlist is { } playlist && playlist.Tracks.Contains(track))
+            actions.Children.Add(ActionButton("Remover desta playlist", () =>
             {
-                CloseSheet();
-                if (track.AlbumId is { } albumId) await ShowCatalogEntryAsync(new(albumId, track.Album, track.Thumbnail, CatalogKind.Album));
-                else if (!track.IsLocal && OperatingSystem.IsAndroid()) await ShowCatalogSearchAsync(CatalogKind.Album, track.Album + " " + track.Artist);
-                else OpenLocalCollection(track.Album, _music.Favorites.Concat(_music.History).Where(t => t.Album == track.Album && t.Artist == track.Artist));
+                _music.RemoveFromPlaylist(playlist, track);
+                return Task.CompletedTask;
             }));
+        actions.Children.Add(ActionButton("Buscar artista", async () => { CloseSheet(); _search.Text = track.Artist; _searchScope = "Online"; await SearchAsync(); }));
+        if (!string.IsNullOrWhiteSpace(track.Album)) actions.Children.Add(ActionButton("Abrir álbum", () => { CloseSheet(); OpenLocalCollection(track.Album, _music.Favorites.Concat(_music.History).Where(t => t.Album == track.Album && t.Artist == track.Artist)); return Task.CompletedTask; }));
         if (!track.IsLocal && Uri.TryCreate(track.Source, UriKind.Absolute, out var uri) && uri.Scheme == "https")
             actions.Children.Add(ActionButton("Compartilhar: copiar link", async () => { var clipboard = TopLevel.GetTopLevel(this)?.Clipboard; if (clipboard is null) throw new InvalidOperationException("Área de transferência indisponível."); await clipboard.SetTextAsync(track.Source); CloseSheet(); }));
         if (_music.Queue.Contains(track))
@@ -145,7 +134,6 @@ public sealed partial class MainView
         var panel = new StackPanel { Spacing = 8 };
         panel.Children.Add(ActionButton("Tocar tudo", async () => { CloseSheet(); await PlayCollectionAsync(playlist.Tracks); _music.SelectionContext = "Playlist " + playlist.Name; _music.SetStatus("Playlist iniciada."); }));
         panel.Children.Add(ActionButton(playlist.Pinned ? "Desafixar da sidebar" : "Fixar na sidebar", () => { _music.PinPlaylist(playlist); ShowLocalPlaylist(playlist); return Task.CompletedTask; }));
-        if (OperatingSystem.IsAndroid()) panel.Children.Add(ActionButton("Exportar M3U8 (faixas online)", () => ExportPlaylistAsync(playlist)));
         var name = UiTheme.Field("Nome"); name.Text = playlist.Name; panel.Children.Add(name);
         panel.Children.Add(ActionButton("Renomear", () => { _music.RenamePlaylist(playlist, name.Text ?? ""); ShowLocalPlaylist(playlist); return Task.CompletedTask; }));
         foreach (var track in playlist.Tracks)
@@ -241,7 +229,7 @@ public sealed partial class MainView
                 _radioControls.Children.Add(CreateRadioRetryButton());
             }
         }
-        _libraryGroups.IsVisible = _page == "library" && _librarySection != "Músicas";
+        _libraryGroups.IsVisible = !_mobileCollections && _page == "library" && _librarySection != "Músicas";
         _libraryGroupScroll.IsVisible = _libraryGroups.IsVisible;
         if (!_libraryGroups.IsVisible) return;
         _trackScroll.IsVisible = _listHeading.IsVisible = _emptyState.IsVisible = false;

@@ -46,10 +46,6 @@ public static class LocalTrackMetadata
                         if (tag[..split].Equals("ARTIST", StringComparison.OrdinalIgnoreCase)) result = result with { Artist = value };
                         if (tag[..split].Equals("ALBUM", StringComparison.OrdinalIgnoreCase)) result = result with { Album = value };
                         if (tag[..split].Equals("TRACKNUMBER", StringComparison.OrdinalIgnoreCase)) result = result with { TrackNumber = value };
-                        if (tag[..split].Equals("REPLAYGAIN_TRACK_GAIN", StringComparison.OrdinalIgnoreCase)
-                            && double.TryParse(value.Split(' ')[0], System.Globalization.NumberStyles.Float,
-                                System.Globalization.CultureInfo.InvariantCulture, out var gain) && double.IsFinite(gain))
-                            result = result with { ReplayGainDb = gain };
                         if (tag[..split].Equals("DATE", StringComparison.OrdinalIgnoreCase)) result = result with { Date = value };
                     }
                 }

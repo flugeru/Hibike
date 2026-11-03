@@ -69,9 +69,6 @@ public sealed partial class MusicController
         public Dictionary<string, ListeningStat> Listening { get; set; } = [];
         public List<Track> Pins { get; set; } = [];
         public List<LocalPlaylist> Playlists { get; set; } = [];
-        public Dictionary<string, OfflineTrack> Downloads { get; set; } = [];
-        public EqualizerPreset Equalizer { get; set; }
-        public bool NormalizeAudio { get; set; }
         public bool Autoplay { get; set; } = true;
         public string Discovery { get; set; } = "Tudo";
         public bool OnboardingCompleted { get; set; }
@@ -105,24 +102,19 @@ public sealed partial class MusicController
             var path = Path.Combine(DataDirectory, "personalization.json");
             if (!File.Exists(path)) return;
             var data = JsonSerializer.Deserialize<Personalization>(File.ReadAllText(path));
-            if (data is null) return;
-            ValidatePersonalization(data);
+            if (data is null || data.Listening is null || data.Pins is null || data.Playlists is null
+                || data.Artists is null || data.Genres is null || data.Dismissed is null || data.Weights is null
+                || data.Artists.Count > 20 || data.Artists.Any(a => a is null || string.IsNullOrWhiteSpace(a.Name) || !System.Text.RegularExpressions.Regex.IsMatch(a.Id ?? "", "^UC[\\w-]{22}$"))
+                || data.Genres.Any(g => string.IsNullOrWhiteSpace(g) || g.Length > 60)
+                || !System.Text.RegularExpressions.Regex.IsMatch(data.Region ?? "", "^[A-Z]{2}$")
+                || data.Pins.Any(t => t is null || string.IsNullOrWhiteSpace(t.Source))
+                || data.Playlists.Any(p => p is null || string.IsNullOrWhiteSpace(p.Name) || p.Tracks is null || p.Tracks.Any(t => t is null || string.IsNullOrWhiteSpace(t.Source)))
+                || data.Listening.Any(p => p.Value is null || !double.IsFinite(p.Value.Seconds) || p.Value.Seconds < 0))
+                throw new InvalidDataException("Dados de personalização inválidos.");
             _personal = data;
         }
         catch (Exception error) when (error is IOException or JsonException or UnauthorizedAccessException)
         { PlaybackDiagnostics.Write("Personalização", "Não foi possível carregar dados locais: " + error.Message); }
-    }
-    private static void ValidatePersonalization(Personalization data)
-    {
-        if (data.Listening is null || data.Pins is null || data.Playlists is null
-            || !Enum.IsDefined(data.Equalizer) || data.Downloads is null || data.Artists is null || data.Genres is null || data.Dismissed is null || data.Weights is null
-            || data.Artists.Count > 20 || data.Artists.Any(a => a is null || string.IsNullOrWhiteSpace(a.Name) || !System.Text.RegularExpressions.Regex.IsMatch(a.Id ?? "", "^UC[\\w-]{22}$"))
-            || data.Genres.Any(g => string.IsNullOrWhiteSpace(g) || g.Length > 60)
-            || !System.Text.RegularExpressions.Regex.IsMatch(data.Region ?? "", "^[A-Z]{2}$")
-            || data.Pins.Any(t => t is null || string.IsNullOrWhiteSpace(t.Source))
-            || data.Playlists.Any(p => p is null || string.IsNullOrWhiteSpace(p.Name) || p.Tracks is null || p.Tracks.Any(t => t is null || string.IsNullOrWhiteSpace(t.Source)))
-            || data.Listening.Any(p => p.Value is null || !double.IsFinite(p.Value.Seconds) || p.Value.Seconds < 0))
-            throw new InvalidDataException("Dados de personalização inválidos.");
     }
     private void SavePersonalization() => QueueStateSave();
     private void PersistPersonalization()
@@ -203,12 +195,12 @@ public sealed partial class MusicController
         if (existing is null) _personal.Pins.Add(track); else _personal.Pins.Remove(existing);
         PersistPersonalization();
     }
-    public void CreatePlaylist(string name, IEnumerable<Track>? tracks = null)
+    public void CreatePlaylist(string name)
     {
         name = name.Trim();
         if (name.Length is < 1 or > 100 || _personal.Playlists.Any(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
             throw new ArgumentException("Nome vazio, longo demais ou já utilizado.");
-        _personal.Playlists.Add(new() { Name = name, Tracks = tracks?.DistinctBy(t => t.Source).ToList() ?? [] }); PersistPersonalization();
+        _personal.Playlists.Add(new() { Name = name }); PersistPersonalization();
     }
     public void RenamePlaylist(LocalPlaylist playlist, string name)
     {
