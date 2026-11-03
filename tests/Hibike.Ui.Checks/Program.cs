@@ -57,8 +57,9 @@ internal static partial class Program
                 if (args.Contains("--queue-only"))
                 {
                     await RunQueueRegressionChecksAsync(directory, view, window);
+                    await CheckHomeInertiaAsync(view);
                     result = 0;
-                    Console.WriteLine("Queue and radio regression checks passed.");
+                    Console.WriteLine("Queue, radio and home inertia regression checks passed.");
                     File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "ui-check-result.txt"), "PASS: queue/radio recovery, concurrent requests, manual queue edits, session restore and desktop/mobile controls.");
                     return;
                 }

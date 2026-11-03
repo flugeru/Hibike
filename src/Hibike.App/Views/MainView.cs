@@ -166,7 +166,11 @@ public sealed partial class MainView : UserControl
             RefreshWorkspace();
             // Title and two 48dp actions fit at 360dp; no artificial second toolbar row.
         };
-        if (OperatingSystem.IsAndroid()) ObserveScrollGestures();
+        if (OperatingSystem.IsAndroid())
+        {
+            ObserveScrollGestures();
+            if (AppServices.RequestDisplayFrame is { } requestFrame) SynchronizeHomeInertia(requestFrame);
+        }
         AppServices.BackHandler = HandleBack; AppServices.OpenPlayerView = ShowPlayer;
         KeyDown += (_, e) =>
         {

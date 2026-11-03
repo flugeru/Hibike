@@ -5,6 +5,7 @@ public static class AppServices
     public static Func<Task<YouTubeAccountLibrary>>? ConnectYouTubeAccount { get; set; }
     private static IMusicCatalog? _catalog;
     public static Action? OpenPlayerView { get; set; }
+    public static Action<Action<long>>? RequestDisplayFrame { get; set; }
     public static void InvalidateCatalog() => (_catalog as CachedMusicCatalog)?.Clear();
     public static Func<bool>? BackHandler { get; set; }
     private static string? _directory;

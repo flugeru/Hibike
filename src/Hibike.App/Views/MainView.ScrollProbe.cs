@@ -90,6 +90,12 @@ public sealed partial class MainView
 
         public void End(int id) => _active.Remove(id);
 
+        public void Replace(int id)
+        {
+            if (_active.Remove(id, out var fling) && fling.Intervals.Count == 0)
+                _flings.Remove(fling);
+        }
+
         public void ScrollChanged(ScrollChangedEventArgs e)
         {
             foreach (var fling in _active.Values)

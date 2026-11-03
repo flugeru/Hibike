@@ -15,6 +15,7 @@ public sealed class Application(nint handle, JniHandleOwnership ownership)
         var context = global::Android.App.Application.Context;
         AppServices.Configure(new YtDlpCatalog(new AndroidCommandRunner(context), context.FilesDir!.AbsolutePath),
             new AndroidAudioPlayer(context), context.FilesDir!.AbsolutePath);
+        AppServices.RequestDisplayFrame = new AndroidDisplayFrames().Post;
         return base.CustomizeAppBuilder(builder).WithInterFont();
     }
 }
