@@ -14,7 +14,7 @@ public sealed partial class MainView
     private Button _mobileQueueBack = null!, _mobileQueueRetry = null!, _mobileQueuePlay = null!, _mobileQueueShuffle = null!;
     private ContentControl _mobileQueueCover = null!, _mobileQueueEmpty = null!;
     private TextBlock _mobileQueueTitle = null!, _mobileQueueArtist = null!, _mobileQueueRadioStatus = null!, _mobileQueueSummary = null!;
-    private TextBlock _mobileQueueHeader = null!, _mobileQueueError = null!;
+    private TextBlock _mobileQueueHeader = null!, _mobileQueueError = null!, _mobileQueueSection = null!;
     private Grid _mobileQueueRadio = null!;
     private ItemsControl _mobileQueueItems = null!;
     private ScrollViewer _mobileQueueScroll = null!;
@@ -78,7 +78,8 @@ public sealed partial class MainView
 
         var upcoming = new Grid { RowDefinitions = new("Auto,1"), ColumnDefinitions = new("*,Auto"), Margin = new Thickness(0, 4, 0, 0) };
         var heading = new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center };
-        heading.Children.Add(CollectionText("A seguir", 20, weight: FontWeight.SemiBold));
+        _mobileQueueSection = CollectionText("A seguir", 20, weight: FontWeight.SemiBold);
+        heading.Children.Add(_mobileQueueSection);
         _mobileQueueSummary = CollectionText("", UiTheme.Caption, Muted);
         heading.Children.Add(_mobileQueueSummary);
         upcoming.Children.Add(heading);
@@ -136,7 +137,9 @@ public sealed partial class MainView
                 : _music.RadioStatus;
         _mobileQueueRetry.IsEnabled = _music.Current is not null && !_music.RadioLoading && !_music.LoadingAudio;
 
-        var rows = _music.Upcoming.Select(track => new MobileQueueRow(track, _music.IsRecommended(track))).ToArray();
+        _mobileQueueSection.Text = _relatedTab ? "Recomendações" : "A seguir";
+        var rows = _music.Upcoming.Select(track => new MobileQueueRow(track, _music.IsRecommended(track)))
+            .Where(row => !_relatedTab || row.Recommended).ToArray();
         if (!_mobileQueueRows.SequenceEqual(rows))
         {
             _mobileQueueRows = rows;
@@ -144,15 +147,18 @@ public sealed partial class MainView
         }
         var duration = rows.Sum(row => Math.Max(0, row.Track.DurationSeconds));
         _mobileQueueSummary.Text = TrackCount(rows.Length) + (duration > 0 ? $" · {Time(duration)}" : "");
+        _mobileQueueShuffle.IsVisible = !_relatedTab;
         _mobileQueueShuffle.IsEnabled = rows.Length > 1;
         _mobileQueueScroll.IsVisible = rows.Length > 0;
         _mobileQueueEmpty.IsVisible = rows.Length == 0;
         if (rows.Length > 0) return;
 
         var canRetry = _music.Current is not null;
-        if (Equals(_mobileQueueEmpty.Tag, canRetry)) return;
-        _mobileQueueEmpty.Tag = canRetry;
-        _mobileQueueEmpty.Content = canRetry
+        if (Equals(_mobileQueueEmpty.Tag, (canRetry, _relatedTab))) return;
+        _mobileQueueEmpty.Tag = (canRetry, _relatedTab);
+        _mobileQueueEmpty.Content = _relatedTab
+            ? CollectionEmpty("radio", "Nenhuma recomendação", "Use o rádio para buscar sugestões ou volte à fila completa.")
+            : canRetry
             ? CollectionEmpty("queue", "Fim da fila", "Adicione músicas pelo menu de uma faixa ou use o rádio para buscar sugestões.")
             : CollectionEmpty("queue", "A fila está vazia", "Toque uma música ou adicione faixas pela biblioteca.",
                 CollectionAction("Abrir biblioteca", () =>
@@ -210,6 +216,7 @@ public sealed partial class MainView
     {
         var panel = new StackPanel { Spacing = 8 };
         panel.Children.Add(CreateRadioToggle());
+        panel.Children.Add(CreateRadioTabs());
         panel.Children.Add(CreateRadioModes());
         panel.Children.Add(CollectionAction(_music.RepeatQueue ? "Desligar repetição da fila" : "Repetir fila", () =>
         {
@@ -227,7 +234,7 @@ public sealed partial class MainView
             }, prominent: true));
             return Task.CompletedTask;
         });
-        clear.IsEnabled = _mobileQueueRows.Length > 0;
+        clear.IsEnabled = _music.Upcoming.Any();
         panel.Children.Add(clear);
         ShowSheet("Opções da fila", panel);
     }
