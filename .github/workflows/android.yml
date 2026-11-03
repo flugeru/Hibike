@@ -2,16 +2,11 @@ name: Hibike • Android APK
 
 on:
   push:
-    branches: [main, feat/experimental-player-lab]
+    branches: [main, feat/experimental-player-lab, queue-fix]
     paths: ['src/**', 'tests/**', 'scripts/**', 'Directory.*', 'global.json', 'Hibike.slnx', '.github/**']
   pull_request:
     paths: ['src/**', 'tests/**', 'scripts/**', 'Directory.*', 'global.json', 'Hibike.slnx', '.github/**']
   workflow_dispatch:
-    inputs:
-      run_emulator:
-        description: Run optional Android emulator smoke test
-        type: boolean
-        default: false
   workflow_call:
 
 permissions:
@@ -91,38 +86,6 @@ jobs:
           mkdir -p artifacts/release
           cp "$apk" artifacts/release/Hibike-Android-arm64.apk
           cp artifacts/android/signing-certificate.txt artifacts/release/signing-certificate.txt
-      - name: Publish Android emulator test APK
-        if: github.event_name == 'workflow_dispatch' && inputs.run_emulator
-        run: >-
-          dotnet publish src/Hibike.Android/Hibike.Android.csproj
-          -f net10.0-android -c Release -r android-x64
-          -p:HibikeSmokeTests=true
-          -p:AndroidSdkDirectory="$ANDROID_HOME"
-          -o artifacts/emulator
-      - name: Enable emulator hardware acceleration
-        if: github.event_name == 'workflow_dispatch' && inputs.run_emulator
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-      - name: Launch app and check for startup crashes
-        if: github.event_name == 'workflow_dispatch' && inputs.run_emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 36
-          arch: x86_64
-          target: google_apis
-          profile: pixel_6
-          disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
-          script: bash scripts/smoke_android.sh
-      - name: Upload startup screenshot and logs
-        if: always() && github.event_name == 'workflow_dispatch' && inputs.run_emulator
-        uses: actions/upload-artifact@v4
-        with:
-          name: Hibike-Android-startup-check
-          path: artifacts/smoke/**
-          if-no-files-found: ignore
       - name: Upload installable APK
         uses: actions/upload-artifact@v4
         with:

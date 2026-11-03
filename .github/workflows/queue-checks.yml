@@ -1,8 +1,6 @@
 name: Hibike • Queue and radio regression checks
 
 on:
-  push:
-    branches: [queue-fix]
   pull_request:
     paths: ['src/**', 'tests/**', 'Directory.*', 'global.json', '.github/workflows/queue-checks.yml']
   workflow_dispatch:
