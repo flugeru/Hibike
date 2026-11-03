@@ -539,13 +539,13 @@ public sealed partial class MainView : UserControl
     {
         return CoverCard(track, TrackTextFormatter.Artist(track.Artist), async () => { await _music.PlayAsync(track); });
     }
-    private Control CoverCard(Track track, string subtitle, Func<Task> action, bool playlist = false, bool songActions = true, double? cardSize = null, Stretch? artworkStretch = null)
+    private Control CoverCard(Track track, string subtitle, Func<Task> action, bool playlist = false, bool songActions = true, double? cardSize = null)
     {
         var size = cardSize ?? (_mobileCollections && _page == "home" ? MobileHomeCardSize
             : Bounds.Width < UiTheme.DesktopWidth ? (playlist ? 168 : 160) : (playlist ? 204 : 196));
         var panel = new StackPanel { Width = size, Spacing = 4 };
         var cover = new Grid { Width = size, Height = size };
-        var artwork = new Artwork(track, size, stretch: artworkStretch ?? (_mobileCollections ? Stretch.Uniform : Stretch.UniformToFill), highQuality: true)
+        var artwork = new Artwork(track, size, highQuality: true)
         {
             CornerRadius = new(16), Background = Brushes.Transparent, BorderThickness = new Thickness(0)
         };
@@ -741,21 +741,19 @@ public sealed partial class MainView : UserControl
         var album = Text(track.Album ?? TrackTextFormatter.Artist(track.Artist), UiTheme.Caption, Muted); album.TextTrimming = TextTrimming.CharacterEllipsis; album.HorizontalAlignment = HorizontalAlignment.Center; Put(header, album, 0, 1);
         Put(header, IconButton("queue", "Abrir fila", () => { OpenQueueFromPlayer(); return Task.CompletedTask; }), 0, 2); panel.Children.Add(header);
         var artworkTrack = track == _music.Current && _music.CurrentSource?.Artwork is { } resolvedArtwork ? track with { Thumbnail = resolvedArtwork } : track;
-        var art = new Artwork(artworkTrack, UiTheme.ThumbnailSize, fullResolution: true,
-            stretch: mobilePlayer ? Stretch.Uniform : Stretch.UniformToFill)
+        var art = new Artwork(artworkTrack, UiTheme.ThumbnailSize, fullResolution: true)
         {
             HorizontalAlignment = mobilePlayer ? HorizontalAlignment.Stretch : HorizontalAlignment.Center,
             VerticalAlignment = mobilePlayer ? VerticalAlignment.Stretch : VerticalAlignment.Center,
-            CornerRadius = new(mobilePlayer ? 0 : UiTheme.CardRadius)
+            CornerRadius = new(UiTheme.CardRadius)
         };
+        Control playerCover = art;
         if (mobilePlayer)
         {
-            // The star row gives the image what remains after measuring the actual controls and title.
             art.Width = art.Height = double.NaN;
-            art.Background = Brushes.Transparent;
-            art.BorderThickness = UiTheme.Zero;
+            playerCover = new SquareArtworkSlot { Child = art };
         }
-        Put(panel, art, 1, 0);
+        Put(panel, playerCover, 1, 0);
         var metadata = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.CompactGap };
         var labels = new StackPanel { Spacing = UiTheme.CompactGap };
         var title = Text(TrackTextFormatter.Title(track.Title, track.Artist), UiTheme.DialogTitle); title.FontWeight = FontWeight.SemiBold; title.TextWrapping = TextWrapping.Wrap; title.MaxLines = 2; labels.Children.Add(title);
@@ -924,7 +922,7 @@ public sealed partial class MainView : UserControl
                     title.TextWrapping = TextWrapping.Wrap; title.MaxLines = 2; title.FontSize = UiTheme.DialogTitle; artist.FontSize = UiTheme.Body;
                     _detailPlay!.Width = _detailPlay.Height = UiTheme.PlaySize; _detailPlay.CornerRadius = new(UiTheme.PlaySize / 2);
                     Grid.SetColumnSpan(header, 1); Grid.SetColumnSpan(seek, 1);
-                    Put(panel, header, 0, 0); Put(panel, art, 1, 0); Put(panel, metadata, 2, 0);
+                    Put(panel, header, 0, 0); Put(panel, playerCover, 1, 0); Put(panel, metadata, 2, 0);
                     Put(panel, seek, 3, 0); Put(panel, controls, 5, 0); Put(panel, upcomingBox, 6, 0);
                     Put(panel, mobileQuality, 4, 0);
                     RefreshDock();

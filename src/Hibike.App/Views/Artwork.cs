@@ -68,3 +68,20 @@ internal sealed class Artwork : Border
         return url;
     }
 }
+
+// Keep the cover square even when the player's remaining space is rectangular.
+internal sealed class SquareArtworkSlot : Decorator
+{
+    protected override Size MeasureOverride(Size availableSize)
+    {
+        var side = Math.Min(availableSize.Width, availableSize.Height);
+        return double.IsFinite(side) ? base.MeasureOverride(new Size(side, side)) : base.MeasureOverride(availableSize);
+    }
+
+    protected override Size ArrangeOverride(Size finalSize)
+    {
+        var side = Math.Min(finalSize.Width, finalSize.Height);
+        Child?.Arrange(new Rect((finalSize.Width - side) / 2, (finalSize.Height - side) / 2, side, side));
+        return finalSize;
+    }
+}

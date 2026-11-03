@@ -260,7 +260,7 @@ public sealed partial class MainView
             var artwork = group.Artwork is { } track ? track with { Title = group.Title, Artist = "" }
                 : new Track(group.Title, group.Title, "", "");
             var card = CoverCard(artwork, group.Subtitle, () => OpenMobileLibraryGroupAsync(group), songActions: false,
-                cardSize: MobileLibraryCardSize, artworkStretch: Stretch.Uniform);
+                cardSize: MobileLibraryCardSize);
             Put(row, card, 0, index);
         }
         return row;
@@ -269,7 +269,7 @@ public sealed partial class MainView
     private Control BuildMobileLibraryHero(LibraryGroup group)
     {
         var hero = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = 16 };
-        hero.Children.Add(new Artwork(group.Artwork, UiTheme.RowHeight, stretch: Stretch.Uniform, highQuality: true));
+        hero.Children.Add(new Artwork(group.Artwork, UiTheme.RowHeight, highQuality: true));
         var labels = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
         var kind = group.Playlist is not null ? "Playlist" : _mobileLibraryTab == LibraryTab.Albums ? "Álbum" : "Artista";
         labels.Children.Add(CollectionText(kind, UiTheme.Caption, Muted));
