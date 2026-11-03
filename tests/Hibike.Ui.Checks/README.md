@@ -31,3 +31,14 @@ Project retains existing .NET 10 targets and Android workload.
 
 Native check writes search, mini player, player and action-dialog PNGs at 360/390/430/1260 widths
 beside executable for visual inspection. Fake artwork is deliberately network-free.
+
+## Android UI performance investigation
+
+Run `dotnet run --project tests/Hibike.Ui.Checks -c Release -- --performance-study --headless`.
+This offline diagnostic uses synthetic data at 390×844 DIP and writes `android-ui-study.json`
+beside the executable. It measures managed allocations and synchronous call duration, counts
+realized controls, and checks bitmap reuse with a local asset. It does not measure Android FPS,
+GPU work, native bitmap allocation size, network behavior, or device storage latency.
+The numbers are observations, not machine-dependent pass/fail thresholds.
+
+See [the investigation](../../docs/performance/android-ui-performance.md) and its recorded baseline.

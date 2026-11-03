@@ -18,7 +18,7 @@ internal static partial class Program
     {
         var directory = Path.Combine(Path.GetTempPath(), "hibike-ui-check-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
-        if (args.Contains("--queue-only"))
+        if (args.Contains("--queue-only") || args.Contains("--performance-study"))
         {
             // Keep onboarding and home discovery offline before the view is attached.
             File.WriteAllText(Path.Combine(directory, "personalization.json"), "{\"OnboardingCompleted\":true}");
@@ -40,6 +40,12 @@ internal static partial class Program
             try
             {
                 var window = lifetime.MainWindow!; var view = (MainView)window.Content!;
+                if (args.Contains("--performance-study"))
+                {
+                    await RunPerformanceStudyAsync(view, window);
+                    result = 0;
+                    return;
+                }
                 if (args.Contains("--queue-only"))
                 {
                     await RunQueueRegressionChecksAsync(directory, view, window);
