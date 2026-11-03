@@ -8,36 +8,24 @@ namespace Hibike.App.Views;
 
 public sealed partial class MainView
 {
-    private readonly bool _mobileCollections = OperatingSystem.IsAndroid();
+    private readonly bool _androidLayout = OperatingSystem.IsAndroid();
     private Grid? _mobileLibrary;
     private Grid? _mobileQueue;
     private Grid? _mobileSearchPage;
     private bool _queueOpenedFromPlayer;
 
-    private bool IsMobileWorkspace => _mobileCollections && _page is "library" or "queue" or "explore";
+    private bool IsCollectionPage => _page is "library" or "queue" or "explore";
 
-    private void RefreshMobileCollections()
+    private void RefreshCollectionPages()
     {
-        if (!IsMobileWorkspace)
-        {
-            if (_mobileLibrary is not null) _mobileLibrary.IsVisible = false;
-            if (_mobileQueue is not null) _mobileQueue.IsVisible = false;
-            if (_mobileSearchPage is not null) _mobileSearchPage.IsVisible = false;
-            return;
-        }
-
         var content = (Grid)_main.Child!;
+        content.Children[0].IsVisible = _page is not ("library" or "queue");
+
         if (_page == "library" && _mobileLibrary is null)
         {
             _mobileLibrary = BuildMobileLibrary();
             Grid.SetRowSpan(_mobileLibrary, content.RowDefinitions.Count);
             content.Children.Add(_mobileLibrary);
-        }
-        if (_page == "queue" && _mobileQueue is null)
-        {
-            _mobileQueue = BuildMobileQueue();
-            Grid.SetRowSpan(_mobileQueue, content.RowDefinitions.Count);
-            content.Children.Add(_mobileQueue);
         }
 
         if (_page == "explore" && _mobileSearchPage is null)
@@ -48,19 +36,30 @@ public sealed partial class MainView
             content.Children.Insert(content.Children.IndexOf(_topMenuLayer), _mobileSearchPage);
         }
 
-        // Search shares the main header. The collection screens own their back actions.
-        content.Children[0].IsVisible = _page == "explore";
-        content.Children[1].IsVisible = false;
-        _statusBox.IsVisible = false;
-        _searchLoading.IsVisible = false;
-        _trackScroll.IsVisible = _listHeading.IsVisible = _listTools.IsVisible = _emptyState.IsVisible = false;
-        _libraryGroupScroll.IsVisible = false;
+        var queueOnSide = _queuePane.IsVisible;
+        if (_page == "queue" || queueOnSide)
+        {
+            _mobileQueue ??= BuildMobileQueue();
+            if (queueOnSide && _queuePane.Child != _mobileQueue)
+            {
+                content.Children.Remove(_mobileQueue);
+                _queuePane.Child = _mobileQueue;
+            }
+            else if (!queueOnSide && !content.Children.Contains(_mobileQueue))
+            {
+                _queuePane.Child = null;
+                Grid.SetRowSpan(_mobileQueue, content.RowDefinitions.Count);
+                content.Children.Add(_mobileQueue);
+            }
+            _mobileQueue.IsVisible = true;
+            RefreshMobileQueue();
+        }
+        else if (_mobileQueue is not null) _mobileQueue.IsVisible = false;
+
         if (_mobileLibrary is not null) _mobileLibrary.IsVisible = _page == "library";
-        if (_mobileQueue is not null) _mobileQueue.IsVisible = _page == "queue";
         if (_mobileSearchPage is not null) _mobileSearchPage.IsVisible = _page == "explore";
         if (_page == "library") RefreshMobileLibrary();
-        else if (_page == "queue") RefreshMobileQueue();
-        else RefreshMobileSearch();
+        else if (_page == "explore") RefreshMobileSearch();
     }
 
     private static TextBlock CollectionText(string? value, double size, string color = UiTheme.TextPrimary,

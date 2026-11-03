@@ -27,7 +27,7 @@ public sealed partial class MainView
     {
         _topMenuLayer.Children.Add(_topMenuPanel);
         _topMenuLayer.PointerPressed += (_, e) => { if (e.Source == _topMenuLayer) { CloseTopMenu(); e.Handled = true; } };
-        Put(content, _topMenuLayer, 1, 0); Grid.SetRowSpan(_topMenuLayer, 5);
+        Put(content, _topMenuLayer, 1, 0); Grid.SetRowSpan(_topMenuLayer, 2);
         _topMenuLayer.SizeChanged += (_, _) => { if (_topMenuOpen) SizeTopMenu(); };
     }
     private void SizeTopMenu()

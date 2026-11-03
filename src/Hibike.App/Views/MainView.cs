@@ -26,27 +26,15 @@ public sealed partial class MainView : UserControl
     private readonly Border _main;
     private readonly StackPanel _home = new() { Spacing = UiTheme.SectionGap };
     private ScrollViewer _homeScroll = null!;
-    private ScrollViewer _trackScroll = null!;
-    private Control _listHeading = null!;
     private IReadOnlyList<AccountPlaylist> _accountPlaylists = [];
     private IReadOnlyList<Track> _accountLikes = [];
     private string? _homeFingerprint;
     private bool _accountLoading;
     private readonly TextBlock _pageTitle = Text("Início", UiTheme.PageTitle);
-    private readonly StackPanel _listTools = new() { Spacing = UiTheme.CompactGap };
-    private readonly TextBox _libraryFilter = UiTheme.Field("Filtrar título ou artista");
-    private readonly Border _emptyState = new();
-    private string _libraryKind = "Todas";
-    private bool _librarySorted;
     private readonly TextBox _search = UiTheme.Field("Música, artista ou link");
-    private readonly TextBlock _heading = Text("Resultados", UiTheme.SectionTitle);
-    private readonly TextBlock _count = Text("", UiTheme.Label, Muted);
-    private readonly ItemsControl _tracks = new() { ItemsPanel = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel()) };
     private readonly TextBlock _status = Text("", UiTheme.Caption, Muted);
     private readonly Border _statusBox;
-    private readonly Border _searchLoading;
     private readonly Button _clearSearch;
-    private readonly Button _cancelSearch;
     private readonly Border _mini;
     private readonly ContentControl _nowArt = new();
     private readonly TextBlock _nowTitle = Text("", UiTheme.Body);
@@ -60,8 +48,8 @@ public sealed partial class MainView : UserControl
     private readonly Dictionary<string, Border> _rows = new();
     private readonly Dictionary<string, TextBlock> _rowTitles = new();
     private readonly Dictionary<string, Equalizer> _equalizers = new();
-    private string? _listFingerprint;
     private bool _showingPlayer;
+    private bool _compactPlayer;
     private Slider? _detailSeek;
     private TextBlock? _detailTime;
     private TextBlock? _detailDuration;
@@ -78,7 +66,7 @@ public sealed partial class MainView : UserControl
         TopLevel.SetAutoSafeAreaPadding(this, true);
         _sidebar = BuildSidebar(); _root.Children.Add(_sidebar); Grid.SetRowSpan(_sidebar, 3);
         _main = new Border { Padding = UiTheme.ContentPadding, HorizontalAlignment = HorizontalAlignment.Stretch }; Put(_root, _main, 0, 1);
-        var content = new Grid { RowDefinitions = new("Auto,Auto,Auto,Auto,Auto,*"), RowSpacing = UiTheme.PageGap }; _main.Child = content;
+        var content = new Grid { RowDefinitions = new("Auto,Auto,*"), RowSpacing = UiTheme.PageGap }; _main.Child = content;
         var header = new Grid { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = UiTheme.CompactGap };
         var brandIcon = _brandIcon = new Image { Source = new Avalonia.Media.Imaging.Bitmap(Avalonia.Platform.AssetLoader.Open(new Uri("avares://Hibike.App/Assets/hibike-desktop.png"))), Width = 36, Height = 36, VerticalAlignment = VerticalAlignment.Center };
         var pageBrand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
@@ -90,54 +78,22 @@ public sealed partial class MainView : UserControl
         if (OperatingSystem.IsAndroid()) { brandIcon.IsVisible = true; _pageTitle.Text = "Hibike"; headerImport.IsVisible = headerSettings.IsVisible = false; }
         pageBrand.VerticalAlignment = VerticalAlignment.Center; _pageTitle.VerticalAlignment = VerticalAlignment.Center;
         content.Children.Add(header);
-        var searchRow = new Grid { ColumnDefinitions = new("*") };
-        searchRow.Children.Add(_search);
         AddSearchIcon(_search);
         TextInputOptions.SetContentType(_search, TextInputContentType.Search);
         TextInputOptions.SetReturnKeyType(_search, TextInputReturnKeyType.Search);
         _clearSearch = IconButton("close", "Limpar busca", () => { _search.Text = ""; _search.Focus(); return Task.CompletedTask; });
         _clearSearch.Classes.Add("subtle"); _clearSearch.IsVisible = false;
-        _search.TextChanged += (_, _) => _clearSearch.IsVisible = !string.IsNullOrEmpty(_search.Text);
-        _cancelSearch = IconButton("close", "Cancelar busca", () => { _music.CancelSearch(); return Task.CompletedTask; }); _cancelSearch.Classes.Add("subtle");
-        var searchActions = new StackPanel { Orientation = Orientation.Horizontal };
-        searchActions.Children.Add(_clearSearch); searchActions.Children.Add(_cancelSearch); _search.InnerRightContent = searchActions;
+        _search.InnerRightContent = _clearSearch;
         _search.KeyDown += async (_, e) => { if (e.Key == Key.Enter) { e.Handled = true; await SearchAsync(); } };
-        Put(content, searchRow, 1, 0);
-        var heading = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.CompactGap };
-        _heading.TextTrimming = TextTrimming.CharacterEllipsis; _heading.FontWeight = FontWeight.SemiBold;
-        _count.VerticalAlignment = VerticalAlignment.Center; heading.Children.Add(_heading);
-        var countChip = UiTheme.Chip(_count); countChip.VerticalAlignment = VerticalAlignment.Center;
-        var headingActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = UiTheme.CompactGap };
-        var clearQueue = ActionButton("Limpar fila", () => { _music.ClearQueue(); return Task.CompletedTask; });
-        _heading.PropertyChanged += (_, e) => { if (e.Property == TextBlock.TextProperty) clearQueue.IsVisible = _page == "queue"; };
-        clearQueue.IsVisible = false;
-        headingActions.Children.Add(clearQueue); headingActions.Children.Add(countChip);
-        Put(heading, headingActions, 0, 1); Put(content, heading, 2, 0); _listHeading = heading;
-        _tracks.ItemTemplate = new FuncDataTemplate<Track>((track, _) => track is null ? new Border() : TrackRow(track));
-        var trackScroll = UiTheme.FadingScroll(_tracks);
-        Put(content, _listTools, 4, 0);
-        Put(content, trackScroll, 5, 0);
-        _trackScroll = trackScroll;
         _homeScroll = UiTheme.FadingScroll(_home);
-        Put(content, _homeScroll, 5, 0);
-        Put(content, _emptyState, 5, 0);
-        _libraryFilter.TextChanged += (_, _) => { if (_page == "library") Refresh(); };
+        Put(content, _homeScroll, 2, 0);
         var statusRow = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.CompactGap };
         _status.TextWrapping = TextWrapping.Wrap; _status.MaxLines = 2; _status.VerticalAlignment = VerticalAlignment.Center; statusRow.Children.Add(_status);
         if (DeveloperFeatures.Enabled) Put(statusRow, IconButton("info", "Ver diagnóstico", () => { ShowDiagnostics(); return Task.CompletedTask; }), 0, 1);
-        _statusBox = new Border { Child = statusRow }; UiTheme.StateBanner(_statusBox, UiTheme.Warning); Put(content, _statusBox, 3, 0);
+        _statusBox = new Border { Child = statusRow }; UiTheme.StateBanner(_statusBox, UiTheme.Warning); Put(content, _statusBox, 1, 0);
         _play = IconButton("play", "Reproduzir, pausar ou cancelar", _music.ToggleAsync, UiTheme.OnPrimary); _play.Classes.Add("primary"); _play.Classes.Add("miniPlay");
         _mini = BuildMiniPlayer(); Put(_root, _mini, 1, 1);
         InitializeWorkspace(content);
-        _libraryGroupScroll.Content = _libraryGroups; Put(content, _libraryGroupScroll, 5, 0);
-        var searchLoading = new StackPanel { Spacing = 16, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-        searchLoading.Children.Add(LoadingRing(40, UiTheme.Primary));
-        searchLoading.Children.Add(Text("Buscando seu som", UiTheme.ButtonText));
-        var cancelLoading = ActionButton("Cancelar busca", () => { _music.CancelSearch(); return Task.CompletedTask; });
-        cancelLoading.Classes.Add("subtle"); searchLoading.Children.Add(cancelLoading);
-        _searchLoading = new Border { Background = UiTheme.Brush(UiTheme.Background), Child = searchLoading, IsVisible = false };
-        Avalonia.Automation.AutomationProperties.SetName(_searchLoading, "Busca em andamento");
-        Put(content, _searchLoading, 5, 0);
         InitializeTopMenu(content);
         var navGrid = new Grid { ColumnDefinitions = new("*,*,*,*"), Height = OperatingSystem.IsAndroid() ? 60 : UiTheme.NavHeight, Background = UiTheme.Brush(UiTheme.Surface) };
         var tabs = new[] { ("home", "Início", "home"), ("explore", "Buscar", "search"), ("library", "Biblioteca", "library"), ("queue", "Fila", "queue") };
@@ -150,23 +106,24 @@ public sealed partial class MainView : UserControl
         Put(_root, _bottom, 2, 1); Content = _root;
         SizeChanged += (_, _) =>
         {
-            var compact = _mobileCollections || Bounds.Width < UiTheme.DesktopWidth;
+            var compact = _androidLayout || Bounds.Width < UiTheme.DesktopWidth;
             _root.ColumnDefinitions[0].Width = new GridLength(compact ? 0 : UiTheme.SidebarWidth);
             _sidebar.IsVisible = !compact; _bottom.IsVisible = compact;
             headerImport.IsVisible = headerSettings.IsVisible = false;
             androidMenu.IsVisible = compact;
             brandIcon.IsVisible = _page == "home";
-            if (_page == "home") _pageTitle.Text = _mobileCollections || !compact ? "Hibike" : "Hibiki";
+            if (_page == "home") _pageTitle.Text = "Hibike";
             if (!compact && !OperatingSystem.IsAndroid()) CloseTopMenu();
             _main.IsVisible = !_showingPlayer;
             _bottom.IsVisible = compact && !_showingPlayer;
-            _main.Padding = _mobileCollections ? UiTheme.MobileContentPadding
+            _main.Padding = _androidLayout ? UiTheme.MobileContentPadding
                 : compact ? new Thickness(12, 8, 12, 4) : new Thickness(32, 24, 32, 12);
-            _homeScroll.Margin = _mobileCollections ? new Thickness(-UiTheme.MobileGutter, 0) : UiTheme.Zero;
-            if (_mobileCollections) _mini.Margin = UiTheme.MobileMiniMargin;
+            _homeScroll.Margin = _androidLayout ? new Thickness(-UiTheme.MobileGutter, 0) : UiTheme.Zero;
+            if (_androidLayout) _mini.Margin = UiTheme.MobileMiniMargin;
             _home.Spacing = compact ? 8 : UiTheme.SectionGap;
             if (_page == "home") RefreshHome();
             RefreshWorkspace();
+            RefreshCollectionPages();
             // Title and two 48dp actions fit at 360dp; no artificial second toolbar row.
         };
         if (OperatingSystem.IsAndroid() && AppServices.RequestDisplayFrame is { } requestFrame)
@@ -176,13 +133,18 @@ public sealed partial class MainView : UserControl
         {
             if (e.Key == Key.Escape) { e.Handled = HandleBack(); }
             else if (e.Key == Key.F && e.KeyModifiers.HasFlag(KeyModifiers.Control))
-            { _search.Focus(); _search.SelectAll(); e.Handled = true; }
+            {
+                if (_showingPlayer) ClosePlayer();
+                _page = "explore";
+                Refresh();
+                _search.Focus(); _search.SelectAll(); e.Handled = true;
+            }
         };
         AttachedToVisualTree += async (_, _) =>
         {
             _music.Changed -= Refresh; _music.Tick -= RefreshPlayback; _music.Tick -= RefreshDock;
             _music.Changed += Refresh; _music.Tick += RefreshPlayback; _music.Tick += RefreshDock;
-            _music.StartObserving(); _listFingerprint = null; Refresh(); await _music.InitializeAsync();
+            _music.StartObserving(); Refresh(); await _music.InitializeAsync();
             ShowMusicOnboarding();
             if (_music.OnboardingCompleted) _ = _music.RefreshRecommendationsAsync();
         };
@@ -224,10 +186,10 @@ public sealed partial class MainView : UserControl
         var button = ActionButton("", () =>
         {
             _queueOpenedFromPlayer = false;
-            if (_mobileCollections) CloseTopMenu();
-            if (key == "library" && _page == "library" && _mobileCollections) _mobileLibraryGroup = null;
+            if (_androidLayout) CloseTopMenu();
+            if (key == "library" && _page == "library") _mobileLibraryGroup = null;
+            if (key == "queue") _queueOpen = false;
             _page = key;
-            BuildListTools();
             Refresh();
             return Task.CompletedTask;
         });
@@ -254,14 +216,13 @@ public sealed partial class MainView : UserControl
     private async Task SearchAsync()
     {
         _page = "explore";
-        BuildListTools();
         var query = _search.Text?.Trim() ?? "";
-        if (_searchScope == "Sua biblioteca" || _mobileCollections && query.Length == 0)
+        if (_searchScope == "Sua biblioteca" || query.Length == 0)
         {
             Refresh();
             return;
         }
-        if (_mobileCollections) _mobileSearchAttempt = query;
+        _mobileSearchAttempt = query;
         await _music.SearchAsync(query);
     }
     private async Task OpenLocalAsync()
@@ -303,16 +264,12 @@ public sealed partial class MainView : UserControl
 
     private void Refresh()
     {
-        if (!_mobileCollections && _page == "queue" && Bounds.Width >= 1100) { _page = "home"; _queueOpen = true; }
-        if (_page != "home" && _listTools.Children.Count == 0) BuildListTools();
-        _statusBox.IsVisible = _music.HasError;
-        _searchLoading.IsVisible = _music.Searching;
-        UiTheme.StateBanner(_statusBox, _music.HasError ? UiTheme.Error : UiTheme.Warning);
-        _status.Text = _music.Status; _cancelSearch.IsVisible = !_mobileCollections && _music.Searching;
+        _statusBox.IsVisible = !IsCollectionPage && _music.HasError;
+        _status.Text = _music.Status;
         foreach (var button in _nav)
         {
             var (key, label, icon, vertical) = ((string, string, string, bool))button.Tag!;
-            var active = key == _page || !_mobileCollections && key == "queue" && _queueOpen;
+            var active = key == _page || !_androidLayout && key == "queue" && _queueOpen;
             if (button.Classes.Contains("selected") == active && button.Content is not string) continue;
             button.Classes.Set("selected", active);
             button.Background = Brushes.Transparent;
@@ -328,40 +285,12 @@ public sealed partial class MainView : UserControl
             caption.HorizontalAlignment = HorizontalAlignment.Center;
             stack.Children.Add(caption); button.Content = stack;
         }
-        IReadOnlyList<Track> tracks = IsMobileWorkspace ? [] : _page switch { "library" => _music.Favorites, "queue" => _music.Queue, _ => _searchScope == "Sua biblioteca" ? _music.Favorites.Where(t => (t.Title + " " + t.Artist).Contains(_search.Text ?? "", StringComparison.CurrentCultureIgnoreCase)).ToArray() : _music.Results };
-        if (_page == "library" && !_mobileCollections)
-        {
-            var query = _libraryFilter.Text?.Trim() ?? "";
-            tracks = tracks.Where(t => (_libraryKind != "Locais" || t.IsLocal) && (_libraryKind != "Online" || !t.IsLocal)
-                && (query.Length == 0 || (t.Title + " " + t.Artist).Contains(query, StringComparison.CurrentCultureIgnoreCase))).ToArray();
-            if (_librarySorted) tracks = tracks.OrderBy(t => t.Title, StringComparer.CurrentCultureIgnoreCase).ToArray();
-            if (_libraryOrder == "Artista") tracks = tracks.OrderBy(t => t.Artist, StringComparer.CurrentCultureIgnoreCase).ToArray();
-            if (_libraryOrder == "Recentes") tracks = tracks.OrderByDescending(t => _music.Listening.GetValueOrDefault(MusicController.SongKey(t))?.LastPlayed ?? DateTime.MinValue).ToArray();
-        }
         _brandIcon.IsVisible = _page == "home";
-        _pageTitle.Text = _page switch { "home" => _mobileCollections || Bounds.Width >= UiTheme.DesktopWidth ? "Hibike" : "Hibiki", "library" => "Sua biblioteca", "queue" => "Sua fila", _ => "Buscar" };
-        if (_main.Child is Grid layout) layout.RowSpacing = 12;
-        _listTools.IsVisible = _page != "home";
-        _homeScroll.IsVisible = _page == "home"; _trackScroll.IsVisible = _listHeading.IsVisible = _page != "home";
-        _search.IsVisible = _page is not ("home" or "library");
+        _pageTitle.Text = _page switch { "home" => "Hibike", "collection" => "Coleção", _ => "Buscar" };
+        _homeScroll.IsVisible = _page == "home";
         if (_page == "home") RefreshHome();
         RefreshWorkspace();
-        _heading.Text = _page switch { "library" => "Músicas salvas", "queue" => "A seguir", _ => "Resultados" };
-        _count.Text = tracks.Count + (tracks.Count == 1 ? " faixa" : " faixas");
-        var fingerprint = _page + ":" + string.Join("|", tracks.Select(t => t.Id + _music.IsFavorite(t)));
-        if (fingerprint != _listFingerprint)
-        {
-        _listFingerprint = fingerprint; _rows.Clear(); _rowTitles.Clear(); _equalizers.Clear(); _tracks.ItemsSource = tracks;
-        }
-        _emptyState.IsVisible = !IsMobileWorkspace && _page is not ("home" or "queue" or "collection") && tracks.Count == 0 && !_music.Searching;
-        if (_emptyState.IsVisible) _emptyState.Child = EmptyState(_page == "library" ? "library" : _page == "queue" ? "queue" : "search",
-            _page == "library" ? "Sua coleção, do seu jeito" : _page == "queue" ? "O próximo som é com você" : "Encontre seu próximo som",
-            _page == "library" ? "Salve favoritos ou importe arquivos. Use filtros para encontrar suas músicas." : _page == "queue" ? "Adicione faixas pelo menu de cada música ou toque sua seleção." : "Busque por música, artista ou cole um link de álbum ou playlist.",
-            _page == "library" ? "Importar músicas" : "Explorar músicas", _page == "library" ? OpenLocalAsync : () => { _page = "explore"; BuildListTools(); Refresh(); _search.Focus(); return Task.CompletedTask; });
         var displayed = _music.Pending ?? _music.Current;
-        _mini.IsVisible = displayed is not null && !_showingPlayer && !(_mobileCollections && _page == "queue");
-        _desktopDock.IsVisible = displayed is not null && !_showingPlayer && Bounds.Width >= 1000 && !_mobileCollections;
-        if (_desktopDock.IsVisible) _mini.IsVisible = false;
         UpdateRows(displayed);
         if (!Equals(displayed, _shownTrack)) { _shownTrack = displayed; _nowArt.Content = new Artwork(displayed, UiTheme.MiniArtworkSize); }
         _nowTitle.Text = TrackTextFormatter.Title(displayed?.Title, displayed?.Artist);
@@ -369,7 +298,7 @@ public sealed partial class MainView : UserControl
         if (_detailPlay is not null && displayed is not null && !Equals(_detailTrack, displayed)) ShowPlayer();
         RefreshPlayback();
         RefreshDiscovery();
-        RefreshMobileCollections();
+        RefreshCollectionPages();
     }
     private double MobileHomeCardSize => Math.Clamp(Math.Floor((Bounds.Width - 2 * UiTheme.MobileGutter - UiTheme.CompactGap) / 2), 120, 212);
 
@@ -383,7 +312,7 @@ public sealed partial class MainView : UserControl
             + ":" + string.Join("|", _accountPlaylists.Select(p => p.Id)) + ":" + _music.Current?.Source + ":" + (Bounds.Width < UiTheme.DesktopWidth)
             + ":" + string.Join("|", _music.Queue.Select(t => t.Source))
             + ":" + string.Join("|", _music.FavoriteArtists.Select(a => a.Id)) + ":" + string.Join("|", _music.HomeRecommendations.Select(t => t.Source))
-            + ":" + (_mobileCollections ? MobileHomeCardSize : 0) + ":" + _music.HomeLoading + ":" + _music.HomeMessage + ":" + _music.RegionalChart?.RetrievedUtc + ":" + _music.GlobalChart?.RetrievedUtc + ":" + _music.TrendingChart?.RetrievedUtc;
+            + ":" + (_androidLayout ? MobileHomeCardSize : 0) + ":" + _music.HomeLoading + ":" + _music.HomeMessage + ":" + _music.RegionalChart?.RetrievedUtc + ":" + _music.GlobalChart?.RetrievedUtc + ":" + _music.TrendingChart?.RetrievedUtc;
         if (fingerprint == _homeFingerprint) return;
         _homeFingerprint = fingerprint;
         var previous = _home.Children.ToArray();
@@ -395,15 +324,14 @@ public sealed partial class MainView : UserControl
             return Task.CompletedTask;
         }
 
-        Shelf("Continuar ouvindo", _mobileCollections ? "" : "Fixadas e histórico · neste aparelho",
+        Shelf("Continuar ouvindo", "",
             _music.Pins.Concat(_music.History).DistinctBy(t => t.Source).Take(20)
                 .Select(t => Card(t, () => CoverCard(t, TrackTextFormatter.Artist(t.Artist), async () =>
                 {
                     if (_music.Current?.Source == t.Source) await _music.ToggleAsync();
                     else await _music.PlayAsync(t);
                 }))),
-            _mobileCollections && _music.History.Count > 0 ? OpenHistory : null);
-        if (!_mobileCollections && _music.History.Count > 0) next.Add(ActionButton("Ver histórico", OpenHistory));
+            _music.History.Count > 0 ? OpenHistory : null);
         Shelf("Feito para você", "Suas preferências, favoritos e histórico · neste aparelho", _music.HomeRecommendations.Take(12).Select(t => Card(t, () => TrackCard(t))));
         Shelf("Seus artistas favoritos", "Suas escolhas · toque para explorar", _music.FavoriteArtists.Select(a =>
         {
@@ -435,12 +363,11 @@ public sealed partial class MainView : UserControl
         if (_music.HomeLoading || !string.IsNullOrEmpty(_music.HomeMessage)) next.Add(Text(_music.HomeLoading ? "Preparando descobertas… Sua biblioteca já está disponível." : _music.HomeMessage, UiTheme.Caption, Muted));
         var personalize = ActionButton("Personalizar meu som", () => { ShowMusicOnboarding(edit: true); return Task.CompletedTask; });
         var refresh = ActionButton("Atualizar recomendações", () => _music.RefreshRecommendationsAsync(true));
-        if (!_mobileCollections) { next.Add(personalize); next.Add(refresh); }
         var recommended = _music.Queue.Where(_music.IsRecommended).Take(12).ToArray();
         if (recommended.Length > 0) Shelf("Porque você ouviu…", _music.PlaybackContext, recommended.Select(t => Card(t, () => TrackCard(t))));
         if (_music.History.Count >= 5)
             Shelf("Seus mixes", "Rádios por artistas do seu histórico", _music.History.GroupBy(t => t.Artist).Where(g => g.Count() >= 2).Take(4).Select(g => Card(g.First(), () => CoverCard(g.First(), "Mix de " + g.Key, () => _music.StartRadioAsync(g.First())))));
-        if (_music.History.Count == 0) next.Add(EmptyState("play", "Sua trilha começa aqui", "Suas últimas músicas aparecem aqui automaticamente. Comece com uma busca ou traga seus arquivos.", "Buscar música", () => { _page = "explore"; BuildListTools(); Refresh(); _search.Focus(); return Task.CompletedTask; }));
+        if (_music.History.Count == 0) next.Add(EmptyState("play", "Sua trilha começa aqui", "Suas últimas músicas aparecem aqui automaticamente. Comece com uma busca ou traga seus arquivos.", "Buscar música", () => { _page = "explore"; Refresh(); _search.Focus(); return Task.CompletedTask; }));
         if (_account is not null)
         {
             Shelf("Suas curtidas no YouTube", "Biblioteca da conta · não são recomendações", _accountLikes.Take(30).Select(t => Card(t, () => TrackCard(t))));
@@ -451,19 +378,17 @@ public sealed partial class MainView : UserControl
             }));
             var update = ActionButton(_accountLoading ? "Carregando…" : "Atualizar biblioteca", LoadAccountHomeAsync); update.HorizontalAlignment = HorizontalAlignment.Left; next.Add(update);
         }
-        if (!_mobileCollections && Bounds.Width >= UiTheme.DesktopWidth && _music.Queue.Count > 0)
+        if (!_androidLayout && Bounds.Width >= UiTheme.DesktopWidth && _music.Queue.Count > 0)
             Shelf("A seguir", "Próximas músicas da sua fila", _music.Upcoming.Take(20).Select(t => Card(t, () => TrackCard(t))));
         Shelf("Suas músicas favoritas", "Favoritos e arquivos salvos no Hibike", _music.Favorites.OrderByDescending(t => _music.Listening.GetValueOrDefault(MusicController.SongKey(t))?.LastPlayed).Take(30).Select(t => Card(t, () => TrackCard(t))));
         if (_music.Favorites.Count == 0) next.Add(ActionButton("Importar músicas para sua coleção", OpenLocalAsync));
-        if (_mobileCollections)
-        {
-            var tools = new WrapPanel { ItemSpacing = UiTheme.CompactGap, LineSpacing = UiTheme.CompactGap };
-            personalize.Classes.Add("pill"); refresh.Classes.Add("pill");
-            tools.Children.Add(personalize); tools.Children.Add(refresh);
-            next.Add(tools);
+        var tools = new WrapPanel { ItemSpacing = UiTheme.CompactGap, LineSpacing = UiTheme.CompactGap };
+        personalize.Classes.Add("pill"); refresh.Classes.Add("pill");
+        tools.Children.Add(personalize); tools.Children.Add(refresh);
+        next.Add(tools);
+        if (_androidLayout)
             foreach (var control in next.Where(control => control.Tag is not ValueTuple<string, string>))
                 control.Margin = new Thickness(UiTheme.MobileGutter, control.Margin.Top, UiTheme.MobileGutter, control.Margin.Bottom);
-        }
         foreach (var removed in previous.Where(c => !next.Contains(c))) _home.Children.Remove(removed);
         for (var i = 0; i < next.Count; i++)
         {
@@ -479,7 +404,7 @@ public sealed partial class MainView : UserControl
             var personalized = title == "Feito para você" || title == "Descubra algo novo" || title.StartsWith("Porque você gosta de ") || title == "Tendências para você";
             var cardList = cards.Where(c => !personalized || shownRecommendations.Add(c.Track.Source)).ToArray();
             if (cardList.Length == 0) return;
-            var key = title + ":" + subtitle + ":" + (_mobileCollections ? MobileHomeCardSize : 0) + ":" + (Bounds.Width < UiTheme.DesktopWidth) + ":" + string.Join("|", cardList.Select(c => c.Track.ToString()));
+            var key = title + ":" + subtitle + ":" + (_androidLayout ? MobileHomeCardSize : 0) + ":" + (Bounds.Width < UiTheme.DesktopWidth) + ":" + string.Join("|", cardList.Select(c => c.Track.ToString()));
             var old = previous.OfType<StackPanel>().FirstOrDefault(c => c.Tag is ValueTuple<string, string> tag && tag.Item1 == title);
             if (old?.Tag is ValueTuple<string, string> oldTag && oldTag.Item2 == key) { next.Add(old); return; }
             var section = new StackPanel { Spacing = 6, Margin = new Thickness(0, Bounds.Width < UiTheme.DesktopWidth ? 6 : 14, 0, 0) };
@@ -487,7 +412,7 @@ public sealed partial class MainView : UserControl
             var header = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 8 };
             var heading = Text(title, UiTheme.DialogTitle); heading.FontWeight = FontWeight.SemiBold; heading.TextTrimming = TextTrimming.CharacterEllipsis; header.Children.Add(heading);
             var scroll = UiTheme.FadingScroll(horizontal: true);
-            if (_mobileCollections)
+            if (_androidLayout)
             {
                 header.Margin = new Thickness(UiTheme.MobileGutter, 0);
                 if (headerAction is not null)
@@ -499,9 +424,18 @@ public sealed partial class MainView : UserControl
             }
             else
             {
-                var controls = new StackPanel { Orientation = Orientation.Horizontal, IsVisible = cardList.Length > 1 };
-                controls.Children.Add(IconButton("back", "Voltar em " + title, () => { scroll.Offset = new Vector(Math.Max(0, scroll.Offset.X - Math.Max(180, scroll.Viewport.Width * .8)), 0); return Task.CompletedTask; }));
-                controls.Children.Add(IconButton("forward", "Avançar em " + title, () => { scroll.Offset = new Vector(Math.Min(Math.Max(0, scroll.Extent.Width - scroll.Viewport.Width), scroll.Offset.X + Math.Max(180, scroll.Viewport.Width * .8)), 0); return Task.CompletedTask; }));
+                var controls = new StackPanel { Orientation = Orientation.Horizontal };
+                if (headerAction is not null)
+                {
+                    var history = ActionButton("Histórico", headerAction);
+                    history.Classes.Add("subtle");
+                    controls.Children.Add(history);
+                }
+                if (cardList.Length > 1)
+                {
+                    controls.Children.Add(IconButton("back", "Voltar em " + title, () => { scroll.Offset = new Vector(Math.Max(0, scroll.Offset.X - Math.Max(180, scroll.Viewport.Width * .8)), 0); return Task.CompletedTask; }));
+                    controls.Children.Add(IconButton("forward", "Avançar em " + title, () => { scroll.Offset = new Vector(Math.Min(Math.Max(0, scroll.Extent.Width - scroll.Viewport.Width), scroll.Offset.X + Math.Max(180, scroll.Viewport.Width * .8)), 0); return Task.CompletedTask; }));
+                }
                 Put(header, controls, 0, 1);
             }
             section.Children.Add(header);
@@ -509,20 +443,20 @@ public sealed partial class MainView : UserControl
             {
                 var note = Text(subtitle, UiTheme.Caption, Muted);
                 note.TextWrapping = TextWrapping.Wrap;
-                if (_mobileCollections) note.Margin = new Thickness(UiTheme.MobileGutter, 0);
+                if (_androidLayout) note.Margin = new Thickness(UiTheme.MobileGutter, 0);
                 section.Children.Add(note);
             }
             var row = new ItemsControl
             {
                 ItemsSource = cardList,
-                Margin = _mobileCollections ? new Thickness(UiTheme.MobileGutter, 0, 0, 0) : UiTheme.Zero,
+                Margin = _androidLayout ? new Thickness(UiTheme.MobileGutter, 0, 0, 0) : UiTheme.Zero,
                 ItemsPanel = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel
                 { Orientation = Orientation.Horizontal, CacheLength = .5 }),
                 ItemTemplate = new FuncDataTemplate<HomeCard>((card, _) =>
                 {
                     if (card is null) return new Border();
                     var control = card.Create();
-                    control.Margin = new Thickness(0, 0, _mobileCollections ? UiTheme.CompactGap : UiTheme.PageGap, 0);
+                    control.Margin = new Thickness(0, 0, _androidLayout ? UiTheme.CompactGap : UiTheme.PageGap, 0);
                     return control;
                 })
             };
@@ -541,7 +475,7 @@ public sealed partial class MainView : UserControl
     }
     private Control CoverCard(Track track, string subtitle, Func<Task> action, bool playlist = false, bool songActions = true, double? cardSize = null)
     {
-        var size = cardSize ?? (_mobileCollections && _page == "home" ? MobileHomeCardSize
+        var size = cardSize ?? (_androidLayout && _page == "home" ? MobileHomeCardSize
             : Bounds.Width < UiTheme.DesktopWidth ? (playlist ? 168 : 160) : (playlist ? 204 : 196));
         var panel = new StackPanel { Width = size, Spacing = 4 };
         var cover = new Grid { Width = size, Height = size };
@@ -606,45 +540,6 @@ public sealed partial class MainView : UserControl
             var button = ActionButton(action, execute); button.Classes.Add("primary"); button.HorizontalAlignment = HorizontalAlignment.Center; panel.Children.Add(button);
         }
         return panel;
-    }
-    private void BuildListTools()
-    {
-        _listTools.Children.Clear();
-        if (IsMobileWorkspace) return;
-        if (_page == "library") _listTools.Children.Add(_libraryFilter);
-        var row = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 8, LineSpacing = 8 };
-        if (_page == "library")
-            foreach (var section in new[] { "Músicas", "Playlists", "Álbuns", "Artistas" })
-            {
-                var tab = ActionButton(section, () => { _librarySection = section; BuildListTools(); Refresh(); return Task.CompletedTask; });
-                if (_librarySection == section) tab.Classes.Add("primary"); row.Children.Add(tab);
-            }
-        if (_page == "library")
-        {
-            foreach (var label in new[] { "Todas", "Locais", "Online" })
-            {
-                var chip = ActionButton(label, () => { _libraryKind = label; BuildListTools(); Refresh(); return Task.CompletedTask; }); chip.Classes.Add("pill");
-                if (_libraryKind == label) chip.Classes.Add("primary"); row.Children.Add(chip);
-            }
-            row.Children.Add(ActionButton(_libraryOrder, () => { _libraryOrder = _libraryOrder == "Recentes" ? "Título A–Z" : _libraryOrder == "Título A–Z" ? "Artista" : "Recentes"; _librarySorted = _libraryOrder == "Título A–Z"; BuildListTools(); Refresh(); return Task.CompletedTask; }));
-            if (_librarySection == "Playlists") row.Children.Add(ActionButton("Nova playlist", () => { ShowNewPlaylist(); return Task.CompletedTask; }));
-            if (_librarySection == "Músicas") row.Children.Add(ActionButton("Tocar tudo", () => PlayCollectionAsync(_tracks.ItemsSource?.Cast<Track>() ?? [])));
-        }
-        else if (_page == "queue")
-        {
-            row.Children.Add(ActionButton("Embaralhar", () => { _music.ReorderQueue(true); return Task.CompletedTask; }));
-            row.Children.Add(ActionButton(_music.RepeatQueue ? "Repetir: ligado" : "Repetir fila", () => { _music.RepeatQueue = !_music.RepeatQueue; BuildListTools(); return Task.CompletedTask; }));
-        }
-        else
-        {
-            foreach (var scope in new[] { "Online", "Sua biblioteca" })
-                row.Children.Add(ActionButton(scope, async () => { _searchScope = scope; await SearchAsync(); }));
-            foreach (var (label, query) in new[] { ("Explorar gêneros", "jazz soul instrumental music"), ("Foco", "instrumental focus music"), ("Energia", "energetic music"), ("Trilhas sonoras", "original soundtrack music") })
-                row.Children.Add(ActionButton(label, async () => { _searchScope = "Online"; _search.Text = query; await SearchAsync(); }));
-            row.Children.Add(ActionButton("Adicionar resultados à fila", () => { _music.EnqueueResults(); return Task.CompletedTask; }));
-            row.Children.Add(ActionButton("Tocar resultados", () => PlayCollectionAsync(_music.Results)));
-        }
-        _listTools.Children.Add(row);
     }
     private async Task PlayCollectionAsync(IEnumerable<Track> collection)
     {
@@ -727,13 +622,11 @@ public sealed partial class MainView : UserControl
         if (_overlay is not null) CloseSheet();
         _detailTrack = track; _showingPlayer = true;
         if (_playerPage is not null) _root.Children.Remove(_playerPage);
-        var mobilePlayer = _mobileCollections;
         var panel = new Grid
         {
-            RowDefinitions = new(mobilePlayer ? "Auto,*,Auto,Auto,Auto,Auto,Auto" : "Auto,*,Auto,Auto,*,Auto,Auto"),
-            RowSpacing = mobilePlayer ? UiTheme.CompactGap : UiTheme.SectionGap,
-            MaxWidth = mobilePlayer ? double.PositiveInfinity : UiTheme.PlayerMaxWidth,
-            Margin = mobilePlayer ? UiTheme.MobilePlayerMargin : UiTheme.PageMargin,
+            RowDefinitions = new("Auto,*,Auto,Auto,Auto,Auto,Auto"),
+            RowSpacing = UiTheme.CompactGap,
+            Margin = UiTheme.MobilePlayerMargin,
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
         var header = new Grid { ColumnDefinitions = new("Auto,*,Auto,Auto") };
@@ -743,16 +636,10 @@ public sealed partial class MainView : UserControl
         var artworkTrack = track == _music.Current && _music.CurrentSource?.Artwork is { } resolvedArtwork ? track with { Thumbnail = resolvedArtwork } : track;
         var art = new Artwork(artworkTrack, UiTheme.ThumbnailSize, fullResolution: true)
         {
-            HorizontalAlignment = mobilePlayer ? HorizontalAlignment.Stretch : HorizontalAlignment.Center,
-            VerticalAlignment = mobilePlayer ? VerticalAlignment.Stretch : VerticalAlignment.Center,
+            Width = double.NaN, Height = double.NaN,
             CornerRadius = new(UiTheme.CardRadius)
         };
-        Control playerCover = art;
-        if (mobilePlayer)
-        {
-            art.Width = art.Height = double.NaN;
-            playerCover = new SquareArtworkSlot { Child = art };
-        }
+        var playerCover = new SquareArtworkSlot { Child = art };
         Put(panel, playerCover, 1, 0);
         var metadata = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.CompactGap };
         var labels = new StackPanel { Spacing = UiTheme.CompactGap };
@@ -781,22 +668,14 @@ public sealed partial class MainView : UserControl
         var nextTrack = _music.Upcoming.FirstOrDefault();
         var nextTitle = _detailNext = Text(nextTrack is null ? "Nenhuma faixa na sequência" : TrackTextFormatter.Title(nextTrack.Title, nextTrack.Artist), UiTheme.ButtonText);
         nextTitle.TextTrimming = TextTrimming.CharacterEllipsis; upcoming.Children.Add(nextTitle);
-        Control upcomingBox;
-        if (mobilePlayer)
-        {
-            var openQueue = ActionButton("", () => { OpenQueueFromPlayer(); return Task.CompletedTask; });
-            var preview = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.CompactGap };
-            preview.Children.Add(upcoming);
-            Put(preview, Icons.Make("forward", Muted, 18), 0, 1);
-            openQueue.Content = preview;
-            openQueue.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-            Avalonia.Automation.AutomationProperties.SetName(openQueue, "Ver próximas faixas");
-            upcomingBox = openQueue;
-        }
-        else upcomingBox = UiTheme.Inner(upcoming);
+        var upcomingBox = ActionButton("", () => { OpenQueueFromPlayer(); return Task.CompletedTask; });
+        var preview = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.CompactGap };
+        preview.Children.Add(upcoming);
+        Put(preview, Icons.Make("forward", Muted, 18), 0, 1);
+        upcomingBox.Content = preview;
+        upcomingBox.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+        Avalonia.Automation.AutomationProperties.SetName(upcomingBox, "Ver próximas faixas");
         Put(panel, upcomingBox, 6, 0);
-        if (!mobilePlayer)
-            panel.RowDefinitions[4].Height = new GridLength(UiTheme.PlayerBottomWeight, GridUnitType.Star);
         var desktopLayout = new Grid { RowDefinitions = new("Auto,*"), ColumnDefinitions = new("*,*"),
             ColumnSpacing = UiTheme.DesktopPlayerGap, RowSpacing = UiTheme.PageGap, Margin = UiTheme.DesktopPlayerMargin,
             HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -808,7 +687,7 @@ public sealed partial class MainView : UserControl
         queuePanel.Children.Add(queueHeader);
         var playerRadio = new WrapPanel { ItemSpacing = 8 };
         playerRadio.Children.Add(_detailRadioToggle = ActionButton("Reprodução automática: " + (_music.Autoplay ? "ligada" : "desligada"), () => { _music.SetAutoplay(!_music.Autoplay); return Task.CompletedTask; }));
-        playerRadio.Children.Add(ActionButton("Relacionadas", () => { ClosePlayer(); _relatedTab = true; _page = "queue"; _queueOpen = true; Refresh(); return Task.CompletedTask; }));
+        playerRadio.Children.Add(ActionButton("Relacionadas", () => { _relatedTab = true; OpenQueueFromPlayer(); return Task.CompletedTask; }));
         playerRadio.Children.Add(_detailRadioRetry = CreateRadioRetryButton());
         Put(queuePanel, playerRadio, 1, 0);
         _detailQueueFingerprint = null;
@@ -836,12 +715,11 @@ public sealed partial class MainView : UserControl
         sourceButton.IsVisible = false;
         audioTools.Children.Add(sourceButton);
         volumeButton.Classes.Add("subtle"); ((Button)audioTools.Children[1]).Classes.Add("subtle");
-        var compactAudio = mobilePlayer ? IconButton("more", "Áudio e volume", () =>
+        var compactAudio = IconButton("more", "Áudio e volume", () =>
         {
             ShowAudioInfo();
             return Task.CompletedTask;
-        }) : null;
-        var artworkSlot = new Grid();
+        });
         bool? wideLayout = null;
         void ArrangeTransport()
         {
@@ -859,16 +737,18 @@ public sealed partial class MainView : UserControl
         var host = new Grid { RowDefinitions = new("*,Auto") };
         void ArrangePlayer()
         {
-            var wide = !mobilePlayer && host.Bounds.Width >= UiTheme.DesktopWidth;
+            var wide = !_androidLayout && host.Bounds.Width >= UiTheme.DesktopWidth;
             if (wideLayout != wide)
             {
-                panel.Children.Clear(); artworkSlot.Children.Clear(); desktopLayout.Children.Clear(); transport.Children.Clear(); host.Children.Clear();
-                header.Children.Remove(audioTools);
+                panel.Children.Clear(); desktopLayout.Children.Clear(); transport.Children.Clear(); host.Children.Clear();
+                _compactPlayer = !wide;
+                header.Children.Remove(compactAudio);
                 controls.Children.Remove(audioTools);
                 if (wide)
                 {
                     desktopLayout.VerticalAlignment = VerticalAlignment.Stretch;
-                    art.VerticalAlignment = VerticalAlignment.Center; queuePanel.VerticalAlignment = VerticalAlignment.Stretch;
+                    playerCover.MaxWidth = playerCover.MaxHeight = UiTheme.DesktopArtworkMax;
+                    queuePanel.VerticalAlignment = VerticalAlignment.Stretch;
                     title.TextWrapping = TextWrapping.NoWrap; title.MaxLines = 1; title.TextTrimming = TextTrimming.CharacterEllipsis;
                     title.FontSize = UiTheme.Body; artist.FontSize = UiTheme.Caption;
                     labels.Children.Remove(title);
@@ -879,8 +759,7 @@ public sealed partial class MainView : UserControl
                     controls.ColumnDefinitions = new("Auto,Auto,Auto,Auto,Auto,Auto");
                     Put(controls, audioTools, 0, 5);
                     Put(desktopLayout, header, 0, 0); Grid.SetColumnSpan(header, 2);
-                    artworkSlot.Children.Add(art);
-                    Put(desktopLayout, artworkSlot, 1, 0); Put(desktopLayout, queuePanel, 1, 1);
+                    Put(desktopLayout, playerCover, 1, 0); Put(desktopLayout, queuePanel, 1, 1);
                     Put(transport, metadata, 0, 0); metadata.VerticalAlignment = VerticalAlignment.Center;
                     Put(transport, controls, 0, 1);
                     _expandedQuality = Text("", UiTheme.Caption, Muted);
@@ -896,23 +775,15 @@ public sealed partial class MainView : UserControl
                 }
                 else
                 {
+                    playerCover.MaxWidth = playerCover.MaxHeight = double.PositiveInfinity;
                     _expandedQuality = Text("", UiTheme.Caption, Muted);
                     _expandedQuality.TextWrapping = TextWrapping.Wrap;
                     _expandedQuality.TextAlignment = TextAlignment.Center;
                     var mobileQuality = UiTheme.AudioBadge(_expandedQuality);
                     mobileQuality.HorizontalAlignment = HorizontalAlignment.Center;
                     mobileQuality.VerticalAlignment = VerticalAlignment.Top;
-                    if (compactAudio is not null)
-                    {
-                        mobileQuality.Padding = UiTheme.ChipPadding;
-                        Put(header, compactAudio, 0, 3);
-                    }
-                    else
-                    {
-                        mobileQuality.Margin = new Thickness(0, 8, 0, 0);
-                        art.VerticalAlignment = VerticalAlignment.Center;
-                        Put(header, audioTools, 0, 3);
-                    }
+                    mobileQuality.Padding = UiTheme.ChipPadding;
+                    Put(header, compactAudio, 0, 3);
                     controls.ColumnDefinitions = new("*,*,Auto,*,*");
                     if (title.Parent is ScrollingTitle scrolling)
                     {
@@ -930,18 +801,7 @@ public sealed partial class MainView : UserControl
                 }
                 wideLayout = wide;
             }
-            if (mobilePlayer)
-            {
-                upcomingBox.IsVisible = host.Bounds.Height >= 510;
-                return;
-            }
-            var width = wide ? Math.Min(UiTheme.DesktopArtworkMax, Math.Max(UiTheme.ThumbnailSize,
-                (host.Bounds.Width
-                - UiTheme.DesktopPlayerMargin.Left - UiTheme.DesktopPlayerMargin.Right - UiTheme.DesktopPlayerGap) / 2))
-                : Math.Min(UiTheme.PlayerMaxWidth, host.Bounds.Width - UiTheme.PageMargin.Left - UiTheme.PageMargin.Right);
-            var height = host.Bounds.Height - (wide ? UiTheme.DesktopPlayerChromeHeight : UiTheme.PlayerChromeHeight);
-            height = Math.Max(UiTheme.ThumbnailSize, height);
-            art.Width = art.Height = Math.Max(UiTheme.ThumbnailSize, Math.Min(width, height));
+            upcomingBox.IsVisible = host.Bounds.Height >= 510;
         }
         // Detach initial mobile composition before responsive host takes ownership.
         panel.Children.Clear();
@@ -955,7 +815,7 @@ public sealed partial class MainView : UserControl
     private void ClosePlayer()
     {
         if (_playerPage is not null) _root.Children.Remove(_playerPage);
-        _playerPage = null; _showingPlayer = false; _listFingerprint = null; _main.IsVisible = true; _bottom.IsVisible = _mobileCollections || Bounds.Width < UiTheme.DesktopWidth;
+        _playerPage = null; _showingPlayer = false; _main.IsVisible = true; _bottom.IsVisible = _androidLayout || Bounds.Width < UiTheme.DesktopWidth;
         _detailShuffle = _detailRepeat = _detailFavorite = null; _detailVolume = null;
         _detailQueue = null; _detailNext = _detailQueueHeading = null; _detailRadioToggle = _detailRadioRetry = null;
         _detailTrack = null; _detailSeek = null; _detailPlay = null; _detailTime = null; _detailDuration = null; _seeking = false; Refresh(); Animate(_main);
@@ -967,10 +827,11 @@ public sealed partial class MainView : UserControl
         if (_songPopup is { IsOpen: true }) { _songPopup.IsOpen = false; return true; }
         if (_overlay is not null) { CloseSheet(); return true; }
         if (_showingPlayer) { ClosePlayer(); return true; }
-        if (_mobileCollections && _page == "library" && _mobileLibraryGroup is not null) { CloseMobileLibraryGroup(); return true; }
-        if (_mobileCollections && _page == "queue" && _queueOpenedFromPlayer) { ReturnFromMobileQueue(); return true; }
+        if (_page == "library" && _mobileLibraryGroup is not null) { CloseMobileLibraryGroup(); return true; }
+        if (_page == "queue" && _queueOpenedFromPlayer) { ReturnFromMobileQueue(); return true; }
         if (_page == "collection") { _page = "home"; Refresh(); return true; }
-        if (_queueOpen || _page == "queue") { _queueOpen = false; _page = "home"; Refresh(); return true; }
+        if (_page == "queue") { _queueOpen = false; _page = "home"; Refresh(); return true; }
+        if (_queueOpen) { _queueOpen = false; Refresh(); return true; }
         return false;
     }
     private static void Animate(Control control)
@@ -1000,7 +861,7 @@ public sealed partial class MainView : UserControl
     private void RefreshPlayback()
     {
         RefreshPlaybackActions();
-        if (_mobileCollections && _page == "queue" && _mobileQueuePlay is not null) RefreshPlayButton(_mobileQueuePlay);
+        if ((_page == "queue" || _queuePane.IsVisible) && _mobileQueuePlay is not null) RefreshPlayButton(_mobileQueuePlay);
         RefreshPlayerQueue();
         UpdateRows(_music.Pending ?? _music.Current);
         RefreshPlayButton(_play);
@@ -1186,7 +1047,7 @@ public sealed partial class MainView : UserControl
         var source = _music.CurrentSource;
         var panel = new StackPanel { Spacing = UiTheme.SectionGap };
         panel.Children.Add(Text(TrackTextFormatter.Title(source?.Title ?? _music.Current?.Title ?? "", source?.Artist ?? _music.Current?.Artist), UiTheme.SectionTitle));
-        var adjustableVolume = _mobileCollections && _showingPlayer;
+        var adjustableVolume = _compactPlayer && _showingPlayer;
         if (adjustableVolume)
         {
             var volume = new Slider

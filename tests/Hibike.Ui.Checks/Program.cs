@@ -188,16 +188,24 @@ internal static partial class Program
                     Check(root.GetProperty("timestamps").GetProperty("end").GetInt64() == now.ToUnixTimeMilliseconds() + 150_000, "Discord playback end incorrect");
                 }
                 await Task.Delay(200);
-                var searchingField = typeof(MusicController).GetField("<Searching>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+                const System.Reflection.BindingFlags hidden = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+                var route = typeof(MainView).GetField("_page", hidden)!;
+                var loadingQuery = (TextBox)typeof(MainView).GetField("_search", hidden)!.GetValue(view)!;
+                loadingQuery.Text = "teste";
+                route.SetValue(view, "explore");
+                typeof(MainView).GetField("_mobileSearchAttempt", hidden)!.SetValue(view, loadingQuery.Text);
+                var searchingField = typeof(MusicController).GetField("<Searching>k__BackingField", hidden)!;
                 searchingField.SetValue(AppServices.Controller, true);
-                typeof(MainView).GetMethod("Refresh", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(view, null);
+                typeof(MainView).GetMethod("Refresh", hidden)!.Invoke(view, null);
                 await Task.Delay(100);
-                var searchLoading = (Border)typeof(MainView).GetField("_searchLoading", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
-                Check(searchLoading.IsEffectivelyVisible && searchLoading.GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Ellipse>().Any(), "Centered search loading missing");
+                var searchState = (ContentControl)typeof(MainView).GetField("_mobileSearchState", hidden)!.GetValue(view)!;
+                Check(Equals(searchState.Tag, "busy") && searchState.GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Ellipse>().Any(), "Search loading missing");
                 Capture(view, "search-loading");
                 searchingField.SetValue(AppServices.Controller, false);
-                typeof(MainView).GetMethod("Refresh", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(view, null);
-                Check(!searchLoading.IsVisible, "Search loading remained after completion");
+                loadingQuery.Text = "";
+                route.SetValue(view, "home");
+                typeof(MainView).GetMethod("Refresh", hidden)!.Invoke(view, null);
+                Check(!searchState.IsEffectivelyVisible, "Search loading remained after completion");
                 Check(!view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "Continuar ouvindo" && t.IsEffectivelyVisible), "Empty history shelf visible");
                 AppServices.Controller!.History.Add(new("home-check", "Faixa recente", "Artista", "test"));
                 AppServices.Controller.SetStatus("Home check");
@@ -207,7 +215,7 @@ internal static partial class Program
                     window.Width = homeWidth; await Task.Delay(150); Capture(view, $"home-{homeWidth}");
                     if (homeWidth == 360)
                     {
-                        Check(view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.IsEffectivelyVisible && t.Text == "Hibiki"), "Compact Windows missing app header");
+                        Check(view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.IsEffectivelyVisible && t.Text == "Hibike"), "Compact Windows missing app header");
                         Check(view.GetVisualDescendants().OfType<Button>().Count(b => b.IsEffectivelyVisible && Avalonia.Automation.AutomationProperties.GetName(b) == "Menu do aplicativo") == 1, "Compact Windows missing single menu button");
                         foreach (var tab in view.GetVisualDescendants().OfType<Button>().Where(b => b.IsEffectivelyVisible && b.Tag is ValueTuple<string, string, string, bool> tag && tag.Item4))
                         {
@@ -410,7 +418,7 @@ internal static partial class Program
                     window.Width = width;
                     var libraryNav = view.GetVisualDescendants().OfType<Button>().First(b => b.IsEffectivelyVisible && b.Tag is ValueTuple<string, string, string, bool> tag && tag.Item1 == "library");
                     libraryNav.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)); await Task.Delay(150);
-                    var filter = view.GetVisualDescendants().OfType<TextBox>().Single(t => t.PlaceholderText == "Filtrar título ou artista");
+                    var filter = view.GetVisualDescendants().OfType<TextBox>().Single(t => t.PlaceholderText == "Buscar na biblioteca");
                     filter.Text = "Local favorite"; await Task.Delay(100);
                     var filtered = view.GetVisualDescendants().OfType<ItemsControl>().Single(c => c.IsEffectivelyVisible);
                     Check(filtered.ItemsSource!.Cast<Track>().Single().Id == "local-filter", "Library filter did not isolate local favorite");
@@ -419,27 +427,24 @@ internal static partial class Program
                     var brand = (Image)typeof(MainView).GetField("_brandIcon", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
                     Check(!brand.IsVisible, "Library incorrectly displays app brand");
                     if (width == 360) music.CreatePlaylist("Library visual check");
-                    var sectionField = typeof(MainView).GetField("_librarySection", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
-                    sectionField.SetValue(view, "Playlists");
-                    typeof(MainView).GetMethod("BuildListTools", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(view, null);
-                    typeof(MainView).GetMethod("Refresh", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(view, null);
+                    var libraryTabs = (List<Button>)typeof(MainView).GetField("_mobileLibraryTabs", hidden)!.GetValue(view)!;
+                    libraryTabs[1].RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
                     await Task.Delay(150); Capture(view, $"library-playlists-{width}");
-                    var libraryGrid = (WrapPanel)typeof(MainView).GetField("_libraryGroups", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
+                    var libraryGrid = (ItemsControl)typeof(MainView).GetField("_mobileLibraryGroups", hidden)!.GetValue(view)!;
                     Check(libraryGrid.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "Library visual check"), "Library playlist cover missing");
-                    sectionField.SetValue(view, "Músicas");
+                    libraryTabs[0].RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
                     var queueNav = view.GetVisualDescendants().OfType<Button>().First(b => b.IsEffectivelyVisible && b.Tag is ValueTuple<string, string, string, bool> tag && tag.Item1 == "queue");
                     queueNav.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)); await Task.Delay(150); Capture(view, $"queue-{width}");
                     if (width == 360) Check(!brand.IsVisible, "Queue incorrectly displays app brand");
                     if (width == 360)
                     {
                         window.Height = 640; await Task.Delay(150);
-                        var upcoming = (ItemsControl)typeof(MainView).GetField("_upNext", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
+                        var upcoming = (ItemsControl)typeof(MainView).GetField("_mobileQueueItems", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
                         var queueScroll = upcoming.GetVisualAncestors().OfType<ScrollViewer>().First();
                         Check(queueScroll.Bounds.Height >= 120, "Portrait queue has no room for upcoming tracks");
-                        var currentCard = (ContentControl)typeof(MainView).GetField("_queueCurrent", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
-                        Check(currentCard.IsVisible && currentCard.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "TOCANDO AGORA"), "Mobile queue current track missing");
+                        Check(view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.IsEffectivelyVisible && t.Text == "Tocando agora"), "Mobile queue current track missing");
                         Check(upcoming.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "4:28"), "Mobile queue missing library-style duration");
-                        Check(view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.IsEffectivelyVisible && t.Text == "Próximas músicas"), "Mobile queue heading missing");
+                        Check(view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.IsEffectivelyVisible && t.Text == "A seguir"), "Mobile queue heading missing");
                         foreach (var button in view.GetVisualDescendants().OfType<Button>().Where(b => b.IsEffectivelyVisible && Avalonia.Automation.AutomationProperties.GetName(b)?.StartsWith("Reproduzir da fila:") == true))
                             Check(button.Bounds.Width > 100 && button.TranslatePoint(default, view)!.Value.X + button.Bounds.Width <= view.Bounds.Width, "Portrait queue row clipped");
                         Capture(view, "queue-360-short"); window.Height = 820;

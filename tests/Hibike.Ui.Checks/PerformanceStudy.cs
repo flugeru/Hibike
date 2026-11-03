@@ -64,11 +64,14 @@ internal static partial class Program
         results["hiddenDesktopDockRefresh"] = Measure(() => Call("RefreshDock"), 50);
 
         Set("_page", "explore");
+        ((TextBox)Field("_search")!).Text = "synthetic";
+        typeof(MusicController).GetField("<ResultsQuery>k__BackingField", hidden)!.SetValue(music, "synthetic");
         music.Results.Clear();
         foreach (var i in Enumerable.Range(0, 1000)) music.Results.Add(fixture[i % fixture.Length] with { Id = "list-" + i, Source = "list-" + i });
         Call("Refresh"); await Task.Delay(250);
         results["searchItems"] = music.Results.Count;
-        results["searchRealizedRows"] = ((System.Collections.IDictionary)Field("_rows")!).Count;
+        results["searchRealizedRows"] = ((ItemsControl)Field("_mobileSearchItems")!).GetVisualDescendants().OfType<Button>()
+            .Count(b => Avalonia.Automation.AutomationProperties.GetName(b)?.StartsWith("Opções de ") == true);
         results["stableSearchRefresh"] = Measure(() => Call("Refresh"), 20);
 
         Set("_page", "home"); Call("Refresh"); await Task.Delay(50);

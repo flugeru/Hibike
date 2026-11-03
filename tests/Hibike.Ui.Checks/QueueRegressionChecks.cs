@@ -185,17 +185,42 @@ internal static partial class Program
             await Task.Delay(120);
             typeof(MainView).GetField("_page", flags)!.SetValue(view, "queue");
             Invoke("Refresh"); await Task.Delay(200);
-            Check(((Control)Field("_queuePane")!).IsEffectivelyVisible, "Queue pane missing at width " + width);
-            Check(((ItemsControl)Field("_upNext")!).Items.Cast<Track>().SequenceEqual([last]), "Queue shows incorrect upcoming tracks at width " + width);
-            Invoke("ShowRadioOptions"); await Task.Delay(40);
+            Check(((Control)Field("_mobileQueue")!).IsEffectivelyVisible, "Shared queue page missing at width " + width);
+            var upcoming = (ItemsControl)Field("_mobileQueueItems")!;
+            Check(upcoming.Items.Count == 1 && upcoming.GetVisualDescendants().OfType<TextBlock>()
+                .Any(label => label.Text == last.Title), "Queue shows incorrect upcoming tracks at width " + width);
+            Check(((Button)Field("_mobileQueueRetry")!).IsEnabled, "Radio retry unavailable with upcoming tracks");
+            Invoke("ShowMobileQueueOptions"); await Task.Delay(40);
             var first = Field("_overlay");
-            Invoke("CloseSheet"); Invoke("ShowRadioOptions"); await Task.Delay(40);
+            Invoke("CloseSheet"); Invoke("ShowMobileQueueOptions"); await Task.Delay(40);
             Check(!ReferenceEquals(first, Field("_overlay")), "Radio options did not reopen");
-            var overlay = (Control)Field("_overlay")!;
-            Check(overlay.GetVisualDescendants().OfType<Button>().Single(b => b.Content as string == "Buscar sugestões novamente").IsEnabled,
-                "Radio retry unavailable with current song and upcoming queue");
             await Task.Delay(200); Capture(view, "queue-radio-" + width); Invoke("CloseSheet");
         }
+        var page = typeof(MainView).GetField("_page", flags)!;
+        page.SetValue(view, "home");
+        Invoke("Refresh");
+        await (Task)typeof(MainView).GetMethod("ToggleDesktopQueueAsync", flags)!.Invoke(view, null)!;
+        await Task.Delay(100);
+        var side = (Border)Field("_queuePane")!;
+        Check(side.IsEffectivelyVisible && ReferenceEquals(side.Child, Field("_mobileQueue")),
+            "Desktop dock did not open the shared queue in the side panel");
+
+        page.SetValue(view, "library");
+        Invoke("Refresh");
+        await Task.Delay(100);
+        Check(((Control)Field("_mobileLibrary")!).IsEffectivelyVisible, "Windows did not open the shared library");
+        Check((int)typeof(MainView).GetProperty("LibraryColumns", flags)!.GetValue(view)! > 2,
+            "Desktop library did not fit multiple columns alongside the queue");
+
+        page.SetValue(view, "explore");
+        Invoke("Refresh");
+        var search = (TextBox)Field("_search")!;
+        search.Text = "desktop search";
+        await (Task)typeof(MainView).GetMethod("SearchAsync", flags)!.Invoke(view, null)!;
+        await Task.Delay(100);
+        Check(((ItemsControl)Field("_mobileSearchItems")!).IsEffectivelyVisible,
+            "Windows did not show results in the shared search page");
+
         music.StopObserving(); await music.FlushPendingSavesAsync();
     }
 

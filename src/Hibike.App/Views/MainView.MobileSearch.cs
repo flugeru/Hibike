@@ -21,8 +21,9 @@ public sealed partial class MainView
     private Grid BuildMobileSearch()
     {
         var page = new Grid { RowDefinitions = new("Auto,Auto,Auto,Auto,*"), RowSpacing = UiTheme.CompactGap };
-        var input = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.CompactGap };
-        ((Panel)_search.Parent!).Children.Remove(_search);
+        var input = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.CompactGap,
+            HorizontalAlignment = HorizontalAlignment.Left };
+        page.SizeChanged += (_, e) => input.Width = Math.Min(e.NewSize.Width, 720);
         input.Children.Add(_search);
         _mobileSearchSubmit = ActionButton("Buscar", SearchAsync);
         Put(input, _mobileSearchSubmit, 0, 1);
@@ -116,7 +117,6 @@ public sealed partial class MainView
         _mobileSearchLocal.Classes.Set("primary", local);
         _mobileSearchSubmit.IsEnabled = query.Length > 0 && !busy;
         _mobileSearchSubmit.Classes.Set("primary", _mobileSearchSubmit.IsEnabled);
-        _cancelSearch.IsVisible = false;
         _clearSearch.IsVisible = !busy && !string.IsNullOrEmpty(_search.Text);
 
         var tracks = local && query.Length > 0

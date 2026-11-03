@@ -14,7 +14,6 @@ namespace Hibike.App.Views;
 public sealed partial class MainView
 {
     private Image _brandIcon = null!;
-    private string? _libraryGroupsKey;
     private Popup? _songPopup;
     private void AttachSongHold(Control control, Track track, Action<Control>? openMenu = null)
     {
@@ -65,13 +64,9 @@ public sealed partial class MainView
         popup.Closed += (_, _) => { _root.Children.Remove(popup); if (_songPopup == popup) _songPopup = null; };
         popup.IsOpen = true;
     }
-    private string _searchScope = "Online", _librarySection = "Músicas", _libraryOrder = "Recentes";
-    private readonly WrapPanel _libraryGroups = new() { ItemSpacing = 18, LineSpacing = 20 };
-    private readonly ScrollViewer _libraryGroupScroll = new() { IsVisible = false };
+    private string _searchScope = "Online";
     private readonly StackPanel _sidebarPins = new() { Spacing = 4 };
     private string? _sidebarPinsKey;
-    private readonly StackPanel _radioControls = new() { Spacing = 8 };
-    private string? _radioControlsKey;
     private bool _relatedTab;
     private Task ShowAccountMenuAsync()
     {
@@ -91,7 +86,7 @@ public sealed partial class MainView
         actions.Children.Add(ActionButton(_music.IsFavorite(track) ? "Remover dos favoritos" : "Salvar nos favoritos", async () => { await _music.ToggleFavoriteAsync(track); CloseSheet(); }));
         actions.Children.Add(ActionButton(_music.Pins.Any(t => t.Source == track.Source) ? "Desafixar de Ouvir de novo" : "Fixar em Ouvir de novo", () => { _music.TogglePin(track); CloseSheet(); return Task.CompletedTask; }));
         actions.Children.Add(ActionButton("Salvar na playlist local", () => { ShowPlaylistPicker(track); return Task.CompletedTask; }));
-        if (_mobileCollections && _page == "library" && _mobileLibraryGroup?.Playlist is { } playlist && playlist.Tracks.Contains(track))
+        if (_page == "library" && _mobileLibraryGroup?.Playlist is { } playlist && playlist.Tracks.Contains(track))
             actions.Children.Add(ActionButton("Remover desta playlist", () =>
             {
                 _music.RemoveFromPlaylist(playlist, track);
@@ -162,7 +157,7 @@ public sealed partial class MainView
         foreach (var related in new[] { false, true })
         {
             var button = ActionButton(related ? "Relacionadas" : "Fila", () =>
-            { CloseSheet(); _relatedTab = related; _queueFingerprint = null; Refresh(); return Task.CompletedTask; });
+            { CloseSheet(); _relatedTab = related; Refresh(); return Task.CompletedTask; });
             if (_relatedTab == related) button.Classes.Add("primary");
             tabs.Children.Add(button);
         }
@@ -186,23 +181,6 @@ public sealed partial class MainView
         button.IsEnabled = _music.Current is not null && !_music.RadioLoading && !_music.LoadingAudio;
         return button;
     }
-    private void ShowRadioOptions()
-    {
-        // Every opening owns fresh controls; reusing sheet children breaks reopening on mobile.
-        var options = new StackPanel { Spacing = 8 };
-        options.Children.Add(CreateRadioToggle()); options.Children.Add(CreateRadioTabs()); options.Children.Add(CreateRadioModes());
-        var state = Text("", UiTheme.Caption, Muted); state.TextWrapping = TextWrapping.Wrap;
-        var retry = CreateRadioRetryButton(); options.Children.Add(state); options.Children.Add(retry);
-        void UpdateState()
-        {
-            state.Text = _music.RadioStatus;
-            retry.Content = _music.RadioLoading ? "Buscando sugestões…" : "Buscar sugestões novamente";
-            retry.IsEnabled = _music.Current is not null && !_music.RadioLoading && !_music.LoadingAudio;
-        }
-        options.AttachedToVisualTree += (_, _) => { _music.Changed += UpdateState; UpdateState(); };
-        options.DetachedFromVisualTree += (_, _) => _music.Changed -= UpdateState;
-        UpdateState(); ShowSheet("Rádio", options);
-    }
     private void RefreshDiscovery()
     {
         var pinsKey = string.Join("|", _music.Playlists.Where(p => p.Pinned).Select(p => p.Name));
@@ -212,61 +190,5 @@ public sealed partial class MainView
             foreach (var playlist in _music.Playlists.Where(p => p.Pinned))
                 _sidebarPins.Children.Add(ActionButton(playlist.Name, () => { ShowLocalPlaylist(playlist); return Task.CompletedTask; }));
         }
-        var key = _music.Autoplay + ":" + _music.RadioLoading + ":" + _music.LoadingAudio + ":" + _music.Current?.Source + ":" + _music.RadioStatus + ":" + _music.DiscoveryMode + ":" + _music.PlaybackContext + ":" + _relatedTab + ":" + (Bounds.Width < UiTheme.DesktopWidth);
-        if (_radioControlsKey != key)
-        {
-            _radioControlsKey = key; _radioControls.Children.Clear();
-            if (Bounds.Width < UiTheme.DesktopWidth)
-                _radioControls.Children.Add(ActionButton(_music.RadioLoading ? "Buscando sugestões…" : "Rádio · " + (_music.Autoplay ? "Ligado" : "Desligado") + " · " + _music.DiscoveryMode,
-                    () => { ShowRadioOptions(); return Task.CompletedTask; }));
-            else
-            {
-                _radioControls.Children.Add(CreateRadioToggle());
-                _radioControls.Children.Add(CreateRadioTabs());
-                _radioControls.Children.Add(CreateRadioModes());
-                var state = Text(_music.RadioStatus, UiTheme.Caption, Muted); state.TextWrapping = TextWrapping.Wrap;
-                _radioControls.Children.Add(state);
-                if (_music.RadioLoading) _radioControls.Children.Add(LoadingRing(22, UiTheme.Primary));
-                _radioControls.Children.Add(CreateRadioRetryButton());
-            }
-        }
-        _libraryGroups.IsVisible = !_mobileCollections && _page == "library" && _librarySection != "Músicas";
-        _libraryGroupScroll.IsVisible = _libraryGroups.IsVisible;
-        if (!_libraryGroups.IsVisible) return;
-        _trackScroll.IsVisible = _listHeading.IsVisible = _emptyState.IsVisible = false;
-        var query = _libraryFilter.Text?.Trim() ?? "";
-        var groupsKey = _librarySection + ":" + _libraryOrder + ":" + _libraryKind + ":" + query + ":" + (int)_main.Bounds.Width
-            + ":" + string.Join("|", _music.Favorites.Select(t => t.ToString())) + ":" + string.Join("|", _music.Playlists.Select(p => p.Name + string.Join(",", p.Tracks)))
-            + ":" + string.Join("|", _accountPlaylists.Select(p => p.Id + p.Title));
-        if (_libraryGroupsKey == groupsKey) return;
-        _libraryGroupsKey = groupsKey;
-        _libraryGroups.Children.Clear();
-        var entries = new List<(Track Art, string Subtitle, Func<Task> Action)>();
-        bool Matches(string text) => text.Contains(query, StringComparison.CurrentCultureIgnoreCase);
-        if (_librarySection == "Playlists")
-        {
-            if (_libraryKind != "Online")
-            foreach (var playlist in _music.Playlists.Where(p => Matches(p.Name)))
-                entries.Add((new Track("playlist:" + playlist.Name, playlist.Name, "Playlist", "playlist:" + playlist.Name, Thumbnail: playlist.Tracks.FirstOrDefault()?.Thumbnail), $"Playlist · {playlist.Tracks.Count} faixas · Local", () => { ShowLocalPlaylist(playlist); return Task.CompletedTask; }));
-            if (_libraryKind != "Locais")
-            foreach (var playlist in _accountPlaylists.Where(p => Matches(p.Title)))
-                entries.Add((new Track(playlist.Id, playlist.Title, "Playlist", "https://www.youtube.com/playlist?list=" + Uri.EscapeDataString(playlist.Id), Thumbnail: playlist.Thumbnail), "Playlist · YouTube", () => ShowAccountTracksAsync(_account!, playlist.Id, playlist.Title)));
-        }
-        else
-        {
-            var groups = _music.Favorites.Where(t => (_libraryKind != "Locais" || t.IsLocal) && (_libraryKind != "Online" || !t.IsLocal))
-                .Where(t => _librarySection == "Artistas" || !string.IsNullOrWhiteSpace(t.Album))
-                .GroupBy(t => _librarySection == "Artistas" ? t.Artist : t.Artist + " · " + t.Album);
-            foreach (var group in groups.Where(g => Matches(g.Key)))
-                entries.Add((group.First() with { Title = _librarySection == "Artistas" ? group.First().Artist : group.First().Album! }, $"{(_librarySection == "Artistas" ? "Artista" : "Álbum")} · {group.Count()} faixas", () => { OpenLocalCollection(group.Key, group); return Task.CompletedTask; }));
-        }
-        IEnumerable<(Track Art, string Subtitle, Func<Task> Action)> ordered = entries;
-        if (_libraryOrder == "Título A–Z") ordered = entries.OrderBy(e => e.Art.Title, StringComparer.CurrentCultureIgnoreCase);
-        else if (_libraryOrder == "Artista") ordered = entries.OrderBy(e => e.Art.Artist, StringComparer.CurrentCultureIgnoreCase);
-        else if (_librarySection != "Playlists") ordered = entries.OrderByDescending(e => _music.Listening.GetValueOrDefault(MusicController.SongKey(e.Art))?.LastPlayed ?? DateTime.MinValue);
-        foreach (var entry in ordered)
-            _libraryGroups.Children.Add(CoverCard(entry.Art, entry.Subtitle, entry.Action, playlist: _librarySection == "Playlists", songActions: false,
-                cardSize: Bounds.Width < UiTheme.DesktopWidth ? Math.Max(120, (_main.Bounds.Width - 18) / 2) : 196));
-        if (entries.Count == 0) _libraryGroups.Children.Add(Text("Nenhuma coleção encontrada para estes filtros.", UiTheme.Caption, Muted));
     }
 }

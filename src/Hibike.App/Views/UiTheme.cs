@@ -24,8 +24,8 @@ internal static class UiTheme
         DialogMaxWidth = 560, CompactWidth = 390, DesktopWidth = 800, SidebarWidth = 104,
         NavHeight = 72, RowHeight = 76, TrackRowHeight = 70, MarkerSize = 7, EqualizerGap = 3, EqualizerBarWidth = 4, EqualizerStep = 5,
         PauseStroke = 4, StateTransitionMilliseconds = 160, EqualizerMilliseconds = 180,
-        PlayerChromeHeight = 388, PlayerBottomWeight = .15, ListFadeHeight = 18,
-        DesktopPlayerGap = 48, DesktopPlayerChromeHeight = 280, ToggleIconHeight = 36,
+        ListFadeHeight = 18,
+        DesktopPlayerGap = 48, ToggleIconHeight = 36,
         DesktopArtworkMax = 500, DesktopPlayerMaxWidth = 1120, DesktopPlaySize = 56,
         MarqueeFrameMilliseconds = 30, MarqueeStep = .8, MarqueePauseFrames = 60, TitleLineHeight = 24;
     public static readonly Thickness PageMargin = new(14, 14, 14, 18), ButtonPadding = new(12, 7),

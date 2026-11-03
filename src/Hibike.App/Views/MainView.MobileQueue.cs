@@ -25,7 +25,12 @@ public sealed partial class MainView
     {
         var page = new Grid { RowDefinitions = new("Auto,Auto,Auto,Auto,Auto,*"), RowSpacing = UiTheme.CompactGap };
         var header = new Grid { ColumnDefinitions = new("Auto,*,Auto") };
-        _mobileQueueBack = IconButton("back", "Voltar ao player", () => { ReturnFromMobileQueue(); return Task.CompletedTask; });
+        _mobileQueueBack = IconButton("back", "Voltar", () =>
+        {
+            if (_queuePane.IsVisible) { _queueOpen = false; Refresh(); }
+            else ReturnFromMobileQueue();
+            return Task.CompletedTask;
+        });
         header.Children.Add(_mobileQueueBack);
         _mobileQueueHeader = CollectionText("Sua fila", UiTheme.PageTitle, weight: FontWeight.SemiBold);
         Put(header, _mobileQueueHeader, 0, 1);
@@ -111,8 +116,8 @@ public sealed partial class MainView
     private void RefreshMobileQueue()
     {
         var current = _music.Pending ?? _music.Current;
-        _mobileQueueBack.IsVisible = _queueOpenedFromPlayer;
-        _mobileQueueHeader.Text = _queueOpenedFromPlayer ? "Fila" : "Sua fila";
+        _mobileQueueBack.IsVisible = _queueOpenedFromPlayer || _queuePane.IsVisible;
+        _mobileQueueHeader.Text = _mobileQueueBack.IsVisible ? "Fila" : "Sua fila";
         _mobileQueueError.Text = _music.Status;
         _mobileQueueError.IsVisible = _music.HasError;
         if (!Equals(_mobileQueueCurrent, current))
@@ -225,9 +230,31 @@ public sealed partial class MainView
     {
         _mobileQueueReturnPage = _page;
         ClosePlayer();
-        _queueOpenedFromPlayer = _mobileCollections;
+        _queueOpenedFromPlayer = true;
+        _queueOpen = false;
         _page = "queue";
         Refresh();
+    }
+
+    private Task ToggleDesktopQueueAsync()
+    {
+        if (_page == "queue")
+        {
+            if (_queueOpenedFromPlayer) ReturnFromMobileQueue();
+            else { _page = "home"; Refresh(); }
+        }
+        else if (Bounds.Width >= 1100)
+        {
+            _queueOpen = !_queueOpen;
+            Refresh();
+        }
+        else
+        {
+            _queueOpen = false;
+            _page = "queue";
+            Refresh();
+        }
+        return Task.CompletedTask;
     }
 
     private void ReturnFromMobileQueue()

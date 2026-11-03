@@ -13,14 +13,6 @@ namespace Hibike.App.Views;
 public sealed partial class MainView
 {
     private readonly Border _queuePane = new();
-    private readonly Grid _queueLayout = new() { RowDefinitions = new("Auto,Auto,Auto,*"), RowSpacing = 16 };
-    private readonly ContentControl _queueCurrent = new();
-    private readonly ItemsControl _upNext = new() { ItemsPanel = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel()) };
-    private readonly TextBlock _queueSummary = Text("", UiTheme.Caption, Muted);
-    private readonly Grid _queueMobileActions = new() { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = 4 };
-    private Grid _queueButtons = null!;
-    private TextBlock _queueTitle = null!;
-    private Button _queueClose = null!;
     private readonly Border _collectionPage = new();
     private readonly Border _desktopDock = new();
     private readonly ContentControl _dockArtwork = new();
@@ -61,7 +53,6 @@ public sealed partial class MainView
     private Button _dockShuffle = null!, _dockRepeat = null!, _dockFavorite = null!;
     private bool _dockSeeking;
     private bool _queueOpen;
-    private string? _queueFingerprint;
     private Track? _dockTrack;
     private Button? _detailShuffle, _detailRepeat, _detailFavorite;
     private Slider? _dockVolume, _detailVolume;
@@ -70,138 +61,27 @@ public sealed partial class MainView
     private void InitializeWorkspace(Grid content)
     {
         _root.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(0)));
-        var queueHeader = new Grid { ColumnDefinitions = new("*,Auto") };
-        var queueTitle = Text("Fila de reprodução", UiTheme.DialogTitle); queueTitle.TextTrimming = TextTrimming.CharacterEllipsis;
-        _queueTitle = queueTitle;
-        queueHeader.Children.Add(queueTitle);
-        _queueClose = IconButton("close", "Fechar fila", () => { _queueOpen = false; if (_page == "queue") _page = "home"; Refresh(); return Task.CompletedTask; });
-        Put(queueHeader, _queueClose, 0, 1);
-        _queueLayout.Children.Add(queueHeader);
-        Put(_queueLayout, _queueCurrent, 1, 0);
-        var actions = new StackPanel { Spacing = 8 };
-        _queueSummary.TextWrapping = TextWrapping.Wrap;
-        actions.Children.Add(_queueSummary);
-        actions.Children.Add(_radioControls);
-        var buttons = new Grid { ColumnDefinitions = new("*,*"), ColumnSpacing = 8 };
-        _queueButtons = buttons;
-        buttons.Children.Add(ActionButton("Embaralhar", () => { _music.ReorderQueue(true); return Task.CompletedTask; }));
-        Put(buttons, ActionButton("Limpar próximas", () => { _music.ClearQueue(); return Task.CompletedTask; }), 0, 1);
-        actions.Children.Add(buttons); Put(_queueLayout, actions, 2, 0);
-        var mobileHeading = Text("Próximas músicas", UiTheme.SectionTitle);
-        _queueMobileActions.Children.Add(mobileHeading);
-        var shuffle = IconButton("shuffle", "Embaralhar próximas faixas", () => { _music.ReorderQueue(true); return Task.CompletedTask; }); shuffle.Classes.Add("subtle");
-        var clear = IconButton("more", "Ações da fila", () =>
-        {
-            var options = new StackPanel { Spacing = 8 };
-            options.Children.Add(ActionButton("Limpar próximas faixas", () => { _music.ClearQueue(); CloseSheet(); return Task.CompletedTask; }));
-            ShowSheet("Fila", options); return Task.CompletedTask;
-        }); clear.Classes.Add("subtle");
-        Put(_queueMobileActions, shuffle, 0, 1); Put(_queueMobileActions, clear, 0, 2);
-        actions.Children.Insert(0, _queueMobileActions);
-        _upNext.ItemTemplate = new FuncDataTemplate<Track>((track, _) => track is null ? new Border() : QueueRow(track));
-        Put(_queueLayout, UiTheme.FadingScroll(_upNext), 3, 0);
-        _queuePane.Child = _queueLayout; _queuePane.Padding = new Thickness(20); _queuePane.Background = UiTheme.Brush(UiTheme.Surface);
-        _queuePane.BorderBrush = UiTheme.Brush(UiTheme.Outline); _queuePane.BorderThickness = new Thickness(1, 0, 0, 0);
+        _queuePane.Padding = new Thickness(16);
+        _queuePane.Background = UiTheme.Brush(UiTheme.Surface);
+        _queuePane.BorderBrush = UiTheme.Brush(UiTheme.Outline);
+        _queuePane.BorderThickness = new Thickness(1, 0, 0, 0);
         Put(_root, _queuePane, 0, 2);
-        Put(content, _collectionPage, 5, 0);
-        BuildDesktopDock(); Put(_root, _desktopDock, 1, 0); Grid.SetColumnSpan(_desktopDock, 3);
-    }
-
-    private void ResizeWorkspace()
-    {
-        var desktop = !_mobileCollections && Bounds.Width >= 1100;
-        var mobile = Bounds.Width < UiTheme.DesktopWidth;
-        _queuePane.Padding = mobile ? UiTheme.Zero : new Thickness(20);
-        ((Control)_queueTitle.Parent!).IsVisible = !mobile;
-        _queuePane.Background = UiTheme.Brush(mobile ? UiTheme.Background : UiTheme.Surface);
-        _queuePane.BorderThickness = mobile ? UiTheme.Zero : new Thickness(1, 0, 0, 0);
-        _queueCurrent.IsVisible = true;
-        _queueClose.IsVisible = !mobile;
-        _queueButtons.IsVisible = !mobile;
-        _queueMobileActions.IsVisible = mobile;
-        _queueTitle.Text = mobile ? "Sua fila" : "Fila de reprodução";
-        _queueTitle.FontSize = mobile ? UiTheme.PageTitle : UiTheme.DialogTitle;
-        _queueLayout.RowSpacing = mobile ? 6 : 16;
-        var destination = desktop ? _root : (Grid)_main.Child!;
-        if (!ReferenceEquals(_queuePane.Parent, destination))
-        {
-            if (_queuePane.Parent is Panel parent) parent.Children.Remove(_queuePane);
-            Put(destination, _queuePane, desktop ? 0 : 5, desktop ? 2 : 0);
-        }
-        if (desktop)
-        {
-            _root.ColumnDefinitions[2].Width = new GridLength(_queueOpen || _page == "queue" ? 350 : 0);
-        }
-        else
-        {
-            _root.ColumnDefinitions[2].Width = new GridLength(0);
-        }
-        _queuePane.IsVisible = !_mobileCollections && !_showingPlayer && (desktop ? _queueOpen || _page == "queue" : _page == "queue");
-        var display = _music.Pending ?? _music.Current;
-        _desktopDock.IsVisible = display is not null && !_showingPlayer && Bounds.Width >= 1000 && !_mobileCollections;
-        _mini.IsVisible = display is not null && !_showingPlayer && !_desktopDock.IsVisible && !(_mobileCollections && _page == "queue");
-        if (_showingPlayer) _queuePane.IsVisible = false;
-        if (_overlay is not null) Grid.SetColumnSpan(_overlay, 3);
+        Put(content, _collectionPage, 2, 0);
+        BuildDesktopDock();
+        Put(_root, _desktopDock, 1, 0);
+        Grid.SetColumnSpan(_desktopDock, 3);
     }
 
     private void RefreshWorkspace()
     {
-        ResizeWorkspace();
-        var queue = _page == "queue";
-        var collection = _page == "collection";
-        if (queue || collection) _trackScroll.IsVisible = _listHeading.IsVisible = _listTools.IsVisible = false;
-        _collectionPage.IsVisible = collection;
-        if (_main.Child is Grid content)
-        {
-            content.Children[0].IsVisible = !_mobileCollections || _page is not ("queue" or "library");
-            content.Children[1].IsVisible = !IsMobileWorkspace && !queue && !collection;
-            content.RowSpacing = queue || collection || _page == "home" ? 4 : Bounds.Width < UiTheme.DesktopWidth ? 8 : 12;
-        }
-        if (_mobileCollections && queue) return;
-        _pageTitle.Text = collection ? "Coleção" : queue ? "Sua fila" : _pageTitle.Text;
-        var fingerprint = string.Join("|", _music.Queue.Select(t => t.Id + ":" + t.Source + _music.IsRecommended(t))) + ":" + _music.Current?.Source + ":" + (Bounds.Width < UiTheme.DesktopWidth) + ":" + _relatedTab;
-        if (_queueFingerprint != fingerprint)
-        {
-            _queueFingerprint = fingerprint;
-            var upcoming = _music.Upcoming.ToArray();
-            if (_relatedTab) upcoming = upcoming.Where(_music.IsRecommended).ToArray();
-            _upNext.ItemsSource = upcoming;
-            var duration = upcoming.Sum(t => Math.Max(0, t.DurationSeconds));
-            var mobile = Bounds.Width < UiTheme.DesktopWidth;
-            var total = duration > 0 ? $" · {Time(duration)}" : "";
-            _queueSummary.Text = upcoming.Length == 0 ? (_relatedTab ? "Nenhuma recomendação na fila. Busque novas sugestões no rádio." : "Nenhuma próxima faixa. Adicione músicas ou busque sugestões no rádio.") : $"{(mobile ? "" : "A SEGUIR · ")}{upcoming.Length} {(upcoming.Length == 1 ? "faixa" : "faixas")}{total}";
-            var current = new StackPanel { Spacing = 12 };
-            current.Children.Add(Text("TOCANDO AGORA", UiTheme.Label, Muted));
-            if (_music.Current is { } track)
-            {
-                var row = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = 12 };
-                row.Children.Add(new Artwork(track, 64));
-                var labels = new StackPanel { Spacing = 4 };
-                var title = Text(TrackTextFormatter.Title(track.Title, track.Artist), UiTheme.Body); title.TextWrapping = TextWrapping.Wrap; title.MaxLines = 2; labels.Children.Add(title);
-                var artist = Text(track.Artist, UiTheme.Caption, Muted); artist.TextTrimming = TextTrimming.CharacterEllipsis; labels.Children.Add(artist);
-                Put(row, labels, 0, 1);
-                if (mobile)
-                {
-                    row.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
-                    var open = IconButton("forward", "Abrir faixa atual no player", () => { ShowPlayer(); return Task.CompletedTask; });
-                    open.Classes.Add("subtle"); Put(row, open, 0, 2);
-                }
-                current.Children.Add(row);
-            }
-            else current.Children.Add(Text("Escolha uma música para começar.", UiTheme.Caption, Muted));
-            _queueCurrent.Content = UiTheme.Card(current, 12);
-        }
+        var showSideQueue = !_androidLayout && Bounds.Width >= 1100 && _queueOpen && !_showingPlayer && _page != "queue";
+        _root.ColumnDefinitions[2].Width = new GridLength(showSideQueue ? 350 : 0);
+        _queuePane.IsVisible = showSideQueue;
+        var display = _music.Pending ?? _music.Current;
+        _desktopDock.IsVisible = display is not null && !_showingPlayer && Bounds.Width >= 1000 && !_androidLayout;
+        _mini.IsVisible = display is not null && !_showingPlayer && !_desktopDock.IsVisible && !(_androidLayout && _page == "queue");
+        _collectionPage.IsVisible = _page == "collection";
         RefreshDock();
-        _queueTitle.Text = _music.PlaybackContext;
-    }
-
-    private Control QueueRow(Track track)
-    {
-        var section = Text(_music.IsRecommended(track) ? "RECOMENDADA" : "ADICIONADA POR VOCÊ", UiTheme.Label, Muted);
-        var index = _music.Queue.IndexOf(track);
-        section.IsVisible = index <= 0 || index == _music.CurrentQueueIndex + 1 || _music.IsRecommended(_music.Queue[index - 1]) != _music.IsRecommended(track);
-        var grouped = new StackPanel { Spacing = 4 }; grouped.Children.Add(section); grouped.Children.Add(TrackRow(track));
-        return grouped;
     }
 
     private void BuildDesktopDock()
@@ -246,7 +126,7 @@ public sealed partial class MainView
         _sourceButton.VerticalAlignment = VerticalAlignment.Center;
         var sourceAndControls = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = 12 };
         sourceAndControls.Children.Add(_sourceButton); Put(sourceAndControls, rightHost, 0, 1);
-        right.Children.Add(IconButton("queue", "Mostrar ou ocultar fila", () => { _queueOpen = !_queueOpen; Refresh(); return Task.CompletedTask; }));
+        right.Children.Add(IconButton("queue", "Mostrar ou ocultar fila", ToggleDesktopQueueAsync));
         var volume = _dockVolume = new Slider { Minimum = 0, Maximum = 1, Value = _music.Player.Volume, Width = 88, MinHeight = 48 };
         Avalonia.Automation.AutomationProperties.SetName(volume, "Volume da barra"); volume.ValueChanged += (_, _) => _music.Player.Volume = volume.Value;
         right.Children.Add(volume); Put(rightHost, right, 1, 0); Put(grid, sourceAndControls, 0, 2);

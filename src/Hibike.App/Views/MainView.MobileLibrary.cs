@@ -103,7 +103,10 @@ public sealed partial class MainView
 
         page.SizeChanged += (_, e) =>
         {
-            if (_page == "library" && e.PreviousSize.Width != e.NewSize.Width) RefreshMobileLibrary();
+            if (_page != "library" || e.PreviousSize.Width == e.NewSize.Width) return;
+            _mobileLibraryTabRail.Width = Math.Min(e.NewSize.Width, 560);
+            _mobileLibraryTabRail.HorizontalAlignment = HorizontalAlignment.Left;
+            RefreshMobileLibrary();
         };
         return page;
     }
@@ -167,11 +170,11 @@ public sealed partial class MainView
         {
             var groups = MobileLibraryGroups(tracks, query).ToArray();
             count = groups.Length;
-            var key = _mobileLibraryTab + ":" + MobileLibraryCardSize + ":" + string.Join("|", groups.Select(group => $"{group.Title}\n{group.Subtitle}\n{group.Artwork?.Thumbnail}\n{group.OnlinePlaylist?.Id}\n{string.Join(",", group.Tracks.Select(track => track.Source))}"));
+            var key = _mobileLibraryTab + ":" + LibraryColumns + ":" + MobileLibraryCardSize + ":" + string.Join("|", groups.Select(group => $"{group.Title}\n{group.Subtitle}\n{group.Artwork?.Thumbnail}\n{group.OnlinePlaylist?.Id}\n{string.Join(",", group.Tracks.Select(track => track.Source))}"));
             if (_mobileLibraryGroupKey != key)
             {
                 _mobileLibraryGroupKey = key;
-                _mobileLibraryGroups.ItemsSource = groups.Chunk(2).ToArray();
+                _mobileLibraryGroups.ItemsSource = groups.Chunk(LibraryColumns).ToArray();
             }
             var unit = _mobileLibraryTab switch
             {
@@ -246,13 +249,16 @@ public sealed partial class MainView
                 StringComparer.CurrentCultureIgnoreCase);
     }
 
+    private int LibraryColumns => _androidLayout ? 2
+        : Math.Clamp((int)((_mobileLibrary?.Bounds.Width ?? 0) / 180), 2, 6);
+
     private double MobileLibraryCardSize => _mobileLibrary is { Bounds.Width: > 0 } page
-        ? Math.Clamp(Math.Floor((page.Bounds.Width - UiTheme.SectionGap) / 2), 100, 240)
+        ? Math.Clamp(Math.Floor((page.Bounds.Width - (LibraryColumns - 1) * UiTheme.SectionGap) / LibraryColumns), 100, 240)
         : 160;
 
     private Control BuildMobileLibraryGroupRow(LibraryGroup[] groups)
     {
-        var row = new Grid { ColumnDefinitions = new("*,*"), ColumnSpacing = UiTheme.SectionGap,
+        var row = new Grid { ColumnDefinitions = new(string.Join(",", Enumerable.Repeat("*", LibraryColumns))), ColumnSpacing = UiTheme.SectionGap,
             Margin = new Thickness(0, 0, 0, UiTheme.SectionGap) };
         for (var index = 0; index < groups.Length; index++)
         {
