@@ -42,3 +42,8 @@ GPU work, native bitmap allocation size, network behavior, or device storage lat
 The numbers are observations, not machine-dependent pass/fail thresholds.
 
 See [the investigation](../../docs/performance/android-ui-performance.md) and its recorded baseline.
+
+Use `--performance-checks --headless` in place of `--performance-study --headless`
+to assert cover reuse/resolution, scrolling through the virtualized shelves at mobile
+widths, and persistence snapshot consistency. See the
+[before/after results](../../docs/performance/android-ui-optimization.md).

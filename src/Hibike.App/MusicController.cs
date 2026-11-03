@@ -12,7 +12,7 @@ public sealed partial class MusicController
     private CancellationTokenSource? _play;
     private readonly SemaphoreSlim _playGate = new(1, 1);
     private readonly DispatcherTimer _timer;
-    private bool _initialized;
+    private bool _initialized, _initializing;
     private int _queueIndex = -1;
     private readonly PlaybackSessionStore _session;
     private bool _restored;
@@ -67,6 +67,7 @@ public sealed partial class MusicController
     {
         _catalog = catalog; Player = player; _store = store; DataDirectory = directory;
         _session = new PlaybackSessionStore(directory);
+        _stateWriter = new(WriteState, ReportSaveError);
         LoadPersonalization();
         Queue.CollectionChanged += (_, _) => _queueIndex = CurrentQueueIndex;
         Changed += SaveSession;
@@ -92,8 +93,8 @@ public sealed partial class MusicController
     }
     public async Task InitializeAsync()
     {
-        if (_initialized) return;
-        _initialized = true;
+        if (_initialized || _initializing) return;
+        _initializing = true;
         try
         {
             foreach (var track in await _store.LoadAsync())
@@ -111,9 +112,13 @@ public sealed partial class MusicController
             }
             catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or UnauthorizedAccessException)
             { PlaybackDiagnostics.Write("Sessão", ex.Message); }
-            Changed?.Invoke();
         }
-        catch (Exception ex) { SetStatus("Não foi possível ler a biblioteca: " + ex.Message); }
+        catch (Exception ex) { Status = "Não foi possível ler a biblioteca: " + ex.Message; }
+        finally
+        {
+            // A timer tick must not overwrite the stored session while the library is loading.
+            _initializing = false; _initialized = true; Changed?.Invoke();
+        }
     }
     public void SetStatus(string status) { Status = status; Changed?.Invoke(); }
     private void Fail(string message)
@@ -490,10 +495,8 @@ public sealed partial class MusicController
     private void WarmNext() { if (_catalog is CachedMusicCatalog cached && _queueIndex + 1 < Queue.Count) _ = cached.WarmAsync([Queue[_queueIndex + 1]]); }
     public void SaveSession()
     {
-        if (!_initialized) return;
-        try { _session.Save(new(Queue.ToArray(), Current, _queueIndex, Math.Max(0, Position), History.Take(100).ToArray())); SavePersonalization(); _lastSave = DateTime.UtcNow; }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        { PlaybackDiagnostics.Write("Salvar sessão", ex.Message); }
+        if (!_initialized || _notifyingSaveError) return;
+        QueueStateSave();
     }
     public void StartObserving() => _timer.Start();
     public void StopObserving() { SaveSession(); _timer.Stop(); _search?.Cancel(); }

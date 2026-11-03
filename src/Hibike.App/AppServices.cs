@@ -9,7 +9,7 @@ public static class AppServices
     public static Func<bool>? BackHandler { get; set; }
     private static string? _directory;
     public static MusicController? Controller { get; private set; }
-    public static void Suspend() { Controller?.SaveSession(); Controller?.CancelPlayback(); Player?.Pause(); }
+    public static void Suspend() { Controller?.SaveSession(); Controller?.CancelPlayback(); Player?.Pause(); Controller?.FlushPendingSaves(); }
     public static IAudioPlayer? Player { get; private set; }
     public static void Configure(IMusicCatalog catalog, IAudioPlayer player, string directory)
     { _catalog = new CachedMusicCatalog(catalog); Player = player; _directory = directory; }

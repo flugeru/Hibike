@@ -303,7 +303,7 @@ public sealed partial class MainView
     }
     private void RefreshDock()
     {
-        if (_dockPlay is null) return;
+        if (_dockPlay is null || !_desktopDock.IsVisible && !_showingPlayer) return;
         RefreshPlayButton(_dockPlay);
         var track = _music.Pending ?? _music.Current;
         if (!Equals(track, _dockTrack)) { _dockTrack = track; _dockArtwork.Content = new Artwork(track, 56); }

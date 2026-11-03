@@ -116,18 +116,10 @@ public sealed partial class MusicController
         catch (Exception error) when (error is IOException or JsonException or UnauthorizedAccessException)
         { PlaybackDiagnostics.Write("Personalização", "Não foi possível carregar dados locais: " + error.Message); }
     }
-    private void SavePersonalization()
-    {
-        Directory.CreateDirectory(DataDirectory);
-        var path = Path.Combine(DataDirectory, "personalization.json");
-        File.WriteAllText(path + ".tmp", JsonSerializer.Serialize(_personal));
-        File.Move(path + ".tmp", path, true);
-    }
+    private void SavePersonalization() => QueueStateSave();
     private void PersistPersonalization()
     {
-        try { SavePersonalization(); }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        { Fail("Não foi possível salvar personalização: " + error.Message); }
+        if (!_initialized) QueueStateSave();
         Changed?.Invoke();
     }
     private void BeginListening(Track track)

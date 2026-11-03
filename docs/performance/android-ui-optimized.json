@@ -1,0 +1,61 @@
+{
+  "scope": "Headless Skia, synthetic data at 390x844 DIP; not Android FPS or GPU measurements",
+  "framework": "12.1.4.0",
+  "runtime": ".NET 10.0.14",
+  "referenceBaselineCommit": "818b8200cc465fe938a3087f9c2dce3b9843ecf7",
+  "homeArtworksAttached": 14,
+  "homeArtworksIntersectingWindowUpperBound": 7,
+  "homeShelves": 9,
+  "homeFingerprintHit": {
+    "samples": 8,
+    "medianMs": 0.0085,
+    "maxMs": 0.1742,
+    "medianAllocatedBytes": 10424
+  },
+  "homeFingerprintMissUnchangedShelves": {
+    "samples": 8,
+    "medianMs": 1.4535,
+    "maxMs": 1.9866,
+    "medianAllocatedBytes": 687968
+  },
+  "shelfInstancesRetained": 9,
+  "idleRefreshPlayback": {
+    "samples": 50,
+    "medianMs": 0.0033,
+    "maxMs": 0.2058,
+    "medianAllocatedBytes": 408
+  },
+  "hiddenDesktopDockVisible": false,
+  "hiddenDesktopDockRefresh": {
+    "samples": 50,
+    "medianMs": 0.0001,
+    "maxMs": 0.0597,
+    "medianAllocatedBytes": 0
+  },
+  "searchItems": 1000,
+  "searchRealizedRows": 5,
+  "stableSearchRefresh": {
+    "samples": 20,
+    "medianMs": 1.6146,
+    "maxMs": 1.8678,
+    "medianAllocatedBytes": 244512
+  },
+  "saveSession100Tracks": {
+    "samples": 10,
+    "medianMs": 0.0036,
+    "maxMs": 0.005,
+    "medianAllocatedBytes": 2312
+  },
+  "saveSession100Tracks1000Stats": {
+    "samples": 10,
+    "medianMs": 0.1319,
+    "maxMs": 4.8098,
+    "medianAllocatedBytes": 81112
+  },
+  "savedSessionBytes": 40482,
+  "savedPreferencesBytes": 110150,
+  "saveSnapshotCapturedOnUiThread": true,
+  "identicalArtworkControls": 8,
+  "distinctDecodedBitmapInstances": 1,
+  "bitmapsReplacedAfterReattach": 0
+}

@@ -25,7 +25,7 @@ public sealed partial class App : Application
                 MinWidth = 360, MinHeight = 600, Content = view,
                 Background = UiTheme.Brush(UiTheme.Background)
             };
-            desktop.Exit += (_, _) => { AppServices.Controller?.SaveSession(); AppServices.Player?.Dispose(); };
+            desktop.Exit += (_, _) => { AppServices.Controller?.SaveSession(); AppServices.Controller?.FlushPendingSaves(); AppServices.Player?.Dispose(); };
         }
         else if (ApplicationLifetime is ISingleViewApplicationLifetime mobile) mobile.MainView = view;
         base.OnFrameworkInitializationCompleted();

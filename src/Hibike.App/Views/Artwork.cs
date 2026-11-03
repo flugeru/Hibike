@@ -8,10 +8,9 @@ namespace Hibike.App.Views;
 
 internal sealed class Artwork : Border
 {
-    private static readonly HttpClient Client = new() { Timeout = TimeSpan.FromSeconds(12) };
-    private static readonly SemaphoreSlim DecodeSlots = new(2);
     private CancellationTokenSource? _cancel;
     private Bitmap? _bitmap;
+    private ArtworkCache.Lease? _lease;
     public Artwork(Track? track, double size, bool fullResolution = false, Stretch stretch = Stretch.UniformToFill, bool naturalAspect = false, bool highQuality = false)
     {
         Width = Height = size; CornerRadius = new CornerRadius(size > UiTheme.ThumbnailSize ? UiTheme.CardRadius : UiTheme.ThumbRadius); ClipToBounds = true;
@@ -43,59 +42,20 @@ internal sealed class Artwork : Border
                 {
                     // Square crops need extra source width for landscape video thumbnails.
                     var pixels = fullResolution ? 1200 : (int)Math.Clamp(size * (TopLevel.GetTopLevel(this)?.RenderScaling ?? 1) * (highQuality ? 2 : 1), 128, 1200);
-                    if (Uri.TryCreate(url, UriKind.Absolute, out var local) && local.IsFile)
-                    {
-                        var localBitmap = await DecodeAsync(() => File.OpenRead(local.LocalPath), pixels, token);
-                        if (token.IsCancellationRequested) { localBitmap.Dispose(); return; }
-                        Display(localBitmap); return;
-                    }
                     var imageUrl = fullResolution || highQuality ? PlayerImageUrl(url) : url;
-                    var fetched = await Client.GetAsync(imageUrl, HttpCompletionOption.ResponseHeadersRead, token);
-                    if (!fetched.IsSuccessStatusCode && imageUrl != url)
-                    {
-                        fetched.Dispose();
-                        fetched = await Client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, token);
-                    }
-                    using var response = fetched;
-                    response.EnsureSuccessStatusCode();
-                    if (response.Content.Headers.ContentLength is > 4_000_000) return;
-                    using var input = await response.Content.ReadAsStreamAsync(token);
-                    using var memory = new MemoryStream();
-                    var buffer = new byte[8192];
-                    int read;
-                    while ((read = await input.ReadAsync(buffer, token)) > 0)
-                    {
-                        if (memory.Length + read > 4_000_000) return;
-                        memory.Write(buffer, 0, read);
-                    }
-                    memory.Position = 0;
-                    // Player is resized after construction; never upscale its 52dp placeholder decode.
-                    var bytes = memory.ToArray();
-                    var bitmap = await DecodeAsync(() => new MemoryStream(bytes, writable: false), pixels, token);
-                    if (token.IsCancellationRequested) { bitmap.Dispose(); return; }
-                    Display(bitmap);
+                    var lease = await ArtworkCache.AcquireAsync(imageUrl, url, pixels, token);
+                    if (token.IsCancellationRequested || _cancel?.Token != token)
+                    { lease.Dispose(); return; }
+                    _lease?.Dispose(); _lease = lease;
+                    Display(lease.Bitmap);
                 }
                 catch (Exception) { /* Artwork is optional; playback never depends on it. */ }
             };
         }
         DetachedFromVisualTree += (_, _) =>
         {
-            _cancel?.Cancel(); picture.Source = null; _bitmap?.Dispose(); _bitmap = null;
+            _cancel?.Cancel(); picture.Source = null; _bitmap = null; _lease?.Dispose(); _lease = null;
         };
-    }
-    private static async Task<Bitmap> DecodeAsync(Func<Stream> open, int pixels, CancellationToken token)
-    {
-        await DecodeSlots.WaitAsync(token);
-        try
-        {
-            return await Task.Run(() =>
-            {
-                token.ThrowIfCancellationRequested();
-                using var stream = open();
-                return Bitmap.DecodeToWidth(stream, pixels);
-            }, token);
-        }
-        finally { DecodeSlots.Release(); }
     }
     public static string PlayerImageUrl(string url)
     {

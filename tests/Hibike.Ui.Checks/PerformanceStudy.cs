@@ -77,9 +77,10 @@ internal static partial class Program
         var personal = (MusicController.Personalization)typeof(MusicController).GetField("_personal", hidden)!.GetValue(music)!;
         foreach (var i in Enumerable.Range(0, 1000)) personal.Listening["synthetic-" + i] = new() { Plays = 2, Seconds = 360, LastPlayed = DateTime.UtcNow };
         results["saveSession100Tracks1000Stats"] = Measure(music.SaveSession, 10);
+        await music.FlushPendingSavesAsync();
         results["savedSessionBytes"] = new FileInfo(Path.Combine(music.DataDirectory, "playback-session.json")).Length;
         results["savedPreferencesBytes"] = new FileInfo(Path.Combine(music.DataDirectory, "personalization.json")).Length;
-        results["saveRunsOnUiThread"] = Dispatcher.UIThread.CheckAccess();
+        results["saveSnapshotCapturedOnUiThread"] = Dispatcher.UIThread.CheckAccess();
 
         var artworkType = typeof(MainView).Assembly.GetType("Hibike.App.Views.Artwork")!;
         var bitmapField = artworkType.GetField("_bitmap", hidden)!;
@@ -110,7 +111,7 @@ internal static partial class Program
         var json = JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true });
         var destination = Path.Combine(AppContext.BaseDirectory, "android-ui-study.json");
         File.WriteAllText(destination, json); Console.WriteLine(json);
-        music.StopObserving();
+        music.StopObserving(); await music.FlushPendingSavesAsync();
     }
 
     private static object Measure(Action action, int count = 8)

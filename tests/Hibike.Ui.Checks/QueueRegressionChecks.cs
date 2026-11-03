@@ -151,6 +151,7 @@ internal static partial class Program
         Check(restored.CurrentQueueIndex == 0 && restored.Upcoming.Single() == a, "Restored metadata arrays broke current-track lookup");
 
         await CheckQueueInterfaceAsync(view, window);
+        foreach (var controller in new[] { radio, stale, navigation, moving, restored }) await controller.FlushPendingSavesAsync();
     }
 
     private static async Task CheckQueueInterfaceAsync(MainView view, Window window)
@@ -195,7 +196,7 @@ internal static partial class Program
                 "Radio retry unavailable with current song and upcoming queue");
             await Task.Delay(200); Capture(view, "queue-radio-" + width); Invoke("CloseSheet");
         }
-        music.StopObserving();
+        music.StopObserving(); await music.FlushPendingSavesAsync();
     }
 
     private sealed class QueueCatalog : IMusicCatalog

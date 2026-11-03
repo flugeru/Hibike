@@ -29,6 +29,12 @@ public sealed class MainActivity : AvaloniaMainActivity
         base.OnActivityResult(requestCode, resultCode, data);
         _googleLogin?.HandleResult(requestCode, resultCode, data);
     }
+    protected override void OnStop()
+    {
+        AppServices.Controller?.SaveSession();
+        AppServices.Controller?.FlushPendingSaves();
+        base.OnStop();
+    }
     protected override void OnDestroy()
     {
         _googleLogin?.Cancel();

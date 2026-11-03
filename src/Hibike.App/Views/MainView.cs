@@ -344,6 +344,8 @@ public sealed partial class MainView : UserControl
         RefreshPlayback();
         RefreshDiscovery();
     }
+    private sealed record HomeCard(Track Track, Func<Control> Create);
+    private static HomeCard Card(Track track, Func<Control> create) => new(track, create);
     private void RefreshHome()
     {
         var fingerprint = string.Join("|", _music.History.Select(t => t.Source)) + ":" + string.Join("|", _music.Favorites.Select(t => t.Source))
@@ -358,54 +360,57 @@ public sealed partial class MainView : UserControl
         var previous = _home.Children.ToArray();
         var next = new List<Control>();
         var shownRecommendations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        Shelf("Continuar ouvindo", "Fixadas e histórico · neste aparelho", _music.Pins.Concat(_music.History).DistinctBy(t => t.Source).Take(20).Select(t => CoverCard(t, TrackTextFormatter.Artist(t.Artist), async () => { if (_music.Current?.Source == t.Source) await _music.ToggleAsync(); else await _music.PlayAsync(t); })));
+        Shelf("Continuar ouvindo", "Fixadas e histórico · neste aparelho", _music.Pins.Concat(_music.History).DistinctBy(t => t.Source).Take(20).Select(t => Card(t, () => CoverCard(t, TrackTextFormatter.Artist(t.Artist), async () => { if (_music.Current?.Source == t.Source) await _music.ToggleAsync(); else await _music.PlayAsync(t); }))));
         if (_music.History.Count > 0) next.Add(ActionButton("Ver histórico", () => { OpenLocalCollection("Histórico", _music.History); return Task.CompletedTask; }));
-        Shelf("Feito para você", "Suas preferências, favoritos e histórico · neste aparelho", _music.HomeRecommendations.Take(12).Select(TrackCard));
+        Shelf("Feito para você", "Suas preferências, favoritos e histórico · neste aparelho", _music.HomeRecommendations.Take(12).Select(t => Card(t, () => TrackCard(t))));
         Shelf("Seus artistas favoritos", "Suas escolhas · toque para explorar", _music.FavoriteArtists.Select(a =>
         {
             var artist = new Track(a.Id, a.Name, a.Name, "https://music.youtube.com/channel/" + a.Id, Thumbnail: a.Image);
-            var card = CoverCard(artist, "Artista", () => ShowArtistAsync(a), songActions: false);
-            foreach (var artwork in card.GetVisualDescendants().OfType<Artwork>()) artwork.CornerRadius = new(120);
-            return card;
+            return Card(artist, () =>
+            {
+                var card = CoverCard(artist, "Artista", () => ShowArtistAsync(a), songActions: false);
+                foreach (var artwork in card.GetVisualDescendants().OfType<Artwork>()) artwork.CornerRadius = new(120);
+                return card;
+            });
         }));
-        Shelf("Porque você gosta de " + _music.HomeSeed, "Rádio YouTube Music · sugestões relacionadas", _music.HomeRelated.Take(12).Select(TrackCard));
+        Shelf("Porque você gosta de " + _music.HomeSeed, "Rádio YouTube Music · sugestões relacionadas", _music.HomeRelated.Take(12).Select(t => Card(t, () => TrackCard(t))));
         var familiar = _music.History.Select(t => TrackTextFormatter.Artist(t.Artist)).Concat(_music.FavoriteArtists.Select(a => a.Name)).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        Shelf("Descubra algo novo", "Artistas ainda não explorados", _music.HomeRecommendations.Skip(12).Where(t => !familiar.Contains(TrackTextFormatter.Artist(t.Artist))).Take(12).Select(TrackCard));
+        Shelf("Descubra algo novo", "Artistas ainda não explorados", _music.HomeRecommendations.Skip(12).Where(t => !familiar.Contains(TrackTextFormatter.Artist(t.Artist))).Take(12).Select(t => Card(t, () => TrackCard(t))));
         var albumTracks = _music.HomeRecommendations.Concat(_music.Favorites).Where(t => !string.IsNullOrWhiteSpace(t.Album)).GroupBy(t => (t.Artist, t.Album));
-        Shelf("Álbuns para você", "Álbuns identificados no catálogo · faixas disponíveis", albumTracks.Take(12).Select(g => CoverCard(g.First() with { Title = g.Key.Album! }, g.Key.Artist, () => { OpenLocalCollection(g.Key.Album!, g); return Task.CompletedTask; }, songActions: false)));
+        Shelf("Álbuns para você", "Álbuns identificados no catálogo · faixas disponíveis", albumTracks.Take(12).Select(g => Card(g.First() with { Title = g.Key.Album! }, () => CoverCard(g.First() with { Title = g.Key.Album! }, g.Key.Artist, () => { OpenLocalCollection(g.Key.Album!, g); return Task.CompletedTask; }, songActions: false))));
         void ChartShelf(MusicChart? chart, string title)
         {
             if (chart is null || DateTime.UtcNow - chart.RetrievedUtc > TimeSpan.FromDays(7)) return;
-            Shelf(title, chart.Title + " · YouTube Music · consultado " + chart.RetrievedUtc.ToLocalTime().ToString("g"), chart.Tracks.Take(20).Select(TrackCard));
+            Shelf(title, chart.Title + " · YouTube Music · consultado " + chart.RetrievedUtc.ToLocalTime().ToString("g"), chart.Tracks.Take(20).Select(t => Card(t, () => TrackCard(t))));
         }
         ChartShelf(_music.RegionalChart, _music.ChartRegion == "BR" ? "Em alta no Brasil" : "Em alta · " + _music.ChartRegion);
         ChartShelf(_music.GlobalChart, "Em alta no mundo");
         if (_music.TrendingChart is { } trending && DateTime.UtcNow - trending.RetrievedUtc <= TimeSpan.FromHours(12))
         {
-            Shelf("Bombando agora", trending.Title + " · YouTube Music · atualizado algumas vezes ao dia · consultado " + trending.RetrievedUtc.ToLocalTime().ToString("g"), trending.Tracks.Take(20).Select(TrackCard));
-            Shelf("Tendências para você", trending.Title + " · seus artistas e descobertas", trending.Tracks.OrderByDescending(t => familiar.Contains(TrackTextFormatter.Artist(t.Artist))).Take(12).Select(TrackCard));
+            Shelf("Bombando agora", trending.Title + " · YouTube Music · atualizado algumas vezes ao dia · consultado " + trending.RetrievedUtc.ToLocalTime().ToString("g"), trending.Tracks.Take(20).Select(t => Card(t, () => TrackCard(t))));
+            Shelf("Tendências para você", trending.Title + " · seus artistas e descobertas", trending.Tracks.OrderByDescending(t => familiar.Contains(TrackTextFormatter.Artist(t.Artist))).Take(12).Select(t => Card(t, () => TrackCard(t))));
         }
         if (_music.HomeLoading || !string.IsNullOrEmpty(_music.HomeMessage)) next.Add(Text(_music.HomeLoading ? "Preparando descobertas… Sua biblioteca já está disponível." : _music.HomeMessage, UiTheme.Caption, Muted));
         next.Add(ActionButton("Personalizar meu som", () => { ShowMusicOnboarding(edit: true); return Task.CompletedTask; }));
         next.Add(ActionButton("Atualizar recomendações", () => _music.RefreshRecommendationsAsync(true)));
         var recommended = _music.Queue.Where(_music.IsRecommended).Take(12).ToArray();
-        if (recommended.Length > 0) Shelf("Porque você ouviu…", _music.PlaybackContext, recommended.Select(TrackCard));
+        if (recommended.Length > 0) Shelf("Porque você ouviu…", _music.PlaybackContext, recommended.Select(t => Card(t, () => TrackCard(t))));
         if (_music.History.Count >= 5)
-            Shelf("Seus mixes", "Rádios por artistas do seu histórico", _music.History.GroupBy(t => t.Artist).Where(g => g.Count() >= 2).Take(4).Select(g => CoverCard(g.First(), "Mix de " + g.Key, () => _music.StartRadioAsync(g.First()))));
+            Shelf("Seus mixes", "Rádios por artistas do seu histórico", _music.History.GroupBy(t => t.Artist).Where(g => g.Count() >= 2).Take(4).Select(g => Card(g.First(), () => CoverCard(g.First(), "Mix de " + g.Key, () => _music.StartRadioAsync(g.First())))));
         if (_music.History.Count == 0) next.Add(EmptyState("play", "Sua trilha começa aqui", "Suas últimas músicas aparecem aqui automaticamente. Comece com uma busca ou traga seus arquivos.", "Buscar música", () => { _page = "explore"; BuildListTools(); Refresh(); _search.Focus(); return Task.CompletedTask; }));
         if (_account is not null)
         {
-            Shelf("Suas curtidas no YouTube", "Biblioteca da conta · não são recomendações", _accountLikes.Take(30).Select(TrackCard));
+            Shelf("Suas curtidas no YouTube", "Biblioteca da conta · não são recomendações", _accountLikes.Take(30).Select(t => Card(t, () => TrackCard(t))));
             Shelf("Suas playlists", "Playlists da conta YouTube", _accountPlaylists.Take(50).Select(p =>
             {
                 var art = new Track(p.Id, p.Title, "Playlist", "https://www.youtube.com/playlist?list=" + Uri.EscapeDataString(p.Id), Thumbnail: p.Thumbnail);
-                return CoverCard(art, "Playlist", () => ShowAccountTracksAsync(_account!, p.Id, p.Title), playlist: true);
+                return Card(art, () => CoverCard(art, "Playlist", () => ShowAccountTracksAsync(_account!, p.Id, p.Title), playlist: true));
             }));
             var update = ActionButton(_accountLoading ? "Carregando…" : "Atualizar biblioteca", LoadAccountHomeAsync); update.HorizontalAlignment = HorizontalAlignment.Left; next.Add(update);
         }
         if (Bounds.Width >= UiTheme.DesktopWidth && _music.Queue.Count > 0)
-            Shelf("A seguir", "Próximas músicas da sua fila", _music.Upcoming.Take(20).Select(TrackCard));
-        Shelf("Suas músicas favoritas", "Favoritos e arquivos salvos no Hibike", _music.Favorites.OrderByDescending(t => _music.Listening.GetValueOrDefault(MusicController.SongKey(t))?.LastPlayed).Take(30).Select(TrackCard));
+            Shelf("A seguir", "Próximas músicas da sua fila", _music.Upcoming.Take(20).Select(t => Card(t, () => TrackCard(t))));
+        Shelf("Suas músicas favoritas", "Favoritos e arquivos salvos no Hibike", _music.Favorites.OrderByDescending(t => _music.Listening.GetValueOrDefault(MusicController.SongKey(t))?.LastPlayed).Take(30).Select(t => Card(t, () => TrackCard(t))));
         if (_music.Favorites.Count == 0) next.Add(ActionButton("Importar músicas para sua coleção", OpenLocalAsync));
         foreach (var removed in previous.Where(c => !next.Contains(c))) _home.Children.Remove(removed);
         for (var i = 0; i < next.Count; i++)
@@ -417,12 +422,12 @@ public sealed partial class MainView : UserControl
             else { UiMotion.Reflow(item); _home.Children.Insert(i, item); Animate(item); }
         }
 
-        void Shelf(string title, string subtitle, IEnumerable<Control> cards)
+        void Shelf(string title, string subtitle, IEnumerable<HomeCard> cards)
         {
             var personalized = title == "Feito para você" || title == "Descubra algo novo" || title.StartsWith("Porque você gosta de ") || title == "Tendências para você";
-            var cardList = cards.Where(c => !personalized || c.Tag is not Track t || shownRecommendations.Add(t.Source)).ToArray();
+            var cardList = cards.Where(c => !personalized || shownRecommendations.Add(c.Track.Source)).ToArray();
             if (cardList.Length == 0) return;
-            var key = title + ":" + subtitle + ":" + (Bounds.Width < UiTheme.DesktopWidth) + ":" + string.Join("|", cardList.Select(c => c.Tag?.ToString()));
+            var key = title + ":" + subtitle + ":" + (Bounds.Width < UiTheme.DesktopWidth) + ":" + string.Join("|", cardList.Select(c => c.Track.ToString()));
             var old = previous.OfType<StackPanel>().FirstOrDefault(c => c.Tag is ValueTuple<string, string> tag && tag.Item1 == title);
             if (old?.Tag is ValueTuple<string, string> oldTag && oldTag.Item2 == key) { next.Add(old); return; }
             var section = new StackPanel { Spacing = 6, Margin = new Thickness(0, Bounds.Width < UiTheme.DesktopWidth ? 6 : 14, 0, 0) };
@@ -435,10 +440,21 @@ public sealed partial class MainView : UserControl
             controls.Children.Add(IconButton("forward", "Avançar em " + title, () => { scroll.Offset = new Vector(Math.Min(Math.Max(0, scroll.Extent.Width - scroll.Viewport.Width), scroll.Offset.X + Math.Max(180, scroll.Viewport.Width * .8)), 0); return Task.CompletedTask; }));
             Put(header, controls, 0, 1); section.Children.Add(header);
             var note = Text(subtitle, UiTheme.Caption, Muted); note.TextWrapping = TextWrapping.Wrap; section.Children.Add(note);
-            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 18 };
-            foreach (var card in cardList) row.Children.Add(card);
-            controls.IsVisible = row.Children.Count > 1;
-            scroll.Content = row; if (row.Children.Count > 0) section.Children.Add(scroll);
+            var row = new ItemsControl
+            {
+                ItemsSource = cardList,
+                ItemsPanel = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel
+                { Orientation = Orientation.Horizontal, CacheLength = .5 }),
+                ItemTemplate = new FuncDataTemplate<HomeCard>((card, _) =>
+                {
+                    if (card is null) return new Border();
+                    var control = card.Create();
+                    control.Margin = new Thickness(0, 0, 18, 0);
+                    return control;
+                })
+            };
+            controls.IsVisible = cardList.Length > 1;
+            scroll.Content = row; section.Children.Add(scroll);
             if (old?.Children.LastOrDefault() is ScrollViewer oldScroll)
             {
                 var offset = oldScroll.Offset;

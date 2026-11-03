@@ -1,5 +1,7 @@
 # Investigação dos engasgos da interface Android
 
+As correções e a comparação posterior estão em [android-ui-optimization.md](android-ui-optimization.md).
+
 Estudo de 02/11/2026 sobre a branch `queue-fix`, base `818b8200cc465fe938a3087f9c2dce3b9843ecf7`, Avalonia 12.1.4. Este commit acrescenta diagnóstico e documentação; não aplica otimizações à interface nem altera imagens, resolução, recorte ou qualidade das capas.
 
 A evidência mais forte está na montagem da tela inicial: o código constrói cartões que acaba descartando e mantém muitas capas fora da área visível. A ausência de cache de imagens e a persistência síncrona aumentam o trabalho. São problemas verificados no código e em ensaio local; a participação de cada um nos engasgos percebidos no Poco X6 Pro ainda depende de um trace no aparelho.

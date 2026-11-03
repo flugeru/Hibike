@@ -18,7 +18,7 @@ internal static partial class Program
     {
         var directory = Path.Combine(Path.GetTempPath(), "hibike-ui-check-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
-        if (args.Contains("--queue-only") || args.Contains("--performance-study"))
+        if (args.Contains("--queue-only") || args.Contains("--performance-study") || args.Contains("--performance-checks"))
         {
             // Keep onboarding and home discovery offline before the view is attached.
             File.WriteAllText(Path.Combine(directory, "personalization.json"), "{\"OnboardingCompleted\":true}");
@@ -40,6 +40,14 @@ internal static partial class Program
             try
             {
                 var window = lifetime.MainWindow!; var view = (MainView)window.Content!;
+                if (args.Contains("--performance-checks"))
+                {
+                    await RunPerformanceStudyAsync(view, window);
+                    await RunOptimizationChecksAsync(view, window);
+                    Console.WriteLine("Performance, artwork quality and persistence checks passed.");
+                    result = 0;
+                    return;
+                }
                 if (args.Contains("--performance-study"))
                 {
                     await RunPerformanceStudyAsync(view, window);
@@ -65,6 +73,7 @@ internal static partial class Program
                 welcome.GetVisualDescendants().OfType<Button>().Single(b => b.Content as string == "Pular")
                      .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
                 await Task.Delay(50);
+                await AppServices.Controller!.FlushPendingSavesAsync();
                 Check(File.ReadAllText(Path.Combine(directory, "personalization.json")).Contains("\"OnboardingCompleted\":true"), "Onboarding choice not persisted");
                 var welcomeMethod = typeof(MainView).GetMethod("ShowMusicOnboarding", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
                 welcomeMethod.Invoke(view, [false]); Check(welcomeField.GetValue(view) is null, "Onboarding repeats after completion");
@@ -74,10 +83,10 @@ internal static partial class Program
                 var invalidSelection = false;
                 try { profile.CompleteOnboarding(artists.Take(2), []); } catch (ArgumentException) { invalidSelection = true; }
                 Check(invalidSelection && !profile.OnboardingCompleted, "Invalid artist selection accepted");
-                profile.CompleteOnboarding(artists, ["Rock", "J-Pop"]); profile.StopObserving();
+                profile.CompleteOnboarding(artists, ["Rock", "J-Pop"]); profile.StopObserving(); await profile.FlushPendingSavesAsync();
                 var restoredProfile = new MusicController(new Catalog(), new Player(), new LibraryStore(profileDirectory), profileDirectory);
                 Check(restoredProfile.OnboardingCompleted && restoredProfile.FavoriteArtists.Count == 3 && restoredProfile.FavoriteGenres.Contains("J-Pop"), "Music profile did not survive restart");
-                restoredProfile.StopObserving();
+                restoredProfile.StopObserving(); await restoredProfile.FlushPendingSavesAsync();
                 window.Width = initialWidth; window.Height = initialHeight; await Task.Delay(100);
                 var toolsEnabled = (bool)typeof(MainView).Assembly.GetType("Hibike.App.DeveloperFeatures")!.GetProperty("Enabled")!.GetValue(null)!;
                 typeof(MainView).GetMethod("ShowSettings", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(view, null);
@@ -105,7 +114,7 @@ internal static partial class Program
                 await primaryRadio.PlayAsync(new Track("primary", "Seed", "Seed Artist", "https://example.org/seed", 180));
                 await primaryRadio.NextAsync();
                 Check(primaryCatalog.RadioCalls > 0 && primaryCatalog.SearchCalls == 0 && primaryRadio.Queue.Count > 1, "Radio did not prefer provider queue over search");
-                primaryRadio.StopObserving();
+                primaryRadio.StopObserving(); await primaryRadio.FlushPendingSavesAsync();
                 Check(!(bool)sameRadioSong.Invoke(null, [seedSong, new Track("other", "The Manor - Our Painted Family", "Lorien Testard", "other")])!, "Radio rejected different song by same artist");
                 var radioDirectory = Path.Combine(directory, "radio"); Directory.CreateDirectory(radioDirectory);
                 var radio = new MusicController(new RadioCatalog(), new Player(), new LibraryStore(radioDirectory), radioDirectory);
@@ -115,22 +124,23 @@ internal static partial class Program
                 for (var i = 0; i < 10; i++) await radio.NextAsync();
                 Check(radio.Queue.Count == 21 && radio.Queue.Select(t => t.Source).Distinct().Count() == 21, "Radio refill repeated tracks or failed");
                 radio.ClearQueue(); await radio.NextAsync();
-                Check(radio.Queue.Count == 1, "Radio ignored explicit clear queue"); radio.StopObserving();
+                Check(radio.Queue.Count == 1, "Radio ignored explicit clear queue"); radio.StopObserving(); await radio.FlushPendingSavesAsync();
                 var singleRadio = new MusicController(new RadioCatalog { FailLaterSearches = true }, new Player(), new LibraryStore(radioDirectory), radioDirectory);
                 var single = new Track("single", "Seed", "Artist", "https://example.org/single", 180);
                 singleRadio.Enqueue(single);
                 await singleRadio.PlayAsync(single);
                 Check(singleRadio.Queue.Count == 11, "Single queued track outside search results did not receive partial radio suggestions");
-                singleRadio.StopObserving();
+                singleRadio.StopObserving(); await singleRadio.FlushPendingSavesAsync();
                 singleRadio.CreatePlaylist("Test mix");
                 var localPlaylist = singleRadio.Playlists.Single();
                 singleRadio.AddToPlaylist(localPlaylist, single); singleRadio.AddToPlaylist(localPlaylist, single);
                 singleRadio.PinPlaylist(localPlaylist); singleRadio.TogglePin(single);
                 singleRadio.RenamePlaylist(localPlaylist, "Renamed mix");
                 Check(localPlaylist.Tracks.Count == 1 && localPlaylist.Pinned && singleRadio.Pins.Count == 1, "Playlist deduplication/pins failed");
+                await singleRadio.FlushPendingSavesAsync();
                 var restoredPersonal = new MusicController(new RadioCatalog(), new Player(), new LibraryStore(radioDirectory), radioDirectory);
                 Check(restoredPersonal.Playlists.Single().Name == "Renamed mix" && restoredPersonal.Pins.Count == 1, "Personalization persistence failed");
-                restoredPersonal.StopObserving();
+                restoredPersonal.StopObserving(); await restoredPersonal.FlushPendingSavesAsync();
                 singleRadio.PlayNext(new Track("manual", "Manual", "Other", "manual"));
                 Check(singleRadio.Queue[1].Source == "manual", "Play next did not take priority over radio");
                 singleRadio.SetAutoplay(false); Check(!singleRadio.Autoplay, "Autoplay toggle failed");
@@ -224,14 +234,14 @@ internal static partial class Program
                     }
                     var card = view.GetVisualDescendants().OfType<Button>().First(b => Avalonia.Automation.AutomationProperties.GetName(b) == "Faixa recente — Artista");
                     var cardHost = (Grid)card.Parent!;
-                    var shelf = cardHost.Parent!.Parent!.Parent!;
+                    var shelf = cardHost.GetVisualAncestors().OfType<StackPanel>().First(p => p.Tag is ValueTuple<string, string>);
                     typeof(MainView).GetField("_homeFingerprint", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(view, null);
                     AppServices.Controller.SetStatus("Home stable refresh"); await Task.Delay(50);
-                    Check(ReferenceEquals(cardHost.Parent?.Parent?.Parent, shelf), "Unchanged home shelf recreated on refresh");
+                    Check(cardHost.GetVisualAncestors().Contains(shelf), "Unchanged home shelf recreated on refresh");
                     var cardArtwork = card.GetVisualDescendants().OfType<Border>().Single(b => b.GetType().Name == "Artwork");
                     Check(cardArtwork.Width == cardArtwork.Height && cardArtwork.CornerRadius == new CornerRadius(16) && cardArtwork.BorderThickness == default, "Home artwork not square with subtle corners");
                     Check(card.GetVisualDescendants().OfType<Image>().All(image => image.Stretch == Avalonia.Media.Stretch.UniformToFill), "Home artwork does not fill square");
-                    Check(((StackPanel)cardHost.Parent!).Spacing == 18, "Home carousel spacing inconsistent");
+                    Check(cardHost.Margin.Right == 18, "Home carousel spacing inconsistent");
                     if (view.Bounds.Width == 360)
                     {
                         var toggleTopMenu = typeof(MainView).GetMethod("ToggleTopMenu", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
@@ -452,19 +462,19 @@ internal static partial class Program
                 addCollection.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
                 Check(music.Queue.Count == queueCount, "Adding collection duplicated existing queued tracks");
                 Check(AppServices.BackHandler!(), "Collection cannot return home");
-                music.SaveSession();
+                music.SaveSession(); await music.FlushPendingSavesAsync();
                 var restored = new MusicController(new Catalog(), new Player(), new LibraryStore(directory), directory);
                 await restored.InitializeAsync();
                 Check(restored.Current == AppServices.Controller.Current && restored.Queue.SequenceEqual(AppServices.Controller.Queue), "Playback session not restored");
                 Check(!restored.Player.IsPlaying, "Restored session autoplayed");
                 restored.ClearQueue(); Check(restored.Queue.Count == 1 && restored.Queue[0] == restored.Current, "Clear queue lost current track");
-                restored.StopObserving();
+                restored.StopObserving(); await restored.FlushPendingSavesAsync();
                 Console.WriteLine("UI checks passed: 360/390/430, typography, touch targets, virtualization, player, session restore and clear queue.");
                 File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "ui-check-result.txt"), "PASS: 360/390/430, typography, touch targets, virtualization, player.");
                 result = 0;
             }
             catch (Exception error) { Console.Error.WriteLine(error); File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "ui-check-result.txt"), error.ToString()); }
-            finally { lifetime.Shutdown(result); }
+            finally { AppServices.Controller?.FlushPendingSaves(); lifetime.Shutdown(result); }
         }));
         builder.StartWithClassicDesktopLifetime([]);
         Directory.Delete(directory, true);
