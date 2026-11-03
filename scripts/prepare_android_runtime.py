@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Download pinned upstream runtime files; verify every byte before packaging."""
+import argparse
 import hashlib
 import json
 import pathlib
@@ -8,6 +9,9 @@ import urllib.request
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 lock = json.loads((ROOT / "scripts/runtime-lock.json").read_text())
 android = ROOT / "src/Hibike.Android"
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--abi", choices=("arm64-v8a", "x86_64"), help="Prepare only the selected architecture.")
+args = parser.parse_args()
 
 def fetch(url):
     request = urllib.request.Request(url, headers={"User-Agent": "Hibike-build/0.1"})
@@ -17,6 +21,8 @@ def fetch(url):
 for item in lock["files"]:
     path = item["path"]
     abi, name = path.split("/")[-2:]
+    if args.abi is not None and abi != args.abi:
+        continue
     data = fetch(f"https://raw.githubusercontent.com/yausername/youtubedl-android/{lock['runtime_commit']}/{path}")
     blob = hashlib.sha1(f"blob {len(data)}\0".encode() + data).hexdigest()
     if blob != item["git_blob"]:

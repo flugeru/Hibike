@@ -43,7 +43,7 @@ jobs:
       - name: Run core behavior tests
         run: dotnet test tests/Hibike.Core.Tests/Hibike.Core.Tests.csproj -c Release --logger "trx;LogFileName=core.trx" --results-directory artifacts/tests
       - name: Prepare verified Python, QuickJS and YT-DLP
-        run: python3 scripts/prepare_android_runtime.py
+        run: python3 scripts/prepare_android_runtime.py --abi arm64-v8a
       - name: Restore development signing key
         uses: actions/cache@v4
         with:
@@ -63,6 +63,7 @@ jobs:
         run: |
           dotnet publish src/Hibike.Android/Hibike.Android.csproj \
             -f net10.0-android -c Release -r android-arm64 \
+            -p:RuntimeIdentifiers=android-arm64 \
             -p:AndroidSdkDirectory="$ANDROID_HOME" \
             -p:ApplicationVersion=$((10000 + GITHUB_RUN_NUMBER)) \
             -p:AndroidKeyStore=true \
@@ -83,6 +84,8 @@ jobs:
           grep -q "package: name='com.flugel.hibike'" artifacts/android/package-info.txt
           grep -q "sdkVersion:'24'" artifacts/android/package-info.txt
           python3 scripts/check_apk.py "$apk"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" dex code --class androidx.core.view.ViewCompat "$apk" > artifacts/android/view-compat.smali
+          grep -Fq '.method public static setWindowInsetsAnimationCallback(Landroid/view/View;Landroidx/core/view/WindowInsetsAnimationCompat$Callback;)V' artifacts/android/view-compat.smali
           mkdir -p artifacts/release
           cp "$apk" artifacts/release/Hibike-Android-arm64.apk
           cp artifacts/android/signing-certificate.txt artifacts/release/signing-certificate.txt

@@ -8,7 +8,8 @@
     <ApplicationDisplayVersion>0.1.0</ApplicationDisplayVersion>
     <ApplicationVersion>1</ApplicationVersion>
     <AndroidPackageFormats>apk</AndroidPackageFormats>
-    <RuntimeIdentifiers>android-arm64;android-x64</RuntimeIdentifiers>
+    <RuntimeIdentifiers Condition="'$(RuntimeIdentifier)' == ''">android-arm64;android-x64</RuntimeIdentifiers>
+    <RuntimeIdentifiers Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</RuntimeIdentifiers>
     <AndroidEnableProfiledAot>false</AndroidEnableProfiledAot>
     <RunAOTCompilation>false</RunAOTCompilation>
     <!-- ponytail: use dynamic JNI registration until optimized Release callbacks pass device startup checks. -->
@@ -16,9 +17,6 @@
     <PublishTrimmed>false</PublishTrimmed>
     <AndroidStripNativeLibraries>false</AndroidStripNativeLibraries>
     <DefineConstants Condition="'$(HibikeSmokeTests)' == 'true'">$(DefineConstants);HIBIKE_SMOKE_TEST</DefineConstants>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <AndroidLinkTool>r8</AndroidLinkTool>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Hibike.App/Hibike.App.csproj" />
@@ -28,7 +26,10 @@
     <PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer" />
     <PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer.Hls" />
     <PackageReference Include="Xamarin.AndroidX.Media3.Session" />
-    <AndroidNativeLibrary Include="Native/**/*.so" />
+    <AndroidNativeLibrary Include="Native/arm64-v8a/*.so" Condition="$(RuntimeIdentifiers.Contains('android-arm64'))" />
+    <AndroidNativeLibrary Include="Native/x86_64/*.so" Condition="$(RuntimeIdentifiers.Contains('android-x64'))" />
+    <AndroidAsset Remove="Assets/runtime/arm64-v8a/**" Condition="!$(RuntimeIdentifiers.Contains('android-arm64'))" />
+    <AndroidAsset Remove="Assets/runtime/x86_64/**" Condition="!$(RuntimeIdentifiers.Contains('android-x64'))" />
     <AndroidAsset Include="../../THIRD-PARTY-NOTICES.md" Link="licenses/THIRD-PARTY-NOTICES.md" />
     <AndroidAsset Include="../../scripts/LICENSE.youtubedl-android.txt" Link="licenses/GPL-3.0.txt" />
     <AndroidAsset Include="../../scripts/LICENSE.media3.txt" Link="licenses/Apache-2.0.txt" />
