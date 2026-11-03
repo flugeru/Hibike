@@ -25,7 +25,6 @@ public sealed partial class MainView
         ((Panel)_search.Parent!).Children.Remove(_search);
         input.Children.Add(_search);
         _mobileSearchSubmit = ActionButton("Buscar", SearchAsync);
-        _mobileSearchSubmit.Classes.Add("primary");
         Put(input, _mobileSearchSubmit, 0, 1);
         page.Children.Add(input);
 
@@ -62,14 +61,16 @@ public sealed partial class MainView
         Put(page, new Grid { Children = { _mobileSearchScroll, _mobileSearchState } }, 4, 0);
 
         _mobileSearchSuggestions = BuildSearchSuggestions();
-        var loading = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
-            Spacing = UiTheme.SectionGap };
-        loading.Children.Add(LoadingRing(40, UiTheme.Primary));
-        loading.Children.Add(Text("Buscando seu som", UiTheme.ButtonText));
-        var cancel = ActionButton("Cancelar busca", () => { _music.CancelSearch(); return Task.CompletedTask; });
+        var loading = new Grid { ColumnDefinitions = new("Auto,*,Auto"), ColumnSpacing = UiTheme.CompactGap };
+        var spinner = LoadingRing(20, UiTheme.Primary);
+        spinner.VerticalAlignment = VerticalAlignment.Center;
+        loading.Children.Add(spinner);
+        Put(loading, Text("Buscando…", UiTheme.Body), 0, 1);
+        var cancel = ActionButton("Cancelar", () => { _music.CancelSearch(); return Task.CompletedTask; });
         cancel.Classes.Add("subtle");
-        loading.Children.Add(cancel);
-        _mobileSearchBusy = loading;
+        Put(loading, cancel, 0, 2);
+        _mobileSearchBusy = UiTheme.Card(loading, UiTheme.CompactGap);
+        _mobileSearchBusy.VerticalAlignment = VerticalAlignment.Top;
         _search.TextChanged += (_, _) => { if (_page == "explore") RefreshMobileSearch(); };
         return page;
 
@@ -114,7 +115,9 @@ public sealed partial class MainView
         _mobileSearchOnline.Classes.Set("primary", !local);
         _mobileSearchLocal.Classes.Set("primary", local);
         _mobileSearchSubmit.IsEnabled = query.Length > 0 && !busy;
-        _cancelSearch.IsVisible = busy;
+        _mobileSearchSubmit.Classes.Set("primary", _mobileSearchSubmit.IsEnabled);
+        _cancelSearch.IsVisible = false;
+        _clearSearch.IsVisible = !busy && !string.IsNullOrEmpty(_search.Text);
 
         var tracks = local && query.Length > 0
             ? _music.Favorites.Where(track => MatchesLibraryQuery($"{track.Title} {track.Artist} {track.Album}", query)).ToArray()

@@ -138,7 +138,7 @@ public sealed partial class MainView
         }
         _queuePane.IsVisible = !_mobileCollections && !_showingPlayer && (desktop ? _queueOpen || _page == "queue" : _page == "queue");
         var display = _music.Pending ?? _music.Current;
-        _desktopDock.IsVisible = display is not null && !_showingPlayer && Bounds.Width >= 1000 && !(_mobileCollections && _page == "queue");
+        _desktopDock.IsVisible = display is not null && !_showingPlayer && Bounds.Width >= 1000 && !_mobileCollections;
         _mini.IsVisible = display is not null && !_showingPlayer && !_desktopDock.IsVisible && !(_mobileCollections && _page == "queue");
         if (_showingPlayer) _queuePane.IsVisible = false;
         if (_overlay is not null) Grid.SetColumnSpan(_overlay, 3);

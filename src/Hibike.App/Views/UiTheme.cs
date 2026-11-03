@@ -15,7 +15,7 @@ internal static class UiTheme
         Success = "#71D6A3", Warning = "#FFCC80", Error = "#FF8A8A", TextPrimary = "#F5F5F5",
         TextSecondary = "#B0B0B0", TextDisabled = "#686868", Scrim = "#CC000000";
     public const double CardRadius = 18, ControlRadius = 12, ThumbRadius = 8, RoundRadius = 22,
-        CompactGap = 8, SectionGap = 14, PageGap = 18, CardGap = 16, CardPadding = 20,
+        MobileGutter = 10, CompactGap = 8, SectionGap = 14, PageGap = 18, CardGap = 16, CardPadding = 20,
         PageTitle = 28, SectionTitle = 18, DialogTitle = 22, Body = 15, Caption = 13, Label = 12,
         ButtonText = 14, TouchSize = 48, IconSize = 24, IconStroke = 1.8, RoundSize = 44,
         ThumbnailSize = 52, MiniArtworkSize = 40, PlaySize = 72, TransportIconSize = 32,
@@ -34,6 +34,9 @@ internal static class UiTheme
         MiniMargin = new(14, 0, 14, 8), TopBorder = new(0, 1, 0, 0), BottomBorder = new(0, 0, 0, 1),
         RoundInset = new(2), MiniPlayInset = new(4);
     public static readonly Thickness SearchIconPadding = new(16, 0, 12, 0);
+    public static readonly Thickness MobileContentPadding = new(MobileGutter, 8, MobileGutter, 4),
+        MobileMiniMargin = new(MobileGutter, 0, MobileGutter, CompactGap),
+        MobilePlayerMargin = new(MobileGutter, CompactGap, MobileGutter, CompactGap);
     public static readonly Thickness ContentPadding = new(14, 14, 14, 8);
     public static readonly Thickness DesktopPlayerMargin = new(32, 20, 32, 24), NavPadding = new(12, 8);
     public static readonly Thickness DesktopTransportPadding = new(32, 16, 32, 20);
