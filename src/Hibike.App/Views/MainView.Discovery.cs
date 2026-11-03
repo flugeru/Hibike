@@ -16,21 +16,22 @@ public sealed partial class MainView
     private Image _brandIcon = null!;
     private string? _libraryGroupsKey;
     private Popup? _songPopup;
-    private void AttachSongHold(Control control, Track track)
+    private void AttachSongHold(Control control, Track track, Action<Control>? openMenu = null)
     {
+        openMenu ??= anchor => ShowSongMenu(track, anchor);
         control.SetValue(InputElement.IsHoldingEnabledProperty, true);
         var held = false;
         control.Holding += (_, e) =>
         {
             if (e.HoldingState != HoldingState.Started) return;
-            held = true; e.Handled = true; ShowSongMenu(track, control);
+            held = true; e.Handled = true; openMenu(control);
         };
         control.AddHandler(PointerPressedEvent, (_, _) => held = false, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         control.AddHandler(PointerReleasedEvent, (_, e) => { if (held) { e.Handled = true; held = false; } }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         control.KeyDown += (_, e) =>
         {
             if (e.Key == Key.Apps || e.Key == Key.F10 && e.KeyModifiers.HasFlag(KeyModifiers.Shift))
-            { e.Handled = true; ShowSongMenu(track, control); }
+            { e.Handled = true; openMenu(control); }
         };
     }
     private void ShowSongMenu(Track track, Control anchor)

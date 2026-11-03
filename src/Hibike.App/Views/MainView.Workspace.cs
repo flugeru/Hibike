@@ -153,8 +153,8 @@ public sealed partial class MainView
         _collectionPage.IsVisible = collection;
         if (_main.Child is Grid content)
         {
-            content.Children[0].IsVisible = true;
-            content.Children[1].IsVisible = !queue && !collection;
+            content.Children[0].IsVisible = !_mobileCollections || _page is not ("queue" or "library");
+            content.Children[1].IsVisible = !IsMobileWorkspace && !queue && !collection;
             content.RowSpacing = queue || collection || _page == "home" ? 4 : Bounds.Width < UiTheme.DesktopWidth ? 8 : 12;
         }
         if (_mobileCollections && queue) return;

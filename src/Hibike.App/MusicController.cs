@@ -32,6 +32,8 @@ public sealed partial class MusicController
     public string DataDirectory { get; }
     public IAudioPlayer Player { get; }
     public ObservableCollection<Track> Results { get; } = [];
+    public string? ResultsQuery { get; private set; }
+    public string? SearchError { get; private set; }
     public ObservableCollection<Track> Favorites { get; } = [];
     public ObservableCollection<Track> Queue { get; } = [];
     public Track? Current { get; private set; }
@@ -132,17 +134,19 @@ public sealed partial class MusicController
         _search?.Cancel();
         var request = new CancellationTokenSource(TimeSpan.FromSeconds(90));
         _search = request;
+        SearchError = null;
         HasError = false; Searching = true; SetStatus("Buscando seu som…");
         try
         {
             var tracks = await _catalog.SearchAsync(query, request.Token);
             if (!ReferenceEquals(_search, request)) return;
             Results.Clear(); foreach (var track in tracks) Results.Add(track);
+            ResultsQuery = query;
             if (_catalog is CachedMusicCatalog cached) _ = cached.WarmAsync(tracks.Take(2));
             Status = tracks.Count == 0 ? "Nenhuma faixa encontrada. Tente outro nome." : $"{tracks.Count} faixas encontradas.";
         }
         catch (OperationCanceledException) { if (ReferenceEquals(_search, request)) Status = "Busca cancelada ou tempo esgotado. Tente novamente."; }
-        catch (Exception ex) { if (ReferenceEquals(_search, request)) { HasError = true; Status = ex.Message; } }
+        catch (Exception ex) { if (ReferenceEquals(_search, request)) { SearchError = Status = ex.Message; HasError = true; } }
         finally
         {
             if (ReferenceEquals(_search, request)) { Searching = false; _search = null; Changed?.Invoke(); }

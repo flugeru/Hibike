@@ -92,7 +92,7 @@ public sealed partial class MainView : UserControl
         content.Children.Add(header);
         var searchRow = new Grid { ColumnDefinitions = new("*") };
         searchRow.Children.Add(_search);
-        _search.InnerLeftContent = new Border { Child = Icons.Make("search", Muted), Padding = UiTheme.SearchIconPadding };
+        AddSearchIcon(_search);
         TextInputOptions.SetContentType(_search, TextInputContentType.Search);
         TextInputOptions.SetReturnKeyType(_search, TextInputReturnKeyType.Search);
         _clearSearch = IconButton("close", "Limpar busca", () => { _search.Text = ""; _search.Focus(); return Task.CompletedTask; });
@@ -248,7 +248,19 @@ public sealed partial class MainView : UserControl
         var card = UiTheme.Card(grid, UiTheme.ControlRadius); card.Margin = UiTheme.MiniMargin; card.ClipToBounds = true;
         card.MaxWidth = UiTheme.PageMaxWidth - UiTheme.PageMargin.Left - UiTheme.PageMargin.Right; return card;
     }
-    private async Task SearchAsync() { _page = "explore"; BuildListTools(); if (_searchScope == "Sua biblioteca") Refresh(); else await _music.SearchAsync(_search.Text ?? ""); }
+    private async Task SearchAsync()
+    {
+        _page = "explore";
+        BuildListTools();
+        var query = _search.Text?.Trim() ?? "";
+        if (_searchScope == "Sua biblioteca" || _mobileCollections && query.Length == 0)
+        {
+            Refresh();
+            return;
+        }
+        if (_mobileCollections) _mobileSearchAttempt = query;
+        await _music.SearchAsync(query);
+    }
     private async Task OpenLocalAsync()
     {
         try
@@ -313,7 +325,7 @@ public sealed partial class MainView : UserControl
             caption.HorizontalAlignment = HorizontalAlignment.Center;
             stack.Children.Add(caption); button.Content = stack;
         }
-        IReadOnlyList<Track> tracks = IsMobileCollection ? [] : _page switch { "library" => _music.Favorites, "queue" => _music.Queue, _ => _searchScope == "Sua biblioteca" ? _music.Favorites.Where(t => (t.Title + " " + t.Artist).Contains(_search.Text ?? "", StringComparison.CurrentCultureIgnoreCase)).ToArray() : _music.Results };
+        IReadOnlyList<Track> tracks = IsMobileWorkspace ? [] : _page switch { "library" => _music.Favorites, "queue" => _music.Queue, _ => _searchScope == "Sua biblioteca" ? _music.Favorites.Where(t => (t.Title + " " + t.Artist).Contains(_search.Text ?? "", StringComparison.CurrentCultureIgnoreCase)).ToArray() : _music.Results };
         if (_page == "library" && !_mobileCollections)
         {
             var query = _libraryFilter.Text?.Trim() ?? "";
@@ -338,7 +350,7 @@ public sealed partial class MainView : UserControl
         {
         _listFingerprint = fingerprint; _rows.Clear(); _rowTitles.Clear(); _equalizers.Clear(); _tracks.ItemsSource = tracks;
         }
-        _emptyState.IsVisible = !IsMobileCollection && _page is not ("home" or "queue" or "collection") && tracks.Count == 0 && !_music.Searching;
+        _emptyState.IsVisible = !IsMobileWorkspace && _page is not ("home" or "queue" or "collection") && tracks.Count == 0 && !_music.Searching;
         if (_emptyState.IsVisible) _emptyState.Child = EmptyState(_page == "library" ? "library" : _page == "queue" ? "queue" : "search",
             _page == "library" ? "Sua coleção, do seu jeito" : _page == "queue" ? "O próximo som é com você" : "Encontre seu próximo som",
             _page == "library" ? "Salve favoritos ou importe arquivos. Use filtros para encontrar suas músicas." : _page == "queue" ? "Adicione faixas pelo menu de cada música ou toque sua seleção." : "Busque por música, artista ou cole um link de álbum ou playlist.",
@@ -479,12 +491,12 @@ public sealed partial class MainView : UserControl
     {
         return CoverCard(track, TrackTextFormatter.Artist(track.Artist), async () => { await _music.PlayAsync(track); });
     }
-    private Control CoverCard(Track track, string subtitle, Func<Task> action, bool playlist = false, bool songActions = true, double? cardSize = null)
+    private Control CoverCard(Track track, string subtitle, Func<Task> action, bool playlist = false, bool songActions = true, double? cardSize = null, Stretch artworkStretch = Stretch.UniformToFill)
     {
         var size = cardSize ?? (Bounds.Width < UiTheme.DesktopWidth ? (playlist ? 168 : 160) : (playlist ? 204 : 196));
         var panel = new StackPanel { Width = size, Spacing = 4 };
         var cover = new Grid { Width = size, Height = size };
-        var artwork = new Artwork(track, size, highQuality: true)
+        var artwork = new Artwork(track, size, stretch: artworkStretch, highQuality: true)
         {
             CornerRadius = new(16), Background = Brushes.Transparent, BorderThickness = new Thickness(0)
         };
@@ -534,19 +546,22 @@ public sealed partial class MainView : UserControl
     {
         _account = null; _accountPlaylists = []; _accountLikes = []; Refresh();
     }
-    private Control EmptyState(string icon, string title, string message, string action, Func<Task> execute)
+    private Control EmptyState(string icon, string title, string message, string? action = null, Func<Task>? execute = null)
     {
         var panel = new StackPanel { Spacing = 14, MaxWidth = 420, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(12, 24) };
         panel.Children.Add(Icons.Make(icon, Muted, 40));
         var heading = Text(title, UiTheme.DialogTitle); heading.TextWrapping = TextWrapping.Wrap; heading.TextAlignment = TextAlignment.Center; panel.Children.Add(heading);
         var body = Text(message, UiTheme.Body, Muted); body.TextWrapping = TextWrapping.Wrap; body.TextAlignment = TextAlignment.Center; panel.Children.Add(body);
-        var button = ActionButton(action, execute); button.Classes.Add("primary"); button.HorizontalAlignment = HorizontalAlignment.Center; panel.Children.Add(button);
+        if (action is not null && execute is not null)
+        {
+            var button = ActionButton(action, execute); button.Classes.Add("primary"); button.HorizontalAlignment = HorizontalAlignment.Center; panel.Children.Add(button);
+        }
         return panel;
     }
     private void BuildListTools()
     {
         _listTools.Children.Clear();
-        if (IsMobileCollection) return;
+        if (IsMobileWorkspace) return;
         if (_page == "library") _listTools.Children.Add(_libraryFilter);
         var row = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 8, LineSpacing = 8 };
         if (_page == "library")
@@ -588,29 +603,44 @@ public sealed partial class MainView : UserControl
         _music.ReplaceQueue(tracks);
         await _music.PlayAsync(tracks[0], 0);
     }
-    private Control TrackRow(Track track)
+    private static void AddSearchIcon(TextBox field) =>
+        field.InnerLeftContent = new Border { Child = Icons.Make("search", Muted), Padding = UiTheme.SearchIconPadding };
+
+    private Control TrackRow(Track track, bool showMenu = false, Func<Task>? playTrack = null, Action<Control>? openMenu = null,
+        string? subtitle = null)
     {
         var grid = new Grid { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = UiTheme.CompactGap, Height = UiTheme.ThumbnailSize };
-        var play = ActionButton("", async () => await _music.PlayAsync(track, _music.Queue.Contains(track) ? _music.Queue.IndexOf(track) : null)); play.Classes.Add("subtle"); play.Padding = UiTheme.Zero; play.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+        var play = ActionButton("", playTrack ?? (() => _music.PlayAsync(track, _music.Queue.Contains(track) ? _music.Queue.IndexOf(track) : null))); play.Classes.Add("subtle"); play.Padding = UiTheme.Zero; play.HorizontalContentAlignment = HorizontalAlignment.Stretch;
         Avalonia.Automation.AutomationProperties.SetName(play, track.Title + " — " + track.Artist);
         var metadata = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = UiTheme.CompactGap };
         var thumbnail = new Grid(); thumbnail.Children.Add(new Artwork(track, UiTheme.ThumbnailSize));
         var equalizer = new Equalizer(); thumbnail.Children.Add(equalizer); metadata.Children.Add(thumbnail);
         var labels = new StackPanel { Spacing = UiTheme.ProgressRadius, VerticalAlignment = VerticalAlignment.Center };
         var title = Text(TrackTextFormatter.Title(track.Title, track.Artist), UiTheme.Body); title.TextTrimming = TextTrimming.CharacterEllipsis; labels.Children.Add(title);
-        var artist = Text(TrackTextFormatter.Artist(track.Artist), UiTheme.Caption, Muted); artist.TextTrimming = TextTrimming.CharacterEllipsis; labels.Children.Add(artist);
+        var artist = Text(subtitle ?? TrackTextFormatter.Artist(track.Artist), UiTheme.Caption, Muted); artist.TextTrimming = TextTrimming.CharacterEllipsis; labels.Children.Add(artist);
         Put(metadata, labels, 0, 1); play.Content = metadata;
         grid.Children.Add(play);
-        Put(grid, Text(track.DurationLabel, UiTheme.Caption, Muted), 0, 1);
+        if (track.DurationSeconds > 0 || !showMenu) Put(grid, Text(track.DurationLabel, UiTheme.Caption, Muted), 0, 1);
         var more = IconButton("more", "Opções de " + track.Title, () => Task.CompletedTask);
-        more.Click += (_, _) =>
-        {
-            ShowSongMenu(track, more);
-        }; Put(grid, more, 0, 2);
+        openMenu ??= anchor => ShowSongMenu(track, anchor);
+        more.Click += (_, _) => openMenu(more);
+        Put(grid, more, 0, 2);
         more.Classes.Add("subtle");
-        AttachSongHold(play, track);
-        if (OperatingSystem.IsAndroid()) more.IsVisible = false;
-        var border = new Border { Child = grid, Padding = UiTheme.RowPadding, Height = OperatingSystem.IsAndroid() ? 64 : UiTheme.TrackRowHeight };
+        AttachSongHold(play, track, openMenu);
+        more.IsVisible = showMenu || !OperatingSystem.IsAndroid();
+        var border = new Border { Child = grid, Padding = UiTheme.RowPadding, Height = OperatingSystem.IsAndroid() || showMenu ? 64 : UiTheme.TrackRowHeight };
+        if (showMenu)
+        {
+            void Update()
+            {
+                var selected = (_music.Pending ?? _music.Current)?.Source == track.Source;
+                UpdateTrackRowAppearance(border, title, equalizer, selected);
+            }
+            border.AttachedToVisualTree += (_, _) => { _music.Changed += Update; _music.Tick += Update; Update(); };
+            border.DetachedFromVisualTree += (_, _) => { _music.Changed -= Update; _music.Tick -= Update; };
+            Update();
+            return border;
+        }
         _rows[track.Id] = border; _rowTitles[track.Id] = title; _equalizers[track.Id] = equalizer;
         border.AttachedToVisualTree += (_, _) =>
         {
@@ -627,15 +657,20 @@ public sealed partial class MainView : UserControl
     private void UpdateRows(Track? displayed)
     {
         foreach (var (id, row) in _rows)
-        {
-            var selected = id == displayed?.Id;
-            row.Background = selected ? UiTheme.Brush(UiTheme.PrimaryContainer) : Brushes.Transparent;
-            row.BorderBrush = UiTheme.Brush(selected ? UiTheme.Primary : UiTheme.Outline);
-            row.BorderThickness = selected ? UiTheme.One : UiTheme.BottomBorder;
-            row.CornerRadius = new(selected ? UiTheme.ControlRadius : 0);
-            _rowTitles[id].FontWeight = selected ? FontWeight.SemiBold : FontWeight.Normal;
-            _equalizers[id].SetState(selected, selected && _music.Player.IsPlaying);
-        }
+            UpdateTrackRowAppearance(row, _rowTitles[id], _equalizers[id], id == displayed?.Id);
+    }
+
+    private void UpdateTrackRowAppearance(Border row, TextBlock title, Equalizer equalizer, bool selected)
+    {
+        var playing = selected && _music.Player.IsPlaying;
+        equalizer.SetState(selected, playing);
+        if (row.Tag is bool wasSelected && wasSelected == selected) return;
+        row.Tag = selected;
+        row.Background = selected ? UiTheme.Brush(UiTheme.PrimaryContainer) : Brushes.Transparent;
+        row.BorderBrush = UiTheme.Brush(selected ? UiTheme.Primary : UiTheme.Outline);
+        row.BorderThickness = selected ? UiTheme.One : UiTheme.BottomBorder;
+        row.CornerRadius = new(selected ? UiTheme.ControlRadius : 0);
+        title.FontWeight = selected ? FontWeight.SemiBold : FontWeight.Normal;
     }
     private void ShowPlayer()
     {
@@ -869,7 +904,7 @@ public sealed partial class MainView : UserControl
     private void RefreshPlayback()
     {
         RefreshPlaybackActions();
-        if (_mobileCollections && _page == "queue" && _mobileQueuePlay is not null) RefreshMobileQueueTransport();
+        if (_mobileCollections && _page == "queue" && _mobileQueuePlay is not null) RefreshPlayButton(_mobileQueuePlay);
         RefreshPlayerQueue();
         UpdateRows(_music.Pending ?? _music.Current);
         RefreshPlayButton(_play);

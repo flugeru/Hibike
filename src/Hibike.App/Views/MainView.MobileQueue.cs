@@ -15,7 +15,7 @@ public sealed partial class MainView
     private ContentControl _mobileQueueCover = null!, _mobileQueueEmpty = null!;
     private TextBlock _mobileQueueTitle = null!, _mobileQueueArtist = null!, _mobileQueueRadioStatus = null!, _mobileQueueSummary = null!;
     private TextBlock _mobileQueueHeader = null!, _mobileQueueError = null!, _mobileQueueSection = null!;
-    private Grid _mobileQueueRadio = null!;
+    private Border _mobileQueueRadio = null!;
     private ItemsControl _mobileQueueItems = null!;
     private ScrollViewer _mobileQueueScroll = null!;
     private Track? _mobileQueueCurrent;
@@ -23,13 +23,13 @@ public sealed partial class MainView
 
     private Grid BuildMobileQueue()
     {
-        var page = new Grid { RowDefinitions = new("Auto,Auto,Auto,Auto,Auto,*"), RowSpacing = 12 };
-        var header = new Grid { ColumnDefinitions = new("Auto,*,Auto"), ColumnSpacing = 4, Margin = new Thickness(0, 4, 0, 0) };
-        _mobileQueueBack = CollectionIcon("back", "Voltar ao player", () => { ReturnFromMobileQueue(); return Task.CompletedTask; });
+        var page = new Grid { RowDefinitions = new("Auto,Auto,Auto,Auto,Auto,*"), RowSpacing = UiTheme.CompactGap };
+        var header = new Grid { ColumnDefinitions = new("Auto,*,Auto") };
+        _mobileQueueBack = IconButton("back", "Voltar ao player", () => { ReturnFromMobileQueue(); return Task.CompletedTask; });
         header.Children.Add(_mobileQueueBack);
-        _mobileQueueHeader = CollectionText("Fila de reprodução", 27, weight: FontWeight.SemiBold);
+        _mobileQueueHeader = CollectionText("Sua fila", UiTheme.PageTitle, weight: FontWeight.SemiBold);
         Put(header, _mobileQueueHeader, 0, 1);
-        Put(header, CollectionIcon("more", "Opções da fila", () =>
+        Put(header, IconButton("more", "Opções da fila", () =>
         {
             ShowMobileQueueOptions();
             return Task.CompletedTask;
@@ -37,11 +37,11 @@ public sealed partial class MainView
         page.Children.Add(header);
 
         var current = new Grid { ColumnDefinitions = new("Auto,*,Auto"), ColumnSpacing = 12 };
-        _mobileQueueCover = new ContentControl { Content = new Artwork(null, 56), VerticalAlignment = VerticalAlignment.Center };
+        _mobileQueueCover = new ContentControl { Content = new Artwork(null, UiTheme.ThumbnailSize), VerticalAlignment = VerticalAlignment.Center };
         current.Children.Add(_mobileQueueCover);
         var metadata = new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center };
-        metadata.Children.Add(CollectionText("Tocando agora", UiTheme.Label, CollectionAccent, FontWeight.Medium));
-        _mobileQueueTitle = CollectionText("", 16, weight: FontWeight.SemiBold);
+        metadata.Children.Add(CollectionText("Tocando agora", UiTheme.Label, Muted, FontWeight.Medium));
+        _mobileQueueTitle = CollectionText("", UiTheme.Body, weight: FontWeight.SemiBold);
         _mobileQueueArtist = CollectionText("", UiTheme.Caption, Muted);
         metadata.Children.Add(_mobileQueueTitle);
         metadata.Children.Add(_mobileQueueArtist);
@@ -54,31 +54,29 @@ public sealed partial class MainView
         Put(current, openPlayer, 0, 1);
         _mobileQueuePlay = CollectionIcon("play", "Reproduzir ou pausar", _music.ToggleAsync, UiTheme.OnPrimary);
         _mobileQueuePlay.Classes.Add("primary");
+        _mobileQueuePlay.Classes.Add("miniPlay");
         Put(current, _mobileQueuePlay, 0, 2);
-        Put(page, new Border
-        {
-            Child = current, Padding = new Thickness(12, 10), CornerRadius = new(16),
-            Background = UiTheme.Brush(UiTheme.SurfaceElevated)
-        }, 1, 0);
+        Put(page, UiTheme.Inner(current), 1, 0);
 
-        _mobileQueueRadio = new Grid { ColumnDefinitions = new("Auto,*,Auto"), ColumnSpacing = 10, Margin = new Thickness(2, 0) };
-        var radioIcon = Icons.Make("radio", CollectionAccent, 20);
+        var radio = new Grid { ColumnDefinitions = new("Auto,*,Auto"), ColumnSpacing = 10, Margin = new Thickness(2, 0) };
+        var radioIcon = Icons.Make("radio", Muted, 20);
         radioIcon.VerticalAlignment = VerticalAlignment.Center;
-        _mobileQueueRadio.Children.Add(radioIcon);
+        radio.Children.Add(radioIcon);
         var radioLabels = new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center };
         radioLabels.Children.Add(CollectionText("Rádio", UiTheme.Body, weight: FontWeight.SemiBold));
         _mobileQueueRadioStatus = CollectionText("", UiTheme.Caption, Muted);
         _mobileQueueRadioStatus.TextWrapping = TextWrapping.Wrap;
         _mobileQueueRadioStatus.MaxLines = 2;
         radioLabels.Children.Add(_mobileQueueRadioStatus);
-        Put(_mobileQueueRadio, radioLabels, 0, 1);
+        Put(radio, radioLabels, 0, 1);
         _mobileQueueRetry = CollectionIcon("refresh", "Buscar novas sugestões", _music.RetryRadioAsync);
-        Put(_mobileQueueRadio, _mobileQueueRetry, 0, 2);
+        Put(radio, _mobileQueueRetry, 0, 2);
+        _mobileQueueRadio = UiTheme.Card(radio, UiTheme.CompactGap);
         Put(page, _mobileQueueRadio, 2, 0);
 
-        var upcoming = new Grid { RowDefinitions = new("Auto,1"), ColumnDefinitions = new("*,Auto"), Margin = new Thickness(0, 4, 0, 0) };
+        var upcoming = new Grid { ColumnDefinitions = new("*,Auto"), Margin = new Thickness(0, UiTheme.CompactGap, 0, 0) };
         var heading = new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center };
-        _mobileQueueSection = CollectionText("A seguir", 20, weight: FontWeight.SemiBold);
+        _mobileQueueSection = CollectionText("A seguir", UiTheme.DialogTitle, weight: FontWeight.SemiBold);
         heading.Children.Add(_mobileQueueSection);
         _mobileQueueSummary = CollectionText("", UiTheme.Caption, Muted);
         heading.Children.Add(_mobileQueueSummary);
@@ -89,9 +87,6 @@ public sealed partial class MainView
             return Task.CompletedTask;
         }, Muted);
         Put(upcoming, _mobileQueueShuffle, 0, 1);
-        var rule = CollectionRule();
-        Put(upcoming, rule, 1, 0);
-        Grid.SetColumnSpan(rule, 2);
         _mobileQueueError = CollectionText("", UiTheme.Caption, UiTheme.Error);
         _mobileQueueError.TextWrapping = TextWrapping.Wrap;
         _mobileQueueError.MaxLines = 2;
@@ -103,8 +98,8 @@ public sealed partial class MainView
             var track = item.Track;
             var caption = TrackTextFormatter.Artist(track.Artist);
             if (item.Recommended) caption += " · Rádio";
-            if (track.DurationSeconds > 0) caption += " · " + track.DurationLabel;
-            return CollectionTrackRow(track, () => PlayMobileQueueTrackAsync(track), _ => ShowMobileQueueTrackOptions(track), caption, item.Recommended);
+            return TrackRow(track, showMenu: true, playTrack: () => PlayMobileQueueTrackAsync(track),
+                openMenu: _ => ShowMobileQueueTrackOptions(track), subtitle: caption);
         });
         _mobileQueueScroll = UiTheme.FadingScroll(_mobileQueueItems);
         _mobileQueueEmpty = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch,
@@ -117,18 +112,18 @@ public sealed partial class MainView
     {
         var current = _music.Pending ?? _music.Current;
         _mobileQueueBack.IsVisible = _queueOpenedFromPlayer;
-        _mobileQueueHeader.Text = _queueOpenedFromPlayer ? "Fila" : "Fila de reprodução";
+        _mobileQueueHeader.Text = _queueOpenedFromPlayer ? "Fila" : "Sua fila";
         _mobileQueueError.Text = _music.Status;
         _mobileQueueError.IsVisible = _music.HasError;
         if (!Equals(_mobileQueueCurrent, current))
         {
             _mobileQueueCurrent = current;
-            _mobileQueueCover.Content = new Artwork(current, 56);
+            _mobileQueueCover.Content = new Artwork(current, UiTheme.ThumbnailSize);
         }
         _mobileQueueTitle.Text = current is null ? "Nenhuma faixa selecionada" : TrackTextFormatter.Title(current.Title, current.Artist);
         _mobileQueueArtist.Text = current is null ? "Escolha uma música para começar" : TrackTextFormatter.Artist(current.Artist);
         _mobileQueuePlay.IsVisible = current is not null;
-        RefreshMobileQueueTransport();
+        RefreshPlayButton(_mobileQueuePlay);
 
         _mobileQueueRadio.IsVisible = _music.Current is not null;
         _mobileQueueRadioStatus.Text = _music.RadioLoading ? "Buscando sugestões…"
@@ -157,29 +152,16 @@ public sealed partial class MainView
         if (Equals(_mobileQueueEmpty.Tag, (canRetry, _relatedTab))) return;
         _mobileQueueEmpty.Tag = (canRetry, _relatedTab);
         _mobileQueueEmpty.Content = _relatedTab
-            ? CollectionEmpty("radio", "Nenhuma recomendação", "Use o rádio para buscar sugestões ou volte à fila completa.")
+            ? EmptyState("radio", "Nenhuma recomendação", "Use o rádio para buscar sugestões ou volte à fila completa.")
             : canRetry
-            ? CollectionEmpty("queue", "Fim da fila", "Adicione músicas pelo menu de uma faixa ou use o rádio para buscar sugestões.")
-            : CollectionEmpty("queue", "A fila está vazia", "Toque uma música ou adicione faixas pela biblioteca.",
-                CollectionAction("Abrir biblioteca", () =>
+            ? EmptyState("queue", "Fim da fila", "Adicione músicas pelo menu de uma faixa ou use o rádio para buscar sugestões.")
+            : EmptyState("queue", "A fila está vazia", "Toque uma música ou adicione faixas pela biblioteca.",
+                "Abrir biblioteca", () =>
                 {
                     _page = "library";
                     Refresh();
                     return Task.CompletedTask;
-                }, prominent: true));
-    }
-
-    private void RefreshMobileQueueTransport()
-    {
-        var transportIcon = _music.LoadingAudio ? "close" : _music.Player.IsPlaying ? "pause" : "play";
-        if (!Equals(_mobileQueuePlay.Tag, transportIcon))
-        {
-            _mobileQueuePlay.Tag = transportIcon;
-            _mobileQueuePlay.Content = Icons.Make(transportIcon, UiTheme.OnPrimary, 20);
-            var label = transportIcon switch { "close" => "Cancelar carregamento", "pause" => "Pausar", _ => "Reproduzir" };
-            AutomationProperties.SetName(_mobileQueuePlay, label);
-            ToolTip.SetTip(_mobileQueuePlay, label);
-        }
+                });
     }
 
     private Task PlayMobileQueueTrackAsync(Track track)

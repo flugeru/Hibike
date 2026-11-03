@@ -1,29 +1,28 @@
 using Avalonia;
-using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Hibike.Core.Models;
 
 namespace Hibike.App.Views;
 
 public sealed partial class MainView
 {
     private readonly bool _mobileCollections = OperatingSystem.IsAndroid();
-    private const string CollectionAccent = "#CEBEFF";
     private Grid? _mobileLibrary;
     private Grid? _mobileQueue;
+    private Grid? _mobileSearchPage;
     private bool _queueOpenedFromPlayer;
 
-    private bool IsMobileCollection => _mobileCollections && _page is "library" or "queue";
+    private bool IsMobileWorkspace => _mobileCollections && _page is "library" or "queue" or "explore";
 
     private void RefreshMobileCollections()
     {
-        if (!IsMobileCollection)
+        if (!IsMobileWorkspace)
         {
             if (_mobileLibrary is not null) _mobileLibrary.IsVisible = false;
             if (_mobileQueue is not null) _mobileQueue.IsVisible = false;
+            if (_mobileSearchPage is not null) _mobileSearchPage.IsVisible = false;
             return;
         }
 
@@ -41,8 +40,16 @@ public sealed partial class MainView
             content.Children.Add(_mobileQueue);
         }
 
-        // The compact pages own their headers and scrolling viewport.
-        content.Children[0].IsVisible = false;
+        if (_page == "explore" && _mobileSearchPage is null)
+        {
+            _mobileSearchPage = BuildMobileSearch();
+            Grid.SetRow(_mobileSearchPage, 1);
+            Grid.SetRowSpan(_mobileSearchPage, content.RowDefinitions.Count - 1);
+            content.Children.Insert(content.Children.IndexOf(_topMenuLayer), _mobileSearchPage);
+        }
+
+        // Search shares the main header. The collection screens own their back actions.
+        content.Children[0].IsVisible = _page == "explore";
         content.Children[1].IsVisible = false;
         _statusBox.IsVisible = false;
         _searchLoading.IsVisible = false;
@@ -50,8 +57,10 @@ public sealed partial class MainView
         _libraryGroupScroll.IsVisible = false;
         if (_mobileLibrary is not null) _mobileLibrary.IsVisible = _page == "library";
         if (_mobileQueue is not null) _mobileQueue.IsVisible = _page == "queue";
+        if (_mobileSearchPage is not null) _mobileSearchPage.IsVisible = _page == "explore";
         if (_page == "library") RefreshMobileLibrary();
-        else RefreshMobileQueue();
+        else if (_page == "queue") RefreshMobileQueue();
+        else RefreshMobileSearch();
     }
 
     private static TextBlock CollectionText(string? value, double size, string color = UiTheme.TextPrimary,
@@ -81,71 +90,9 @@ public sealed partial class MainView
     private Button CollectionAction(string label, Func<Task> execute, bool prominent = false)
     {
         var button = ActionButton(label, execute);
-        button.Classes.Add(prominent ? "primary" : "subtle");
-        button.CornerRadius = new(24);
+        if (prominent) button.Classes.Add("primary");
         button.HorizontalAlignment = HorizontalAlignment.Left;
         return button;
     }
 
-    private static Border CollectionRule() => new() { Height = 1, Background = UiTheme.Brush(UiTheme.Outline) };
-
-    private Control CollectionEmpty(string icon, string title, string description, Button? action = null)
-    {
-        var stack = new StackPanel { Spacing = 12, Margin = new Thickness(24, 8), MaxWidth = 330,
-            VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
-        stack.Children.Add(new Border
-        {
-            Width = 52, Height = 52, CornerRadius = new(16), Background = UiTheme.Brush(UiTheme.SurfaceElevated),
-            HorizontalAlignment = HorizontalAlignment.Center, Child = Icons.Make(icon, CollectionAccent, 22)
-        });
-        foreach (var text in new[] { CollectionText(title, UiTheme.SectionTitle, weight: FontWeight.SemiBold),
-            CollectionText(description, UiTheme.Caption, Muted) })
-        {
-            text.TextWrapping = TextWrapping.Wrap;
-            text.TextAlignment = TextAlignment.Center;
-            stack.Children.Add(text);
-        }
-        if (action is not null)
-        {
-            action.HorizontalAlignment = HorizontalAlignment.Center;
-            stack.Children.Add(action);
-        }
-        return stack;
-    }
-
-    private Control CollectionTrackRow(Track track, Func<Task> playTrack, Action<Control> openMenu,
-        string? caption = null, bool recommended = false, bool highlightCurrent = false)
-    {
-        var row = new Grid { ColumnDefinitions = new("*,Auto"), Height = 64 };
-        var labels = new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center };
-        var title = CollectionText(TrackTextFormatter.Title(track.Title, track.Artist), UiTheme.Body, weight: FontWeight.Medium);
-        labels.Children.Add(title);
-        var artist = TrackTextFormatter.Artist(track.Artist);
-        labels.Children.Add(CollectionText(caption ?? artist, UiTheme.Caption, recommended ? CollectionAccent : Muted));
-
-        var metadata = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = 12 };
-        metadata.Children.Add(new Artwork(track, 46) { VerticalAlignment = VerticalAlignment.Center });
-        Put(metadata, labels, 0, 1);
-        var play = ActionButton("", playTrack);
-        play.Classes.Add("subtle");
-        play.Padding = UiTheme.Zero;
-        play.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-        play.Content = metadata;
-        AutomationProperties.SetName(play, $"{track.Title}, {artist}");
-        row.Children.Add(play);
-
-        var more = CollectionIcon("more", $"Opções de {track.Title}", () => Task.CompletedTask, Muted);
-        more.Click += (_, _) => openMenu(more);
-        Put(row, more, 0, 1);
-        var container = new Border { Child = row, BorderBrush = UiTheme.Brush(UiTheme.SurfaceElevated), BorderThickness = UiTheme.BottomBorder };
-        if (highlightCurrent)
-        {
-            var active = UiTheme.Brush(CollectionAccent);
-            var inactive = title.Foreground;
-            void Update() => title.Foreground = (_music.Pending ?? _music.Current)?.Source == track.Source ? active : inactive;
-            container.AttachedToVisualTree += (_, _) => { _music.Changed += Update; Update(); };
-            container.DetachedFromVisualTree += (_, _) => _music.Changed -= Update;
-        }
-        return container;
-    }
 }
