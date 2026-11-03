@@ -32,14 +32,12 @@ public sealed partial class MainView
             // The presenter has applied this first step. Stop its inertia loop and continue at display cadence.
             e.ShouldEndScrollGesture = true;
             e.Handled = true;
-            _scrollProbe?.Replace(pending.Id);
             StopHomeInertia();
             var velocity = pending.Velocity * Math.Exp(InertiaDecay * Stopwatch.GetElapsedTime(pending.ReleasedAt).TotalSeconds);
             if (Math.Abs(velocity) < 5) return;
 
-            var fling = new DisplayFling(ScrollGestureEventArgs.GetNextFreeId(), offset, velocity);
+            var fling = new DisplayFling(offset, velocity);
             _homeFling = fling;
-            _scrollProbe?.Start(fling.Id, "home-vsync");
             requestFrame(Advance);
 
             void Advance(long frameTime)
@@ -57,7 +55,6 @@ public sealed partial class MainView
                 var distance = fling.Velocity * (decay - 1) / InertiaDecay;
                 var bottom = Math.Max(0, _homeScroll.Extent.Height - _homeScroll.Viewport.Height);
                 var position = Math.Clamp(fling.Offset + distance, 0, bottom);
-                _scrollProbe?.Step(fling.Id);
                 _homeScroll.SetCurrentValue(ScrollViewer.OffsetProperty, new Vector(_homeScroll.Offset.X, position));
                 if (position <= 0 || position >= bottom || Math.Abs(fling.Velocity * decay) < 5)
                     StopHomeInertia();
@@ -77,15 +74,13 @@ public sealed partial class MainView
     private void StopHomeInertia()
     {
         _pendingHomeFling = null;
-        if (_homeFling is { } fling) _scrollProbe?.End(fling.Id);
         _homeFling = null;
     }
 
     private sealed record PendingFling(int Id, double Velocity, double Offset, long ReleasedAt);
 
-    private sealed class DisplayFling(int id, double offset, double velocity)
+    private sealed class DisplayFling(double offset, double velocity)
     {
-        public int Id { get; } = id;
         public double Offset { get; } = offset;
         public double Velocity { get; } = velocity;
         public long StartedAt { get; } = Stopwatch.GetTimestamp();

@@ -17,6 +17,9 @@
     <AndroidStripNativeLibraries>false</AndroidStripNativeLibraries>
     <DefineConstants Condition="'$(HibikeSmokeTests)' == 'true'">$(DefineConstants);HIBIKE_SMOKE_TEST</DefineConstants>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <AndroidLinkTool>r8</AndroidLinkTool>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Hibike.App/Hibike.App.csproj" />
     <PackageReference Include="Avalonia.Android" />
