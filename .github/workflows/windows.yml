@@ -2,7 +2,7 @@ name: Hibike • Windows portable and installer
 
 on:
   push:
-    branches: [main, feat/experimental-player-lab]
+    branches: [main, feat/experimental-player-lab, android-player-features]
     paths: ['src/**', 'tests/**', 'scripts/**', 'packaging/**', 'LICENSE', 'Directory.*', 'global.json', 'Hibike.slnx', '.github/**']
   pull_request:
     paths: ['src/**', 'tests/**', 'scripts/**', 'packaging/**', 'LICENSE', 'Directory.*', 'global.json', 'Hibike.slnx', '.github/**']
