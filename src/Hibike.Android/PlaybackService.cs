@@ -99,8 +99,9 @@ public sealed partial class PlaybackService : MediaLibraryService
         }
         return base.OnStartCommand(intent, flags, startId);
     }
-    public override MediaSession? OnGetSession(MediaSession.ControllerInfo? controllerInfo) => _session;
+    // Android generates one Java wrapper per method name and parameters. Emit the covariant binding first.
     public override MediaLibrarySession? OnGetSessionFromMediaLibraryService(MediaSession.ControllerInfo? controllerInfo) => _session;
+    public override MediaSession? OnGetSession(MediaSession.ControllerInfo? controllerInfo) => _session;
     public void Open(AudioSource source, double volume, byte[]? artwork = null)
     {
         Error = null; _lastError = null; State = 2;
