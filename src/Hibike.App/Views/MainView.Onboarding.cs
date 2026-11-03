@@ -32,7 +32,18 @@ public sealed partial class MainView
         var search = UiTheme.Field("Buscar artistas"); body.Children.Add(search);
         var selected = new WrapPanel { ItemSpacing = 8, LineSpacing = 8 }; body.Children.Add(selected);
         var state = Text("Busque artistas no catálogo YouTube Music. Sem conta Google.", UiTheme.Caption, Muted); state.TextWrapping = TextWrapping.Wrap; body.Children.Add(state);
-        var cards = new WrapPanel { ItemSpacing = 18, LineSpacing = 18 }; body.Children.Add(cards);
+        var cards = new WrapPanel { ItemWidth = 112, ItemHeight = 112, ItemSpacing = 18, LineSpacing = 18 }; body.Children.Add(cards);
+        var genres = new WrapPanel { ItemSpacing = 18, LineSpacing = 18, IsVisible = false }; body.Children.Add(genres);
+        cards.SizeChanged += (_, e) =>
+        {
+            if (e.NewSize.Width == e.PreviousSize.Width || e.NewSize.Width <= 0) return;
+            var width = e.NewSize.Width;
+            var columns = width < 500 ? 2 : width < 750 ? 3 : 4;
+            // Size the whole tile, including the selection border, inside the scroll viewport.
+            var scaling = TopLevel.GetTopLevel(cards)?.RenderScaling ?? 1;
+            var size = Math.Floor((width - (columns - 1) * cards.ItemSpacing) * scaling / columns) / scaling;
+            cards.ItemWidth = cards.ItemHeight = Math.Clamp(size, 1, 220);
+        };
         var scroll = new ScrollViewer { Content = body, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled }; Put(layout, scroll, 1, 0);
         var footer = new StackPanel { Spacing = 8 }; var count = Text("", UiTheme.Caption, Muted); footer.Children.Add(count);
         Button? continueButton = null;
@@ -41,13 +52,14 @@ public sealed partial class MainView
             if (genreStage) { await FinishOnboardingAsync(false); return; }
             genreStage = true; _artistSearch?.Cancel();
             title.Text = "Quais estilos musicais combinam com você?"; description.Text = "Etapa opcional. Seus estilos complementam seus artistas favoritos.";
-            search.IsVisible = selected.IsVisible = false; cards.Children.Clear(); state.Text = "Escolha quantos estilos quiser, ou continue sem selecionar.";
+            search.IsVisible = selected.IsVisible = cards.IsVisible = false; cards.Children.Clear(); genres.IsVisible = true;
+            state.Text = "Escolha quantos estilos quiser, ou continue sem selecionar.";
             foreach (var genre in Genres)
             {
                 var button = ActionButton(genre, () => Task.CompletedTask);
                 void Style() { button.BorderBrush = UiTheme.Brush(_selectedGenres.Contains(genre) ? OnboardingAccent : UiTheme.Outline); button.BorderThickness = new Thickness(2); }
                 button.Click += (_, _) => { if (!_selectedGenres.Add(genre)) _selectedGenres.Remove(genre); Style(); };
-                Style(); cards.Children.Add(button);
+                Style(); genres.Children.Add(button);
             }
             count.Text = "Gêneros opcionais"; continueButton!.Content = "Começar a ouvir"; continueButton.IsEnabled = true;
             scroll.Offset = default;
@@ -63,15 +75,12 @@ public sealed partial class MainView
         void Render()
         {
             cards.Children.Clear();
-            var available = Math.Max(250, layout.Bounds.Width);
-            var columns = available < 500 ? 2 : available < 750 ? 3 : 4;
-            var size = Math.Clamp((available - (columns - 1) * 18) / columns, 112, 220);
             foreach (var artist in results)
             {
                 var chosen = _selectedArtists.Any(a => a.Id == artist.Id);
                 var art = new Track(artist.Id, artist.Name, artist.Name, "https://music.youtube.com/channel/" + artist.Id, Thumbnail: artist.Image);
-                var image = new Artwork(art, size, highQuality: true) { CornerRadius = new(16) };
-                var overlay = new Grid { Width = size, Height = size }; overlay.Children.Add(image);
+                var image = new Artwork(art, 220, highQuality: true) { Width = double.NaN, Height = double.NaN, CornerRadius = new(16) };
+                var overlay = new Grid(); overlay.Children.Add(image);
                 var label = Text(artist.Name, UiTheme.Body); label.FontWeight = FontWeight.SemiBold; label.TextWrapping = TextWrapping.Wrap; label.MaxLines = 2;
                 overlay.Children.Add(new Border { Background = new SolidColorBrush(Color.FromArgb(190, 0, 0, 0)), Padding = new Thickness(10), VerticalAlignment = VerticalAlignment.Bottom, Child = label });
                 var check = Text(chosen ? "✓" : "○", UiTheme.DialogTitle, chosen ? OnboardingAccent : UiTheme.OnPrimary); check.HorizontalAlignment = HorizontalAlignment.Right; check.Margin = new Thickness(8); overlay.Children.Add(check);
@@ -83,6 +92,8 @@ public sealed partial class MainView
                     UpdateSelection(); Render(); return Task.CompletedTask;
                 });
                 button.Content = overlay; button.Padding = new Thickness(0); button.CornerRadius = new(16); button.ClipToBounds = true;
+                button.HorizontalAlignment = HorizontalAlignment.Stretch; button.VerticalAlignment = VerticalAlignment.Stretch;
+                button.HorizontalContentAlignment = HorizontalAlignment.Stretch; button.VerticalContentAlignment = VerticalAlignment.Stretch;
                 button.BorderBrush = UiTheme.Brush(chosen ? OnboardingAccent : UiTheme.Outline); button.BorderThickness = new Thickness(chosen ? 3 : 1);
                 Avalonia.Automation.AutomationProperties.SetName(button, artist.Name + (chosen ? ", selecionado" : ", selecionar")); cards.Children.Add(button);
             }
@@ -103,7 +114,6 @@ public sealed partial class MainView
             catch (Exception) { if (ReferenceEquals(_artistSearch, request)) state.Text = "Não foi possível buscar. Verifique conexão ou pule por enquanto."; }
             finally { if (ReferenceEquals(_artistSearch, request)) _artistSearch = null; request.Dispose(); }
         };
-        layout.SizeChanged += (_, _) => { if (!genreStage) Render(); };
         UpdateSelection();
         _onboarding = new Border { Background = Brushes.Black, Child = layout };
         Grid.SetColumnSpan(_onboarding, _root.ColumnDefinitions.Count); Grid.SetRowSpan(_onboarding, 3); _root.Children.Add(_onboarding); Animate(body);
