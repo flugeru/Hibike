@@ -134,16 +134,6 @@ public sealed partial class MainView
         catch (Exception e) { _music.SetStatus("Não foi possível salvar suas escolhas: " + e.Message); }
         return Task.CompletedTask;
     }
-    private async Task ShowArtistAsync(MusicArtist artist)
-    {
-        var panel = new StackPanel { Spacing = 12 }; var status = Text("Buscando músicas…", UiTheme.Caption, Muted); panel.Children.Add(status); ShowSheet(artist.Name, panel);
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(25));
-        try
-        {
-            var tracks = await _music.SearchArtistTracksAsync(artist, timeout.Token);
-            status.Text = "Resultados do catálogo · " + artist.Name;
-            foreach (var track in tracks.Take(20)) panel.Children.Add(TrackRow(track));
-        }
-        catch (Exception) { status.Text = "Catálogo indisponível. Tente novamente mais tarde."; }
-    }
+    private Task ShowArtistAsync(MusicArtist artist) =>
+        ShowCatalogEntryAsync(new(artist.Id, artist.Name, artist.Image, CatalogKind.Artist));
 }

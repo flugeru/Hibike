@@ -4,6 +4,7 @@ namespace Hibike.Core.Services;
 
 public sealed class YtDlpCatalog(ICommandRunner runner, string? dataDirectory = null) : IMusicCatalog
 {
+    public Task<RadioPage> RadioPageAsync(Track seed, string? continuation, CancellationToken token) => YouTubeMusicRadio.FetchPageAsync(seed, continuation, token);
     public Task<IReadOnlyList<Track>> RadioAsync(Track seed, CancellationToken token) => YouTubeMusicRadio.FetchAsync(seed, token);
     private string[] Common
     {
@@ -60,8 +61,9 @@ public sealed class YtDlpCatalog(ICommandRunner runner, string? dataDirectory = 
             foreach (var header in values.EnumerateObject())
                 if (header.Value.ValueKind == JsonValueKind.String) headers[header.Name] = header.Value.GetString()!;
         PlaybackDiagnostics.Write("Extrator", "Áudio resolvido; formato=" + (Text(item, "format_id") ?? "?") + "; protocolo=" + (Text(item, "protocol") ?? "?"));
+        var gain = Number(item, "loudness_db") is { } loudness ? -loudness : (double?)null;
         return new(url, headers, track.Title, track.Artist, Text(item, "thumbnail") ?? track.Thumbnail,
-            Number(item, "abr"), Text(item, "acodec"), Number(item, "asr"), Number(item, "audio_channels"), Text(item, "format_id"), Text(item, "ext"));
+            Number(item, "abr"), Text(item, "acodec"), Number(item, "asr"), Number(item, "audio_channels"), Text(item, "format_id"), Text(item, "ext"), GainDb: gain);
     }
 
     public static IReadOnlyList<Track> ParseSearch(string json)

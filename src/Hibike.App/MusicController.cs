@@ -24,6 +24,10 @@ public sealed partial class MusicController
     private Task? _radioTask;
     private CancellationTokenSource? _radioRequest;
     private DateTime _radioRetryAt;
+    private string? _radioContinuation;
+    private Track? _radioOnlineSeed;
+    private const int RadioPrefetchThreshold = 3;
+    private bool _radioHasPaged;
     private bool _advancing;
     private int _queueSession;
     public int CurrentQueueIndex => Current is null ? -1 : Queue.ToList().FindIndex(t => t.Source == Current.Source);
@@ -58,7 +62,24 @@ public sealed partial class MusicController
     public bool Shuffle { get; set; }
     public bool Repeat { get; set; }
     public bool RepeatQueue { get; set; }
-    public DateTime? SleepAt { get; set; }
+    private DateTime? _sleepAt;
+    private string? _sleepAfterTrack;
+    public DateTime? SleepAt
+    {
+        get => _sleepAt;
+        set
+        {
+            _sleepAfterTrack = null;
+            _sleepAt = value;
+            if (Player is IBackgroundSleepTimer timer) timer.SetDeadline(value);
+        }
+    }
+    public bool SleepAfterTrack => _sleepAfterTrack is not null;
+    public void SetSleepAfterTrack()
+    {
+        SleepAt = null;
+        _sleepAfterTrack = Current?.Source;
+    }
     public ObservableCollection<Track> History { get; } = [];
     public event Action? Changed;
     public event Action? Tick;
@@ -72,7 +93,17 @@ public sealed partial class MusicController
         Queue.CollectionChanged += (_, _) => _queueIndex = CurrentQueueIndex;
         Changed += SaveSession;
         Player.Ended += (_, _) => Dispatcher.UIThread.Post(async () =>
-        { RecordFinish(); if (Repeat && Current is not null) await PlayAsync(Current, CurrentQueueIndex); else await NextAsync(); });
+        {
+            RecordFinish();
+            if (_sleepAfterTrack is not null && _sleepAfterTrack == Current?.Source)
+            {
+                SleepAt = null;
+                Player.Pause();
+                SetStatus("Temporizador encerrado.");
+                return;
+            }
+            if (Repeat && Current is not null) await PlayAsync(Current, CurrentQueueIndex); else await NextAsync();
+        });
         Player.Failed += (_, message) => Dispatcher.UIThread.Post(() => Fail(message));
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _timer.Tick += (_, _) =>
@@ -85,7 +116,7 @@ public sealed partial class MusicController
             if ((DateTime.UtcNow - _lastSave).TotalSeconds >= 5) SaveSession();
             if (Autoplay && !_radio && _radioRetryAt != DateTime.MaxValue && Queue.Count == 1 && Current is { IsLocal: false } && !LoadingAudio && Player.IsPlaying)
             { _radio = true; _radioSeed = Current; }
-            if (_radio && !LoadingAudio && Player.IsPlaying && _queueIndex + 1 >= Queue.Count && DateTime.UtcNow >= _radioRetryAt)
+            if (_radio && !LoadingAudio && Player.IsPlaying && Upcoming.Take(RadioPrefetchThreshold + 1).Count() <= RadioPrefetchThreshold && DateTime.UtcNow >= _radioRetryAt)
                 _ = FillRadioAsync();
             Tick?.Invoke();
         };
@@ -168,9 +199,10 @@ public sealed partial class MusicController
     }
     public async Task PlayAsync(Track track, int? queueIndex = null)
     {
-        if (Current?.Source != track.Source) CancelRadioRequest();
+        if (_sleepAfterTrack is not null && _sleepAfterTrack != track.Source) _sleepAfterTrack = null;
         if (queueIndex is null)
         {
+            CancelRadioRequest();
             _radio = Autoplay && !track.IsLocal && (_queueIndex + 1 >= Queue.Count || Queue.Count == 1 && Queue[0].Source == track.Source);
             _radioSeed = _radio ? track : null;
             _radioRetryAt = DateTime.MinValue;
@@ -201,11 +233,15 @@ public sealed partial class MusicController
             PlaybackDiagnostics.Write("Reprodução", "Iniciando resolução de " + track.Id);
             using var extractTimeout = CancellationTokenSource.CreateLinkedTokenSource(request.Token);
             extractTimeout.CancelAfter(TimeSpan.FromSeconds(35));
-            var resolved = requestedSource is not null
+            var downloaded = requestedSource is null ? GetOfflineFile(track) : null;
+            var resolved = downloaded is not null
+                ? (Track: track, Audio: new AudioSource(downloaded, new Dictionary<string, string>(), GainDb: DownloadedGain(track)))
+                : requestedSource is not null
                 ? (Track: requestedSource, Audio: await _catalog.ResolveAsync(requestedSource, extractTimeout.Token))
                 // ponytail: automatic alternatives disabled until matching is reliable; restore ResolveFirstAsync when reactivating selector.
                 : (Track: track, Audio: await _catalog.ResolveAsync(track, extractTimeout.Token));
             var source = resolved.Audio with { Title = track.Title, Artist = track.Artist, Artwork = track.Thumbnail ?? resolved.Audio.Artwork };
+            source = source with { GainDb = _personal.NormalizeAudio ? track.ReplayGainDb ?? source.GainDb : null, Equalizer = _personal.Equalizer };
             stage = "Player";
             SetStatus("Conectando ao áudio…");
             using var playerTimeout = CancellationTokenSource.CreateLinkedTokenSource(request.Token);
@@ -227,7 +263,7 @@ public sealed partial class MusicController
             CurrentSource = Player.PlaybackSource ?? source;
             WarmNext();
             Status = resolved.Track.Source == track.Source ? "Tocando agora" : "Fonte alternativa · Correspondência provável. Pode ser cover ou outra gravação.";
-            if (_radio && _queueIndex + 1 >= Queue.Count) _ = FillRadioAsync();
+            if (_radio && Upcoming.Take(RadioPrefetchThreshold + 1).Count() <= RadioPrefetchThreshold) _ = FillRadioAsync();
         }
         catch (OperationCanceledException)
         {
@@ -324,6 +360,7 @@ public sealed partial class MusicController
         if (direction == 0)
         {
             if (track.Source == Current?.Source) { SetStatus("Faixa atual permanece na fila até terminar."); return; }
+            _removedQueueItem = (track, index, _queueSession, IsRecommended(track));
             Queue.RemoveAt(index);
             _recommended.Remove(track.Source);
         }
@@ -367,12 +404,13 @@ public sealed partial class MusicController
     {
         var request = _radioRequest;
         _radioRequest = null; _radioTask = null; RadioLoading = false; _radioRetryAt = DateTime.MinValue;
+        _radioContinuation = null; _radioOnlineSeed = null; _radioHasPaged = false;
         request?.Cancel();
     }
     private Task FillRadioAsync(bool refresh = false)
     {
         if (_radioTask is { IsCompleted: false }) return _radioTask;
-        if (!_radio || Current is null || !refresh && (Upcoming.Any() || DateTime.UtcNow < _radioRetryAt)) return Task.CompletedTask;
+        if (!_radio || Current is null || !refresh && (Upcoming.Take(RadioPrefetchThreshold + 1).Count() > RadioPrefetchThreshold || DateTime.UtcNow < _radioRetryAt)) return Task.CompletedTask;
         var request = new CancellationTokenSource(TimeSpan.FromSeconds(25));
         _radioRequest = request;
         return _radioTask = BuildRadioAsync(request, refresh);
@@ -380,14 +418,16 @@ public sealed partial class MusicController
     private async Task BuildRadioAsync(CancellationTokenSource request, bool refresh)
     {
         var seed = Current!;
-        bool IsActive() => ReferenceEquals(_radioRequest, request) && _radio && Current?.Source == seed.Source;
+        var anchor = _radioSeed ??= seed;
+        var continuation = _radioContinuation;
+        var session = _queueSession;
+        bool IsActive() => ReferenceEquals(_radioRequest, request) && _radio && _queueSession == session;
         var requestFailed = false;
         RadioLoading = true; RadioStatus = "Buscando sugestões…"; Changed?.Invoke();
         _radioRetryAt = DateTime.UtcNow.AddMinutes(1);
         try
         {
             var timeout = request;
-            var anchor = _radioSeed ?? seed;
             var artists = History.OrderByDescending(Affinity).Where(t => !t.IsLocal && !string.IsNullOrWhiteSpace(t.Artist))
                 .Select(t => TrackTextFormatter.Artist(t.Artist)).Distinct(StringComparer.OrdinalIgnoreCase).Take(12).ToArray();
             var queries = new[] { $"{TrackTextFormatter.Artist(anchor.Artist)} {anchor.Album} music" }
@@ -398,16 +438,28 @@ public sealed partial class MusicController
             {
                 using var radioTimeout = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
                 radioTimeout.CancelAfter(TimeSpan.FromSeconds(12));
-                var onlineSeed = anchor;
-                if (anchor.IsLocal)
+                var onlineSeed = _radioOnlineSeed ?? anchor;
+                if (onlineSeed.IsLocal)
                 {
                     var matches = await _catalog.SearchAsync(anchor.Artist + " " + anchor.Title, radioTimeout.Token).WaitAsync(radioTimeout.Token);
                     onlineSeed = matches.FirstOrDefault(t => SameRadioSong(anchor, t)) ?? anchor;
                 }
-                radio = await _catalog.RadioAsync(onlineSeed, radioTimeout.Token).WaitAsync(radioTimeout.Token);
+                if (refresh || !_radioHasPaged || continuation is not null)
+                {
+                    var page = await _catalog.RadioPageAsync(onlineSeed, continuation, radioTimeout.Token).WaitAsync(radioTimeout.Token);
+                    if (!IsActive()) return;
+                    radio = page.Tracks;
+                    _radioOnlineSeed = onlineSeed;
+                    _radioHasPaged |= page.Continuation is not null;
+                    _radioContinuation = page.Continuation == continuation ? null : page.Continuation;
+                }
             }
             catch (Exception error) when (error is not OutOfMemoryException)
-            { requestFailed = true; PlaybackDiagnostics.Write("Rádio", "Fila YouTube Music indisponível; usando busca alternativa."); }
+            {
+                requestFailed = true;
+                if (IsActive()) { _radioContinuation = null; _radioHasPaged = false; }
+                PlaybackDiagnostics.Write("Rádio", "Fila YouTube Music indisponível; usando busca alternativa.");
+            }
             if (!IsActive()) return;
             var excluded = Queue.Concat(History).Append(anchor).Append(seed).ToList();
             bool Eligible(Track track) => !track.IsLocal && !IsRadioLoop(track) && !excluded.Any(t => SameRadioSong(t, track));

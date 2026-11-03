@@ -17,16 +17,23 @@ namespace Hibike.Android;
 
 [Service(Name = "com.flugel.hibike.PlaybackService", Exported = true,
     ForegroundServiceType = ForegroundService.TypeMediaPlayback)]
-[IntentFilter(new[] { "androidx.media3.session.MediaSessionService" })]
-public sealed class PlaybackService : MediaSessionService
+[IntentFilter(new[] { "androidx.media3.session.MediaLibraryService", "android.media.browse.MediaBrowserService" })]
+public sealed partial class PlaybackService : MediaLibraryService
 {
     public const string PrepareAction = "com.flugel.hibike.PREPARE";
     public static PlaybackService? Instance { get; private set; }
     private IExoPlayer? _player;
-    private MediaSession? _session;
+    private MediaLibrarySession? _session;
+    private LibraryCallback? _libraryCallback;
     private SessionPlayer? _sessionPlayer;
     private Handler? _handler;
     private Action? _poll;
+    private double _gain = 1;
+    private global::Android.Media.Audiofx.Equalizer? _equalizer;
+    private EqualizerPreset _equalizerPreset;
+    private int _equalizerSession;
+    private DateTime? _sleepDeadline;
+    public void SetSleepDeadline(DateTime? utc) => _sleepDeadline = utc;
     private int _state;
     private string? _lastError;
     public global::Android.Media.Session.MediaSession.Token? PlatformToken => _session?.PlatformToken;
@@ -50,7 +57,9 @@ public sealed class PlaybackService : MediaSessionService
         _sessionPlayer = new SessionPlayer(_player);
         var launch = PackageManager!.GetLaunchIntentForPackage(PackageName!)!.PutExtra("open_player", true);
         var pending = PendingIntent.GetActivity(this, 0, launch, PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent);
-        _session = new MediaSession.Builder(this, _sessionPlayer).SetSessionActivity(pending)!.Build();
+        _libraryCallback = new LibraryCallback();
+        _session = new MediaLibrarySession.Builder(this, _sessionPlayer, _libraryCallback).SetSessionActivity(pending)!.Build();
+        RefreshFavoriteAction();
         var provider = new DefaultMediaNotificationProvider.Builder(this).SetNotificationId(42)!
             .SetChannelId("hibike-playback")!.SetChannelName(Resource.String.playback_channel)!.Build()!;
         provider.SetSmallIcon(Resource.Drawable.ic_stat_music);
@@ -59,9 +68,13 @@ public sealed class PlaybackService : MediaSessionService
         _poll = () =>
         {
             if (_player is null) return;
+            if (_sleepDeadline is { } deadline && DateTime.UtcNow >= deadline)
+            { _sleepDeadline = null; _player.Pause(); }
             Playing = _player.IsPlaying; Position = Math.Max(0, _player.CurrentPosition) / 1000d;
             BufferedPosition = Math.Max(0, _player.BufferedPosition) / 1000d;
             Duration = Math.Max(0, _player.Duration) / 1000d; State = _player.PlaybackState;
+            if (State == 3) RefreshEqualizer();
+            RefreshFavoriteAction();
             Error = _player.PlayerError?.Message;
             if (Error is not null && Error != _lastError) { _lastError = Error; Failed?.Invoke(this, Error); }
             if (State == 4 && _state != 4) Ended?.Invoke(this, EventArgs.Empty);
@@ -86,7 +99,8 @@ public sealed class PlaybackService : MediaSessionService
         }
         return base.OnStartCommand(intent, flags, startId);
     }
-    public override MediaSession? OnGetSession(MediaSession.ControllerInfo controllerInfo) => _session;
+    public override MediaSession? OnGetSession(MediaSession.ControllerInfo? controllerInfo) => _session;
+    public override MediaLibrarySession? OnGetSessionFromMediaLibraryService(MediaSession.ControllerInfo? controllerInfo) => _session;
     public void Open(AudioSource source, double volume, byte[]? artwork = null)
     {
         Error = null; _lastError = null; State = 2;
@@ -98,7 +112,13 @@ public sealed class PlaybackService : MediaSessionService
         http.SetDefaultRequestProperties(new Dictionary<string, string>(source.Headers));
         var data = new DefaultDataSource.Factory(this, http);
         var media = new DefaultMediaSourceFactory(data).CreateMediaSource(item);
-        _player!.Volume = (float)volume; _player.SetMediaSource(media);
+        if (_equalizerPreset != source.Equalizer)
+        {
+            _equalizerPreset = source.Equalizer;
+            ReleaseEqualizer();
+        }
+        _gain = source.GainDb is { } gain ? Math.Pow(10, Math.Clamp(gain, -18, 6) / 20) : 1;
+        SetVolume(volume); _player!.SetMediaSource(media);
         // Register after playable item exists so Media3 replaces preparation notification id 42.
         if (!IsSessionAdded(_session!)) AddSession(_session!);
         _player.Prepare(); _player.Play();
@@ -106,7 +126,7 @@ public sealed class PlaybackService : MediaSessionService
     public void PauseAudio() => _player?.Pause();
     public void ResumeAudio() { if (_player?.PlaybackState == 4) _player.SeekTo(0); _player?.Play(); }
     public void Seek(double seconds) => _player?.SeekTo((long)(Math.Max(0, seconds) * 1000));
-    public void SetVolume(double volume) { if (_player is not null) _player.Volume = (float)volume; }
+    public void SetVolume(double volume) { if (_player is not null) _player.Volume = (float)Math.Clamp(volume * _gain, 0, 1); }
     public void CancelPreparation()
     {
         if (!Playing) { _player?.Stop(); StopForeground(StopForegroundFlags.Remove); }
@@ -115,11 +135,45 @@ public sealed class PlaybackService : MediaSessionService
     {
         Instance = null;
         if (_poll is not null) _handler?.RemoveCallbacks(_poll);
-        _session?.Release(); _sessionPlayer?.Dispose(); _player?.Release(); _player?.Dispose(); _player = null;
+        ReleaseEqualizer();
+        _session?.Release(); _libraryCallback?.Dispose(); _sessionPlayer?.Dispose(); _player?.Release(); _player?.Dispose(); _player = null;
         base.OnDestroy();
     }
     private sealed class SessionPlayer(IPlayer player) : ForwardingPlayer(player)
     {
+        private bool _openingFromCar;
+        public override void SetMediaItems(IList<MediaItem>? items, int startIndex, long startPositionMs)
+        {
+            if (items is not { Count: > 0 }) return;
+            OpenFromCar(items[Math.Clamp(startIndex, 0, items.Count - 1)]);
+        }
+        public override void SetMediaItem(MediaItem? item, long startPositionMs) => OpenFromCar(item);
+        public override void SetMediaItem(MediaItem? item) => OpenFromCar(item);
+        public override void SetMediaItem(MediaItem? item, bool resetPosition) => OpenFromCar(item);
+        public override void SetMediaItems(IList<MediaItem>? items) => SetMediaItems(items, 0, 0);
+        public override void SetMediaItems(IList<MediaItem>? items, bool resetPosition) => SetMediaItems(items, 0, 0);
+        public override void Play() { if (!_openingFromCar) base.Play(); }
+
+        private void OpenFromCar(MediaItem? item)
+        {
+            var controller = AppServices.Controller;
+            if (controller is null || item?.MediaId is not { } id || FindLibraryTrack(controller, id) is not { } track) return;
+            _openingFromCar = true;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try
+                {
+                    if (controller.Current?.Source == track.Source && !controller.LoadingAudio) { if (!controller.Player.IsPlaying) await controller.ToggleAsync(); }
+                    else
+                    {
+                        controller.ReplaceQueue([track]);
+                        await controller.PlayAsync(track, 0);
+                    }
+                }
+                finally { _openingFromCar = false; }
+            });
+        }
+
         public override bool IsCommandAvailable(int command) => AvailableCommands?.Contains(command) ?? false;
         public override PlayerCommands? AvailableCommands => new PlayerCommands.Builder().AddAll(base.AvailableCommands)!.AddAll(6, 7, 8, 9)!.Build();
         public override void SeekToNext() => Next();

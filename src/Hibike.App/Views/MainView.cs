@@ -362,6 +362,14 @@ public sealed partial class MainView : UserControl
         var previous = _home.Children.ToArray();
         var next = new List<Control>();
         var shownRecommendations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (OperatingSystem.IsAndroid() && _music.Current is { } current)
+        {
+            next.Add(ActionButton("Voltar ao player", () =>
+            {
+                ShowPlayer();
+                return Task.CompletedTask;
+            }));
+        }
         Shelf("Continuar ouvindo", "Fixadas e histórico · neste aparelho", _music.Pins.Concat(_music.History).DistinctBy(t => t.Source).Take(20).Select(t => Card(t, () => CoverCard(t, TrackTextFormatter.Artist(t.Artist), async () => { if (_music.Current?.Source == t.Source) await _music.ToggleAsync(); else await _music.PlayAsync(t); }))));
         if (_music.History.Count > 0) next.Add(ActionButton("Ver histórico", () => { OpenLocalCollection("Histórico", _music.History); return Task.CompletedTask; }));
         Shelf("Feito para você", "Suas preferências, favoritos e histórico · neste aparelho", _music.HomeRecommendations.Take(12).Select(t => Card(t, () => TrackCard(t))));
@@ -376,6 +384,11 @@ public sealed partial class MainView : UserControl
             });
         }));
         Shelf("Porque você gosta de " + _music.HomeSeed, "Rádio YouTube Music · sugestões relacionadas", _music.HomeRelated.Take(12).Select(t => Card(t, () => TrackCard(t))));
+        if (OperatingSystem.IsAndroid())
+            Shelf("Redescobrir", "Faixas que você ouvia e não toca há algum tempo", _music.Favorites.Concat(_music.History)
+                .DistinctBy(MusicController.SongKey)
+                .Where(t => _music.Listening.GetValueOrDefault(MusicController.SongKey(t)) is { Seconds: >= 60 } stat && stat.LastPlayed <= DateTime.UtcNow.AddDays(-14))
+                .OrderByDescending(_music.Affinity).Take(12).Select(t => Card(t, () => TrackCard(t))));
         var familiar = _music.History.Select(t => TrackTextFormatter.Artist(t.Artist)).Concat(_music.FavoriteArtists.Select(a => a.Name)).ToHashSet(StringComparer.OrdinalIgnoreCase);
         Shelf("Descubra algo novo", "Artistas ainda não explorados", _music.HomeRecommendations.Skip(12).Where(t => !familiar.Contains(TrackTextFormatter.Artist(t.Artist))).Take(12).Select(t => Card(t, () => TrackCard(t))));
         var albumTracks = _music.HomeRecommendations.Concat(_music.Favorites).Where(t => !string.IsNullOrWhiteSpace(t.Album)).GroupBy(t => (t.Artist, t.Album));
@@ -566,6 +579,9 @@ public sealed partial class MainView : UserControl
                 row.Children.Add(ActionButton(scope, async () => { _searchScope = scope; await SearchAsync(); }));
             foreach (var (label, query) in new[] { ("Explorar gêneros", "jazz soul instrumental music"), ("Foco", "instrumental focus music"), ("Energia", "energetic music"), ("Trilhas sonoras", "original soundtrack music") })
                 row.Children.Add(ActionButton(label, async () => { _searchScope = "Online"; _search.Text = query; await SearchAsync(); }));
+            if (OperatingSystem.IsAndroid() && _searchScope == "Online")
+                foreach (var (label, kind) in new[] { ("Artistas", CatalogKind.Artist), ("Álbuns", CatalogKind.Album), ("Playlists", CatalogKind.Playlist) })
+                    row.Children.Add(ActionButton(label, () => ShowCatalogSearchAsync(kind, _search.Text ?? "")));
             row.Children.Add(ActionButton("Adicionar resultados à fila", () => { _music.EnqueueResults(); return Task.CompletedTask; }));
             row.Children.Add(ActionButton("Tocar resultados", () => PlayCollectionAsync(_music.Results)));
         }
@@ -629,7 +645,7 @@ public sealed partial class MainView : UserControl
     private void ShowPlayer()
     {
         var track = _music.Pending ?? _music.Current; if (track is null) return;
-        if (_overlay is not null) CloseSheet();
+        if (_overlay is not null && _overlay.Tag is not "player-queue") CloseSheet();
         _detailTrack = track; _showingPlayer = true;
         if (_playerPage is not null) _root.Children.Remove(_playerPage);
         var panel = new Grid { RowDefinitions = new("Auto,*,Auto,Auto,*,Auto,Auto"),
@@ -638,9 +654,10 @@ public sealed partial class MainView : UserControl
         var header = new Grid { ColumnDefinitions = new("Auto,*,Auto,Auto") };
         header.Children.Add(IconButton("down", "Recolher player", () => { ClosePlayer(); return Task.CompletedTask; }));
         var album = Text(track.Album ?? TrackTextFormatter.Artist(track.Artist), UiTheme.Caption, Muted); album.TextTrimming = TextTrimming.CharacterEllipsis; album.HorizontalAlignment = HorizontalAlignment.Center; Put(header, album, 0, 1);
-        Put(header, IconButton("queue", "Abrir fila", () => { ClosePlayer(); _page = "queue"; Refresh(); return Task.CompletedTask; }), 0, 2); panel.Children.Add(header);
+        Put(header, IconButton("queue", "Abrir fila", () => { if (OperatingSystem.IsAndroid()) ShowPlayerQueue(); else { ClosePlayer(); _page = "queue"; Refresh(); } return Task.CompletedTask; }), 0, 2); panel.Children.Add(header);
         var artworkTrack = track == _music.Current && _music.CurrentSource?.Artwork is { } resolvedArtwork ? track with { Thumbnail = resolvedArtwork } : track;
-        var art = new Artwork(artworkTrack, UiTheme.ThumbnailSize, fullResolution: true) { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        var art = new Artwork(artworkTrack, UiTheme.ThumbnailSize, fullResolution: true,
+            stretch: OperatingSystem.IsAndroid() ? Stretch.Uniform : Stretch.UniformToFill) { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         art.CornerRadius = new(UiTheme.CardRadius); Put(panel, art, 1, 0);
         var metadata = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.CompactGap };
         var labels = new StackPanel { Spacing = UiTheme.CompactGap };
@@ -786,7 +803,7 @@ public sealed partial class MainView : UserControl
                     _detailPlay!.Width = _detailPlay.Height = UiTheme.PlaySize; _detailPlay.CornerRadius = new(UiTheme.PlaySize / 2);
                     Grid.SetColumnSpan(header, 1); Grid.SetColumnSpan(seek, 1);
                     Put(panel, header, 0, 0); Put(panel, art, 1, 0); Put(panel, metadata, 2, 0);
-                    Put(panel, seek, 3, 0); Put(panel, controls, 5, 0); Put(panel, upcomingBox, 6, 0);
+                    Put(panel, seek, 3, 0); Put(panel, controls, 5, 0); Put(panel, OperatingSystem.IsAndroid() ? BuildMobilePlayerTools() : upcomingBox, 6, 0);
                     Put(panel, mobileQuality, 4, 0);
                     RefreshDock();
                     host.Children.Add(panel);
@@ -914,6 +931,8 @@ public sealed partial class MainView : UserControl
             }
             ShowSheet("Histórico local", new ScrollViewer { Content = history, MaxHeight = Bounds.Height * .6 }); return Task.CompletedTask;
         }));
+        if (OperatingSystem.IsAndroid()) panel.Children.Add(ActionButton("Ajustes de áudio", () => { ShowAudioSettings(); return Task.CompletedTask; }));
+        if (OperatingSystem.IsAndroid()) panel.Children.Add(ActionButton("Biblioteca e backup", () => { ShowLibraryTools(); return Task.CompletedTask; }));
         if (OperatingSystem.IsAndroid()) panel.Children.Add(ActionButton("Discord por token (não oficial)", ShowDiscordAccountAsync));
         var cookies = System.IO.Path.Combine(_music.DataDirectory, "youtube-cookies.txt");
         if (System.IO.File.Exists(cookies)) panel.Children.Add(ActionButton("Apagar cookies antigos (não utilizados)", () => { System.IO.File.Delete(cookies); ShowSettings(); return Task.CompletedTask; }));
@@ -1067,17 +1086,18 @@ public sealed partial class MainView : UserControl
         if (DeveloperFeatures.Enabled) panel.Children.Add(ActionButton("Abrir diagnóstico", () => { ShowDiagnostics(); return Task.CompletedTask; }));
         ShowSheet("Informações do áudio", panel);
     }
-    private void ShowSheet(string title, Control content)
+    private void ShowSheet(string title, Control content, bool bottom = false)
     {
         if (_overlay is not null) _root.Children.Remove(_overlay);
         var layout = new Grid { RowDefinitions = new("Auto,*,Auto"), RowSpacing = UiTheme.CardGap };
         var label = UiTheme.Text(title, UiTheme.DialogTitle, weight: FontWeight.SemiBold); label.TextWrapping = TextWrapping.Wrap; layout.Children.Add(label);
-        Put(layout, UiTheme.FadingScroll(content), 1, 0);
+        Put(layout, bottom ? content : UiTheme.FadingScroll(content), 1, 0);
         Put(layout, ActionButton("Fechar", () => { CloseSheet(); return Task.CompletedTask; }), 2, 0);
         var sheet = UiTheme.Card(layout); sheet.MaxWidth = UiTheme.DialogMaxWidth; sheet.Margin = UiTheme.DialogMargin;
-        sheet.HorizontalAlignment = HorizontalAlignment.Stretch; sheet.VerticalAlignment = VerticalAlignment.Center;
+        sheet.HorizontalAlignment = HorizontalAlignment.Stretch; sheet.VerticalAlignment = bottom ? VerticalAlignment.Bottom : VerticalAlignment.Center;
+        if (bottom) sheet.Height = Math.Max(160, Bounds.Height * .76);
         sheet.MaxHeight = Math.Max(UiTheme.TouchSize, Bounds.Height - UiTheme.DialogMargin.Top - UiTheme.DialogMargin.Bottom);
-        _overlay = new Border { Background = UiTheme.Brush(UiTheme.Scrim), Child = sheet };
+        _overlay = new Border { Background = UiTheme.Brush(UiTheme.Scrim), Child = sheet, ZIndex = 5 };
         _overlay.PointerPressed += (_, e) => { if (ReferenceEquals(e.Source, _overlay)) { CloseSheet(); e.Handled = true; } };
         Grid.SetColumnSpan(_overlay, _root.ColumnDefinitions.Count); Grid.SetRowSpan(_overlay, 3); _root.Children.Add(_overlay); Animate(sheet);
     }

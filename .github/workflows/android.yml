@@ -2,7 +2,7 @@ name: Hibike • Android APK
 
 on:
   push:
-    branches: [main, feat/experimental-player-lab, queue-fix]
+    branches: [main, feat/experimental-player-lab, queue-fix, android-player-features]
     paths: ['src/**', 'tests/**', 'scripts/**', 'Directory.*', 'global.json', 'Hibike.slnx', '.github/**']
   pull_request:
     paths: ['src/**', 'tests/**', 'scripts/**', 'Directory.*', 'global.json', 'Hibike.slnx', '.github/**']
