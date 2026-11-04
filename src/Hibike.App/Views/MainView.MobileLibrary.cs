@@ -148,8 +148,10 @@ public sealed partial class MainView
         _mobileLibraryHero.IsVisible = detail is not null;
 
         var query = _mobileLibrarySearch.Text?.Trim() ?? "";
-        var tracks = detail is null ? FilterMobileLibraryTracks().ToArray()
-            : detail.Playlist?.Tracks.ToArray() ?? _music.Favorites.Where(track => detail.Tracks.FirstOrDefault() is { } seed
+        var seed = detail?.Tracks.FirstOrDefault();
+        var tracks = detail is null
+            ? _mobileLibraryTab == LibraryTab.Playlists ? [] : FilterMobileLibraryTracks().ToArray()
+            : detail.Playlist?.Tracks.ToArray() ?? _music.Favorites.Where(track => seed is not null
                 && track.Artist == seed.Artist && (_mobileLibraryTab == LibraryTab.Artists || track.Album == seed.Album)).ToArray();
         var showingTracks = detail is not null || _mobileLibraryTab == LibraryTab.Songs;
         var count = showingTracks ? tracks.Length : 0;

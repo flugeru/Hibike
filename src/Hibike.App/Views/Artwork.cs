@@ -2,7 +2,6 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
-using Avalonia.Threading;
 using Hibike.Core.Models;
 using Hibike.Core.Services;
 namespace Hibike.App.Views;
@@ -12,6 +11,8 @@ internal sealed class Artwork : Border
     private CancellationTokenSource? _cancel;
     private Bitmap? _bitmap;
     private ArtworkCache.Lease? _lease;
+    public bool DeferOffscreen { get; init; }
+
     public Artwork(Track? track, double size, bool fullResolution = false, Stretch stretch = Stretch.UniformToFill, bool naturalAspect = false, bool highQuality = false)
     {
         Width = Height = size; CornerRadius = new CornerRadius(size > UiTheme.ThumbnailSize ? UiTheme.CardRadius : UiTheme.ThumbRadius); ClipToBounds = true;
@@ -20,11 +21,12 @@ internal sealed class Artwork : Border
         if (naturalAspect) { Background = Brushes.Transparent; BorderThickness = new Thickness(0); CornerRadius = new(8); }
         var panel = new Grid();
         panel.Children.Add(Icons.Make("wave", UiTheme.Primary, UiTheme.IconSize));
-        var picture = new Image { Stretch = stretch, Opacity = 0,
-            Transitions = new Avalonia.Animation.Transitions { new Avalonia.Animation.DoubleTransition
-            { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(160) } } }; panel.Children.Add(picture);
+        var picture = new Image { Stretch = stretch, Opacity = 0, Transitions = Fade() };
+        panel.Children.Add(picture);
+        static Avalonia.Animation.Transitions Fade() => new() { new Avalonia.Animation.DoubleTransition
+        { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(160) } };
         Child = panel;
-        void Display(Bitmap bitmap)
+        void Display(Bitmap bitmap, bool cached)
         {
             if (naturalAspect)
             {
@@ -32,13 +34,15 @@ internal sealed class Artwork : Border
                 Background = Brushes.Transparent; BorderThickness = new Thickness(0); CornerRadius = new(8);
                 panel.Children[0].IsVisible = false;
             }
+            if (cached) picture.Transitions = null;
             _bitmap = bitmap; picture.Source = bitmap; picture.Opacity = 1;
         }
         if (track is not null && (!string.IsNullOrWhiteSpace(track.Thumbnail) || track.IsArtist))
         {
-            AttachedToVisualTree += async (_, _) =>
+            async void Load()
             {
-                _cancel?.Dispose(); _cancel = new CancellationTokenSource(); var token = _cancel.Token;
+                if (_cancel is not null) return;
+                _cancel = new CancellationTokenSource(); var token = _cancel.Token;
                 try
                 {
                     var url = track.Thumbnail;
@@ -66,14 +70,39 @@ internal sealed class Artwork : Border
                     if (token.IsCancellationRequested || _cancel?.Token != token)
                     { lease.Dispose(); return; }
                     _lease?.Dispose(); _lease = lease;
-                    Display(lease.Bitmap);
+                    Display(lease.Bitmap, lease.Cached);
                 }
                 catch (Exception) { /* Artwork is optional; playback never depends on it. */ }
+            }
+            void OnViewportChanged(object? sender, Avalonia.Layout.EffectiveViewportChangedEventArgs e)
+            {
+                var viewport = e.EffectiveViewport;
+                var margin = size / 2;
+                if (viewport.Width > 0 && viewport.Height > 0
+                    && viewport.Right > -margin && viewport.X < Bounds.Width + margin
+                    && viewport.Bottom > -margin && viewport.Y < Bounds.Height + margin)
+                {
+                    EffectiveViewportChanged -= OnViewportChanged;
+                    Load();
+                }
+            }
+            AttachedToVisualTree += (_, _) =>
+            {
+                if (DeferOffscreen) EffectiveViewportChanged += OnViewportChanged;
+                else Load();
             };
+            DetachedFromVisualTree += (_, _) => EffectiveViewportChanged -= OnViewportChanged;
         }
         DetachedFromVisualTree += (_, _) =>
         {
-            _cancel?.Cancel(); picture.Source = null; _bitmap = null; _lease?.Dispose(); _lease = null;
+            var request = _cancel;
+            _cancel = null;
+            request?.Cancel();
+            request?.Dispose();
+            picture.Transitions = null;
+            picture.Opacity = 0;
+            picture.Transitions = Fade();
+            picture.Source = null; _bitmap = null; _lease?.Dispose(); _lease = null;
         };
     }
     public static string PlayerImageUrl(string url)

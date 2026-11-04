@@ -49,12 +49,13 @@ public sealed partial class MainView
         var scroll = new ScrollViewer { Content = content, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled }; Put(layout, scroll, 1, 0);
         var footer = new StackPanel { Spacing = 8 }; var count = Text("", UiTheme.Caption, Muted); footer.Children.Add(count);
         Button? continueButton = null;
+        var updateCards = new List<Action>();
         continueButton = ActionButton("Continuar", async () =>
         {
             if (genreStage) { await FinishOnboardingAsync(false); return; }
             genreStage = true; _artistSearch?.Cancel();
             title.Text = "Quais estilos musicais combinam com você?"; description.Text = "Etapa opcional. Seus estilos complementam seus artistas favoritos.";
-            search.IsVisible = selected.IsVisible = cards.IsVisible = false; cards.Children.Clear(); genres.IsVisible = true;
+            search.IsVisible = selected.IsVisible = cards.IsVisible = false; cards.Children.Clear(); updateCards.Clear(); genres.IsVisible = true;
             state.Text = "Escolha quantos estilos quiser, ou continue sem selecionar.";
             foreach (var genre in Genres)
             {
@@ -71,33 +72,47 @@ public sealed partial class MainView
         {
             count.Text = $"{_selectedArtists.Count} de 20 artistas selecionados"; continueButton.IsEnabled = _selectedArtists.Count >= 3;
             selected.Children.Clear();
-            foreach (var artist in _selectedArtists.ToArray()) selected.Children.Add(ActionButton(artist.Name + " ×", () => { _selectedArtists.RemoveAll(a => a.Id == artist.Id); UpdateSelection(); Render(); return Task.CompletedTask; }));
+            foreach (var artist in _selectedArtists.ToArray()) selected.Children.Add(ActionButton(artist.Name + " ×", () => { _selectedArtists.RemoveAll(a => a.Id == artist.Id); UpdateSelection(); return Task.CompletedTask; }));
+            foreach (var update in updateCards) update();
         }
         IReadOnlyList<MusicArtist> results = [];
         void Render()
         {
             cards.Children.Clear();
+            updateCards.Clear();
             foreach (var artist in results)
             {
-                var chosen = _selectedArtists.Any(a => a.Id == artist.Id);
                 var art = new Track(artist.Id, artist.Name, artist.Name, "https://music.youtube.com/channel/" + artist.Id, Thumbnail: artist.Image);
                 var image = new Artwork(art, 220, highQuality: true) { Width = double.NaN, Height = double.NaN, CornerRadius = new(16) };
                 var overlay = new Grid(); overlay.Children.Add(image);
                 var label = Text(artist.Name, UiTheme.Body); label.FontWeight = FontWeight.SemiBold; label.TextWrapping = TextWrapping.Wrap; label.MaxLines = 2;
                 overlay.Children.Add(new Border { Background = new SolidColorBrush(Color.FromArgb(190, 0, 0, 0)), Padding = new Thickness(10), VerticalAlignment = VerticalAlignment.Bottom, Child = label });
-                var check = Text(chosen ? "✓" : "○", UiTheme.DialogTitle, chosen ? OnboardingAccent : UiTheme.OnPrimary); check.HorizontalAlignment = HorizontalAlignment.Right; check.Margin = new Thickness(8); overlay.Children.Add(check);
+                var check = Text("○", UiTheme.DialogTitle, UiTheme.OnPrimary); check.HorizontalAlignment = HorizontalAlignment.Right; check.Margin = new Thickness(8); overlay.Children.Add(check);
                 var button = ActionButton("", () =>
                 {
-                    if (chosen) _selectedArtists.RemoveAll(a => a.Id == artist.Id);
+                    if (_selectedArtists.Any(a => a.Id == artist.Id)) _selectedArtists.RemoveAll(a => a.Id == artist.Id);
                     else if (_selectedArtists.Count < 20) _selectedArtists.Add(artist);
                     else state.Text = "Limite de 20 artistas. Remova um para escolher outro.";
-                    UpdateSelection(); Render(); return Task.CompletedTask;
+                    UpdateSelection(); return Task.CompletedTask;
                 });
                 button.Content = overlay; button.Padding = new Thickness(0); button.CornerRadius = new(16); button.ClipToBounds = true;
                 button.HorizontalAlignment = HorizontalAlignment.Stretch; button.VerticalAlignment = VerticalAlignment.Stretch;
                 button.HorizontalContentAlignment = HorizontalAlignment.Stretch; button.VerticalContentAlignment = VerticalAlignment.Stretch;
-                button.BorderBrush = UiTheme.Brush(chosen ? OnboardingAccent : UiTheme.Outline); button.BorderThickness = new Thickness(chosen ? 3 : 1);
-                Avalonia.Automation.AutomationProperties.SetName(button, artist.Name + (chosen ? ", selecionado" : ", selecionar")); cards.Children.Add(button);
+                button.BorderThickness = new Thickness(2);
+                bool? wasChosen = null;
+                void UpdateCard()
+                {
+                    var chosen = _selectedArtists.Any(a => a.Id == artist.Id);
+                    if (chosen == wasChosen) return;
+                    wasChosen = chosen;
+                    check.Text = chosen ? "✓" : "○";
+                    check.Foreground = UiTheme.Brush(chosen ? OnboardingAccent : UiTheme.OnPrimary);
+                    button.BorderBrush = UiTheme.Brush(chosen ? OnboardingAccent : UiTheme.Outline);
+                    Avalonia.Automation.AutomationProperties.SetName(button, artist.Name + (chosen ? ", selecionado" : ", selecionar"));
+                }
+                updateCards.Add(UpdateCard);
+                UpdateCard();
+                cards.Children.Add(button);
             }
         }
         search.TextChanged += async (_, _) =>

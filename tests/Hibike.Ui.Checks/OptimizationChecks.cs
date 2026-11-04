@@ -82,6 +82,24 @@ internal static partial class Program
         panel.Children.Remove(small);
         using (var encoded = new MemoryStream()) player!.Save(encoded, new PngBitmapEncoderOptions());
         testWindow.Close();
+        var deferred = Art(false);
+        artworkType.GetProperty("DeferOffscreen")!.SetValue(deferred, true);
+        var deferredScroll = new ScrollViewer
+        {
+            Content = new StackPanel { Children = { new Border { Height = 1000 }, deferred } }
+        };
+        var deferredWindow = new Window { Width = 390, Height = 500, Content = deferredScroll };
+        deferredWindow.Show();
+        try
+        {
+            await Task.Delay(100);
+            Check(bitmapField.GetValue(deferred) is null, "An offscreen cover was loaded before it approached the viewport");
+            deferredScroll.Offset = new Vector(0, 1000);
+            for (var i = 0; i < 100 && bitmapField.GetValue(deferred) is null; i++) await Task.Delay(20);
+            Check(ReferenceEquals(thumb, bitmapField.GetValue(deferred)), "A visible cover failed to reuse the full-quality card bitmap");
+        }
+        finally { deferredWindow.Close(); }
+
         music.SaveSession(); await music.FlushPendingSavesAsync();
     }
 }

@@ -76,7 +76,9 @@ public sealed partial class MainView
     {
         var showSideQueue = !_androidLayout && Bounds.Width >= 1100 && _queueOpen && !_showingPlayer && _page != "queue";
         _root.ColumnDefinitions[2].Width = new GridLength(showSideQueue ? 350 : 0);
+        var openingSideQueue = showSideQueue && !_queuePane.IsVisible;
         _queuePane.IsVisible = showSideQueue;
+        if (openingSideQueue) Animate(_queuePane);
         var display = _music.Pending ?? _music.Current;
         _desktopDock.IsVisible = display is not null && !_showingPlayer && Bounds.Width >= 1000 && !_androidLayout;
         _mini.IsVisible = display is not null && !_showingPlayer && !_desktopDock.IsVisible && !(_androidLayout && _page == "queue");

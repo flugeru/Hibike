@@ -17,13 +17,23 @@ internal sealed class Equalizer : Border
     {
         var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = UiTheme.EqualizerGap,
             HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        var maxHeight = UiTheme.CompactGap + 3 * UiTheme.EqualizerStep;
         _bars = Enumerable.Range(0, 3).Select(_ => new Border { Width = UiTheme.EqualizerBarWidth,
-            Height = UiTheme.CompactGap, Background = UiTheme.Brush(UiTheme.Primary), CornerRadius = new(UiTheme.ProgressRadius),
+            Height = maxHeight, RenderTransformOrigin = new RelativePoint(.5, 1, RelativeUnit.Relative), Background = UiTheme.Brush(UiTheme.Primary), CornerRadius = new(UiTheme.ProgressRadius),
             VerticalAlignment = VerticalAlignment.Bottom }).ToArray();
         foreach (var bar in _bars) panel.Children.Add(bar);
         Child = panel; Background = UiTheme.Brush(UiTheme.Scrim); CornerRadius = new(UiTheme.ThumbRadius);
         IsHitTestVisible = false; IsVisible = false;
-        _timer.Tick += (_, _) => { _frame++; for (var i = 0; i < _bars.Length; i++) _bars[i].Height = UiTheme.CompactGap + ((_frame + i * 2) % 4) * UiTheme.EqualizerStep; };
+        void UpdateBars()
+        {
+            for (var i = 0; i < _bars.Length; i++)
+            {
+                var height = UiTheme.CompactGap + ((_frame + i * 2) % 4) * UiTheme.EqualizerStep;
+                _bars[i].RenderTransform = new ScaleTransform(1, height / (double)maxHeight);
+            }
+        }
+        UpdateBars();
+        _timer.Tick += (_, _) => { _frame++; UpdateBars(); };
         DetachedFromVisualTree += (_, _) => _timer.Stop();
         AttachedToVisualTree += (_, _) => { if (_playing) _timer.Start(); };
     }

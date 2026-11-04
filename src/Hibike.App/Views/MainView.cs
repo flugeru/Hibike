@@ -56,7 +56,6 @@ public sealed partial class MainView : UserControl
     private Button? _detailPlay;
     private bool _seeking;
     private Track? _shownTrack;
-    private Track? _detailTrack;
     private string _page = "home";
     private const string Muted = UiTheme.TextSecondary, Accent = UiTheme.Primary;
 
@@ -279,6 +278,9 @@ public sealed partial class MainView : UserControl
         catch (Exception ex) { _music.SetStatus("Não foi possível abrir o áudio: " + ex.Message); }
     }
 
+    private string? _animatedPage;
+    private Action<Track>? _updatePlayerTrack;
+
     private void Refresh()
     {
         RefreshLoading();
@@ -318,10 +320,27 @@ public sealed partial class MainView : UserControl
         if (!Equals(displayed, _shownTrack)) { _shownTrack = displayed; _nowArt.Content = new Artwork(displayed, UiTheme.MiniArtworkSize); }
         _nowTitle.Text = TrackTextFormatter.Title(displayed?.Title, displayed?.Artist);
         _nowArtist.Text = TrackTextFormatter.Artist(displayed?.Artist);
-        if (_detailPlay is not null && displayed is not null && !Equals(_detailTrack, displayed)) ShowPlayer();
+        if (displayed is not null) _updatePlayerTrack?.Invoke(displayed);
+        RefreshPlayerQueue();
         RefreshPlayback();
         RefreshDiscovery();
         RefreshCollectionPages();
+        if (_animatedPage != _page)
+        {
+            var previous = _animatedPage;
+            _animatedPage = _page;
+            var page = _page switch
+            {
+                "home" => (Control?)_homeRefreshContainer,
+                "explore" => _mobileSearchPage,
+                "library" => _mobileLibrary,
+                "queue" => _mobileQueue,
+                "collection" => _collectionPage,
+                _ => _preferencesPage
+            };
+            if (previous is not null && page is not null && !_showingPlayer)
+                Animate(page, _androidLayout ? 8 : 0);
+        }
     }
     private double MobileHomeCardSize => Math.Clamp(Math.Floor((Bounds.Width - 2 * UiTheme.MobileGutter - UiTheme.CompactGap) / 2), 120, 212);
 
@@ -449,8 +468,9 @@ public sealed partial class MainView : UserControl
                 }
                 if (cardList.Length > 1)
                 {
-                    controls.Children.Add(IconButton("back", "Voltar em " + title, () => { scroll.Offset = new Vector(Math.Max(0, scroll.Offset.X - Math.Max(180, scroll.Viewport.Width * .8)), 0); return Task.CompletedTask; }));
-                    controls.Children.Add(IconButton("forward", "Avançar em " + title, () => { scroll.Offset = new Vector(Math.Min(Math.Max(0, scroll.Extent.Width - scroll.Viewport.Width), scroll.Offset.X + Math.Max(180, scroll.Viewport.Width * .8)), 0); return Task.CompletedTask; }));
+                    var step = UiMotion.HorizontalScrollSteps(scroll);
+                    controls.Children.Add(IconButton("back", "Voltar em " + title, () => { step(-1); return Task.CompletedTask; }));
+                    controls.Children.Add(IconButton("forward", "Avançar em " + title, () => { step(1); return Task.CompletedTask; }));
                 }
                 Put(header, controls, 0, 1);
             }
@@ -505,7 +525,7 @@ public sealed partial class MainView : UserControl
         var cover = new Grid { Width = size, Height = size };
         var artwork = new Artwork(track, size, highQuality: true)
         {
-            CornerRadius = new(16), Background = Brushes.Transparent, BorderThickness = new Thickness(0)
+            DeferOffscreen = _page == "home", CornerRadius = new(16), Background = Brushes.Transparent, BorderThickness = new Thickness(0)
         };
         cover.Children.Add(artwork);
         var playOverlay = new Button { Content = Icons.Make("play"), IsHitTestVisible = false, Focusable = false,
@@ -656,7 +676,7 @@ public sealed partial class MainView : UserControl
     {
         var track = _music.Pending ?? _music.Current; if (track is null) return;
         if (_overlay is not null) CloseSheet();
-        _detailTrack = track; _showingPlayer = true; _seeking = false;
+        _showingPlayer = true; _seeking = false;
         if (_playerPage is not null) _root.Children.Remove(_playerPage);
         var panel = new Grid
         {
@@ -669,18 +689,31 @@ public sealed partial class MainView : UserControl
         header.Children.Add(IconButton("down", "Recolher player", () => { ClosePlayer(); return Task.CompletedTask; }));
         var album = Text(track.Album ?? TrackTextFormatter.Artist(track.Artist), UiTheme.Caption, Muted); album.TextTrimming = TextTrimming.CharacterEllipsis; album.HorizontalAlignment = HorizontalAlignment.Center; Put(header, album, 0, 1);
         Put(header, IconButton("queue", "Abrir fila", () => { OpenQueueFromPlayer(); return Task.CompletedTask; }), 0, 2); panel.Children.Add(header);
-        var artworkTrack = track == _music.Current && _music.CurrentSource?.Artwork is { } resolvedArtwork ? track with { Thumbnail = resolvedArtwork } : track;
-        var art = new Artwork(artworkTrack, UiTheme.ThumbnailSize, fullResolution: true)
-        {
-            Width = double.NaN, Height = double.NaN,
-            CornerRadius = new(UiTheme.CardRadius)
-        };
-        var playerCover = new SquareArtworkSlot { Child = art };
+        var playerCover = new SquareArtworkSlot();
         Put(panel, playerCover, 1, 0);
         var metadata = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.CompactGap };
         var labels = new StackPanel { Spacing = UiTheme.CompactGap };
         var title = Text(TrackTextFormatter.Title(track.Title, track.Artist), UiTheme.DialogTitle); title.FontWeight = FontWeight.SemiBold; title.TextWrapping = TextWrapping.Wrap; title.MaxLines = 2; labels.Children.Add(title);
         var artist = Text(TrackTextFormatter.Artist(track.Artist), UiTheme.Body, Muted); artist.TextTrimming = TextTrimming.CharacterEllipsis; labels.Children.Add(artist); metadata.Children.Add(labels);
+        Track? artworkTrack = null;
+        _updatePlayerTrack = UpdatePlayerTrack;
+        UpdatePlayerTrack(track);
+
+        void UpdatePlayerTrack(Track displayed)
+        {
+            album.Text = displayed.Album ?? TrackTextFormatter.Artist(displayed.Artist);
+            title.Text = TrackTextFormatter.Title(displayed.Title, displayed.Artist);
+            artist.Text = TrackTextFormatter.Artist(displayed.Artist);
+            var cover = displayed == _music.Current && _music.CurrentSource?.Artwork is { } resolved
+                ? displayed with { Thumbnail = resolved } : displayed;
+            if (Equals(artworkTrack, cover)) return;
+            artworkTrack = cover;
+            playerCover.Child = new Artwork(cover, UiTheme.ThumbnailSize, fullResolution: true)
+            {
+                Width = double.NaN, Height = double.NaN, CornerRadius = new(UiTheme.CardRadius)
+            };
+        }
+
         var favorite = _detailFavorite = IconButton("heart", "Alternar favorito", TogglePlaybackFavoriteAsync);
         Put(metadata, favorite, 0, 1); Put(panel, metadata, 2, 0);
         var seek = new Grid { RowDefinitions = new("Auto,Auto") };
@@ -696,7 +729,7 @@ public sealed partial class MainView : UserControl
         var controls = new Grid { ColumnDefinitions = new("*,*,Auto,*,*"), ColumnSpacing = UiTheme.ProgressRadius };
         var shuffle = _detailShuffle = IconButton("shuffle", "Aleatório", TogglePlaybackShuffleAsync); shuffle.HorizontalAlignment = HorizontalAlignment.Center; controls.Children.Add(shuffle);
         var previous = IconButton("previous", "Anterior", _music.PreviousAsync); previous.Content = Icons.Make("previous", UiTheme.TextPrimary, UiTheme.TransportIconSize); previous.HorizontalAlignment = HorizontalAlignment.Center; Put(controls, previous, 0, 1);
-        _detailPlay = IconButton("play", "Reproduzir ou pausar", _music.ToggleAsync); _detailPlay.Classes.Add("primary"); _detailPlay.Classes.Add("largePlay"); _detailPlay.Width = _detailPlay.Height = UiTheme.PlaySize; _detailPlay.CornerRadius = new(UiTheme.PlaySize / 2); Put(controls, _detailPlay, 0, 2);
+        var playerPlay = _detailPlay = IconButton("play", "Reproduzir ou pausar", _music.ToggleAsync); _detailPlay.Classes.Add("primary"); _detailPlay.Classes.Add("largePlay"); _detailPlay.Width = _detailPlay.Height = UiTheme.PlaySize; playerPlay.CornerRadius = new(UiTheme.PlaySize / 2); Put(controls, _detailPlay, 0, 2);
         var next = IconButton("next", "Próxima", _music.NextAsync); next.Content = Icons.Make("next", UiTheme.TextPrimary, UiTheme.TransportIconSize); next.HorizontalAlignment = HorizontalAlignment.Center; Put(controls, next, 0, 3);
         var repeat = _detailRepeat = IconButton("repeat", "Repetir", CyclePlaybackRepeatAsync); repeat.HorizontalAlignment = HorizontalAlignment.Center; Put(controls, repeat, 0, 4); Put(panel, controls, 5, 0);
         foreach (var button in new[] { shuffle, previous, next, repeat }) button.Classes.Add("subtle");
@@ -792,7 +825,7 @@ public sealed partial class MainView : UserControl
                     labels.Children.Remove(title);
                     title.TextTrimming = TextTrimming.None; title.Width = double.NaN;
                     labels.Children.Insert(0, new ScrollingTitle(title));
-                    _detailPlay!.Width = _detailPlay.Height = UiTheme.DesktopPlaySize; _detailPlay.CornerRadius = new(UiTheme.DesktopPlaySize / 2);
+                    playerPlay.Width = playerPlay.Height = UiTheme.DesktopPlaySize; playerPlay.CornerRadius = new(UiTheme.DesktopPlaySize / 2);
                     transport.ColumnDefinitions = new("*,Auto,*");
                     controls.ColumnDefinitions = new("Auto,Auto,Auto,Auto,Auto,Auto");
                     Put(controls, audioTools, 0, 5);
@@ -829,7 +862,7 @@ public sealed partial class MainView : UserControl
                         title.RenderTransform = null; title.Width = double.NaN; labels.Children.Insert(0, title);
                     }
                     title.TextWrapping = TextWrapping.Wrap; title.MaxLines = 2; title.FontSize = UiTheme.DialogTitle; artist.FontSize = UiTheme.Body;
-                    _detailPlay!.Width = _detailPlay.Height = UiTheme.PlaySize; _detailPlay.CornerRadius = new(UiTheme.PlaySize / 2);
+                    playerPlay.Width = playerPlay.Height = UiTheme.PlaySize; playerPlay.CornerRadius = new(UiTheme.PlaySize / 2);
                     Grid.SetColumnSpan(header, 1); Grid.SetColumnSpan(seek, 1);
                     Put(panel, header, 0, 0); Put(panel, playerCover, 1, 0); Put(panel, metadata, 2, 0);
                     Put(panel, seek, 3, 0); Put(panel, controls, 5, 0); Put(panel, upcomingBox, 6, 0);
@@ -842,21 +875,22 @@ public sealed partial class MainView : UserControl
         }
         // Detach initial mobile composition before responsive host takes ownership.
         panel.Children.Clear();
-        host.SizeChanged += (_, _) => ArrangePlayer();
-        transport.LayoutUpdated += (_, _) => ArrangeTransport();
+        host.SizeChanged += (_, _) => { if (_playerPage?.Child == host) ArrangePlayer(); };
+        transport.LayoutUpdated += (_, _) => { if (_playerPage?.Child == host) ArrangeTransport(); };
         _playerPage = new Border { Background = UiTheme.Brush(UiTheme.Background), Child = host, ClipToBounds = true };
         Grid.SetColumn(_playerPage, 1); Grid.SetColumnSpan(_playerPage, 2); Grid.SetRowSpan(_playerPage, 3); _root.Children.Add(_playerPage);
         _main.IsVisible = false; _mini.IsVisible = false; _desktopDock.IsVisible = false; _queuePane.IsVisible = false; _bottom.IsVisible = false;
-        Animate(_playerPage); RefreshPlayback();
+        Animate(_playerPage, 14); RefreshPlayerQueue(); RefreshPlayback();
     }
     private void ClosePlayer()
     {
         if (!_showingPlayer && _playerPage is null) return;
-        if (_playerPage is not null) _root.Children.Remove(_playerPage);
+        if (_playerPage is { } closingPlayer) RemoveAfterExit(closingPlayer, 14);
         _playerPage = null; _showingPlayer = false; _main.IsVisible = true; _bottom.IsVisible = _androidLayout || Bounds.Width < UiTheme.DesktopWidth;
         _detailShuffle = _detailRepeat = _detailFavorite = null; _detailVolume = null;
+        _updatePlayerTrack = null;
         _detailQueue = null; _detailNext = _detailQueueHeading = null; _detailRadioToggle = _detailRadioRetry = null;
-        _detailTrack = null; _detailSeek = null; _detailPlay = null; _detailTime = null; _detailDuration = null; _seeking = false; Refresh(); Animate(_main);
+        _detailSeek = null; _detailPlay = null; _detailTime = null; _detailDuration = null; _seeking = false; Refresh();
     }
     private bool HandleBack()
     {
@@ -873,11 +907,9 @@ public sealed partial class MainView : UserControl
         if (_queueOpen) { _queueOpen = false; Refresh(); return true; }
         return false;
     }
-    private static void Animate(Control control)
+    private static void Animate(Control control, double offset = 0)
     {
-        control.Transitions = null; control.Opacity = 0;
-        control.Transitions = new Transitions { new DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(180), Easing = new Avalonia.Animation.Easings.CubicEaseOut() } };
-        Dispatcher.UIThread.Post(() => control.Opacity = 1, DispatcherPriority.Render);
+        UiMotion.Enter(control, offset);
     }
     private ItemsControl? _detailQueue;
     private TextBlock? _detailNext, _detailQueueHeading;
@@ -901,7 +933,6 @@ public sealed partial class MainView : UserControl
     {
         RefreshPlaybackActions();
         if ((_page == "queue" || _queuePane.IsVisible) && _mobileQueuePlay is not null) RefreshPlayButton(_mobileQueuePlay);
-        RefreshPlayerQueue();
         UpdateRows(_music.Pending ?? _music.Current);
         RefreshPlayButton(_play);
         if (_detailPlay is not null) RefreshPlayButton(_detailPlay);
@@ -965,14 +996,16 @@ public sealed partial class MainView : UserControl
             PreferenceLink("heart", "Personalizar meu som", "Artistas e estilos favoritos", () => { ShowMusicOnboarding(edit: true); return Task.CompletedTask; }),
             PreferenceLink("queue", "Histórico de escuta", "Reproduções salvas neste dispositivo", () =>
         {
-            var history = new StackPanel { Spacing = 8 };
-            foreach (var track in _music.History)
+            var history = CollectionList<Track>(track =>
             {
-                history.Children.Add(TrackRow(track));
+                var row = new StackPanel { Spacing = 4 };
+                row.Children.Add(TrackRow(track));
                 if (_music.Listening.TryGetValue(MusicController.SongKey(track), out var stat))
-                    history.Children.Add(Text($"{stat.Plays} inícios · {Time(stat.Seconds)} ouvidos · {stat.Completed} conclusões · {stat.Skips} pulos rápidos", UiTheme.Caption, Muted));
-            }
-            ShowSheet("Histórico local", new ScrollViewer { Content = history, MaxHeight = Bounds.Height * .6 }); return Task.CompletedTask;
+                    row.Children.Add(Text($"{stat.Plays} inícios · {Time(stat.Seconds)} ouvidos · {stat.Completed} conclusões · {stat.Skips} pulos rápidos", UiTheme.Caption, Muted));
+                return row;
+            });
+            history.ItemsSource = _music.History.ToArray();
+            ShowSheet("Histórico local", history); return Task.CompletedTask;
         })));
         if (OperatingSystem.IsAndroid()) sections.Add(PreferenceSection("Integrações", "Serviços opcionais.", PreferenceLink("info", "Discord por token (não oficial)", "Leia riscos antes de conectar", ShowDiscordAccountAsync)));
         var cookies = System.IO.Path.Combine(_music.DataDirectory, "youtube-cookies.txt");
@@ -1204,13 +1237,21 @@ public sealed partial class MainView : UserControl
         sheet.MaxHeight = Math.Max(UiTheme.TouchSize, Bounds.Height - UiTheme.DialogMargin.Top - UiTheme.DialogMargin.Bottom);
         _overlay = new Border { Background = UiTheme.Brush(UiTheme.Scrim), Child = sheet };
         _overlay.PointerPressed += (_, e) => { if (ReferenceEquals(e.Source, _overlay)) { CloseSheet(); e.Handled = true; } };
-        Grid.SetColumnSpan(_overlay, _root.ColumnDefinitions.Count); Grid.SetRowSpan(_overlay, 3); _root.Children.Add(_overlay); Animate(sheet);
+        Grid.SetColumnSpan(_overlay, _root.ColumnDefinitions.Count); Grid.SetRowSpan(_overlay, 3); _root.Children.Add(_overlay); Animate(sheet, _androidLayout ? 12 : 6);
     }
     private void CloseSheet()
     {
-        if (_overlay is not null) _root.Children.Remove(_overlay); _overlay = null;
-        if (!_showingPlayer) { _detailTrack = null; _detailSeek = null; _detailPlay = null; _detailTime = null; _detailDuration = null; _seeking = false; }
+        if (_overlay is { } closingSheet) RemoveAfterExit(closingSheet, _androidLayout ? 12 : 6);
+        _overlay = null;
+        if (!_showingPlayer) { _detailSeek = null; _detailPlay = null; _detailTime = null; _detailDuration = null; _seeking = false; }
     }
+    private async void RemoveAfterExit(Control control, double offset)
+    {
+        control.IsHitTestVisible = false;
+        await UiMotion.ExitAsync(control, offset);
+        _root.Children.Remove(control);
+    }
+
     private static string Time(double seconds) => TrackTextFormatter.Duration(seconds);
     private static Control ToggleIcon(string name, bool active, bool repeatOne = false)
     {

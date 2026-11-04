@@ -30,10 +30,11 @@ internal static class ArtworkCache
         public bool Abandoned;
         public readonly CancellationTokenSource Cancel = new();
     }
-    internal sealed class Lease(Bitmap bitmap, Action release) : IDisposable
+    internal sealed class Lease(Bitmap bitmap, bool cached, Action release) : IDisposable
     {
         private Action? _release = release;
         public Bitmap Bitmap { get; } = bitmap;
+        public bool Cached { get; } = cached;
         public void Dispose() => Interlocked.Exchange(ref _release, null)?.Invoke();
     }
 
@@ -45,6 +46,7 @@ internal static class ArtworkCache
             version = await Task.Run(() => { var file = new FileInfo(uri.LocalPath); return $"|{file.Length}|{file.LastWriteTimeUtc.Ticks}"; }, token).ConfigureAwait(false);
         var key = (source + version, fallback, pixels);
         Entry entry;
+        bool cached;
         lock (Gate)
         {
             if (!Images.TryGetValue(key, out entry!))
@@ -75,12 +77,13 @@ internal static class ArtworkCache
                     catch { lock (Gate) { if (Images.GetValueOrDefault(key) == entry) Images.Remove(key); } throw; }
                 });
             }
+            cached = entry.Bitmap is not null;
             entry.Users++; entry.Used = ++_clock;
         }
         try
         {
             var bitmap = await entry.Loading.WaitAsync(token).ConfigureAwait(false);
-            return new Lease(bitmap, () => Release(key, entry));
+            return new Lease(bitmap, cached, () => Release(key, entry));
         }
         catch { Release(key, entry); throw; }
     }

@@ -192,9 +192,45 @@ public sealed partial class MainView
         OpenCollection(artist.Title, [], "Playlists do canal", artist, "Buscando playlists…");
         var page = _collectionPage.Child;
         var index = 0;
-        var cards = new WrapPanel { ItemSpacing = UiTheme.PageGap, LineSpacing = UiTheme.PageGap };
+        var playlists = new List<Track>();
+        var rows = new System.Collections.ObjectModel.ObservableCollection<Track[]>();
+        var columns = 1;
+        var cardSize = _androidLayout ? MobileHomeCardSize : 196;
+        var cards = CollectionList<Track[]>(items =>
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = UiTheme.PageGap,
+                Margin = new Thickness(0, 0, 0, UiTheme.PageGap) };
+            foreach (var item in items)
+                row.Children.Add(CoverCard(item, "Playlist", () => ShowPagedCollectionAsync(item.Title,
+                    "https://www.youtube.com/playlist?list=" + Uri.EscapeDataString(item.Id),
+                    artist with { Thumbnail = item.Thumbnail ?? artist.Thumbnail }, "Playlist"),
+                    songActions: false, cardSize: cardSize));
+            return row;
+        });
+        cards.ItemsSource = rows;
+        var scroll = UiTheme.FadingScroll(cards);
         var more = ActionButton("Carregar mais playlists", () => Task.CompletedTask);
+        more.IsVisible = false;
+        var content = new Grid { RowDefinitions = new("*,Auto"), RowSpacing = UiTheme.CompactGap };
+        content.Children.Add(scroll);
+        Put(content, more, 1, 0);
         more.Click += async (_, _) => await LoadAsync();
+        scroll.SizeChanged += (_, e) =>
+        {
+            var width = e.NewSize.Width;
+            if (width <= 0 || width == e.PreviousSize.Width) return;
+            var size = Math.Min(_androidLayout ? MobileHomeCardSize : 196, width);
+            var count = Math.Max(1, (int)((width + UiTheme.PageGap) / (size + UiTheme.PageGap)));
+            if (count == columns && size == cardSize) return;
+            cardSize = size;
+            columns = count;
+            rows.Clear();
+            AppendRows(0);
+        };
+        void AppendRows(int first)
+        {
+            foreach (var row in playlists.Skip(first).Chunk(columns)) rows.Add(row);
+        }
         await LoadAsync();
         async Task LoadAsync()
         {
@@ -205,27 +241,23 @@ public sealed partial class MainView
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
                 var batch = await _music.BrowsePageAsync(artist.Source + "/playlists", index, timeout.Token);
                 if (_page != "collection" || !ReferenceEquals(page, _collectionPage.Child)) return;
-                foreach (var item in batch)
-                {
-                    var playlistId = item.Id;
-                    cards.Children.Add(CoverCard(item, "Playlist", () => ShowPagedCollectionAsync(item.Title,
-                        "https://www.youtube.com/playlist?list=" + Uri.EscapeDataString(playlistId), artist with { Thumbnail = item.Thumbnail ?? artist.Thumbnail }, "Playlist"), songActions: false,
-                        cardSize: _androidLayout ? MobileHomeCardSize : 196));
-                }
+                var first = playlists.Count / columns * columns;
+                if (first < playlists.Count) rows.RemoveAt(rows.Count - 1);
+                playlists.AddRange(batch);
+                AppendRows(first);
                 index++;
-                if (index == 1 && batch.Count == 0) cards.Children.Add(Text("Nenhuma playlist pública neste canal.", UiTheme.Body));
-                if (more.Parent is Panel parent) parent.Children.Remove(more);
-                if (batch.Count >= 50) cards.Children.Add(more);
+                more.IsVisible = batch.Count >= 50;
+                if (index != 1) return;
                 var grid = (Grid)page!;
                 foreach (var child in grid.Children.Where(c => Grid.GetRow(c) == 2).ToArray()) grid.Children.Remove(child);
-                Put(grid, UiTheme.FadingScroll(cards), 2, 0);
+                Put(grid, playlists.Count == 0 ? Text("Nenhuma playlist pública neste canal.", UiTheme.Body) : content, 2, 0);
             }
             catch (Exception e) when (e is not OutOfMemoryException)
             {
                 PlaybackDiagnostics.Write("Playlists do canal", e.Message);
                 if (_page == "collection" && ReferenceEquals(page, _collectionPage.Child))
                 {
-                    if (cards.Children.Count == 0)
+                    if (playlists.Count == 0)
                     {
                         OpenCollection(artist.Title, [], "Playlists do canal", artist, "Playlists indisponíveis", LoadAsync);
                         page = _collectionPage.Child;

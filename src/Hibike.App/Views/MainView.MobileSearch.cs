@@ -87,7 +87,14 @@ public sealed partial class MainView
         Put(loading, cancel, 0, 2);
         _mobileSearchBusy = UiTheme.Card(loading, UiTheme.CompactGap);
         _mobileSearchBusy.VerticalAlignment = VerticalAlignment.Top;
-        _search.TextChanged += (_, _) => { if (_page == "explore") RefreshMobileSearch(); };
+        var filterVersion = 0;
+        _search.TextChanged += async (_, _) =>
+        {
+            var version = ++filterVersion;
+            if (_page != "explore") return;
+            if (_searchScope == "Sua biblioteca") await Task.Delay(120);
+            if (version == filterVersion && _page == "explore") RefreshMobileSearch();
+        };
         return page;
 
         Button ScopeButton(string name)

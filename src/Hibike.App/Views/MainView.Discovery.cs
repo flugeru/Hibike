@@ -141,7 +141,7 @@ public sealed partial class MainView
             var confirm = new StackPanel { Spacing = 12 }; confirm.Children.Add(Text("Excluir playlist local? Arquivos de áudio não serão apagados.", UiTheme.Caption));
             confirm.Children.Add(ActionButton("Confirmar exclusão", () => { _music.DeletePlaylist(playlist); CloseSheet(); return Task.CompletedTask; })); ShowSheet("Excluir " + playlist.Name, confirm); return Task.CompletedTask;
         }));
-        ShowSheet(playlist.Name + " · Local", new ScrollViewer { Content = panel, MaxHeight = Math.Max(220, Bounds.Height * .65) });
+        ShowSheet(playlist.Name + " · Local", panel);
     }
     private CheckBox CreateRadioToggle()
     {

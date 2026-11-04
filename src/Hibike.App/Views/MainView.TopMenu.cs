@@ -1,6 +1,4 @@
 using Avalonia;
-using Avalonia.Animation;
-using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -12,14 +10,9 @@ public sealed partial class MainView
     private readonly Grid _topMenuLayer = new() { IsVisible = false, Background = Brushes.Transparent };
     private readonly Border _topMenuPanel = new()
     {
-        Height = 0, Opacity = 0, ClipToBounds = true, VerticalAlignment = VerticalAlignment.Top,
+        ClipToBounds = true, VerticalAlignment = VerticalAlignment.Top,
         Background = UiTheme.Brush(UiTheme.Surface), BorderBrush = UiTheme.Brush(UiTheme.Outline),
-        BorderThickness = new Thickness(1), CornerRadius = new(16),
-        Transitions = new Transitions
-        {
-            new DoubleTransition { Property = HeightProperty, Duration = TimeSpan.FromMilliseconds(220), Easing = new CubicEaseOut() },
-            new DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(220), Easing = new CubicEaseOut() }
-        }
+        BorderThickness = new Thickness(1), CornerRadius = new(16)
     };
     private bool _topMenuOpen;
     private int _topMenuVersion;
@@ -56,14 +49,16 @@ public sealed partial class MainView
             Add("queue", playlist.Name, () => { ShowLocalPlaylist(playlist); return Task.CompletedTask; });
         _topMenuPanel.Child = new ScrollViewer { Content = items, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
         _topMenuVersion++; _topMenuOpen = true; _topMenuLayer.IsVisible = true;
-        SizeTopMenu(); _topMenuPanel.Opacity = 1;
+        SizeTopMenu();
+        _topMenuPanel.IsHitTestVisible = true;
+        UiMotion.Enter(_topMenuPanel, -12);
     }
     private async void CloseTopMenu()
     {
         if (!_topMenuOpen) return;
         var version = ++_topMenuVersion; _topMenuOpen = false;
-        _topMenuPanel.Height = 0; _topMenuPanel.Opacity = 0;
-        await Task.Delay(220);
+        _topMenuPanel.IsHitTestVisible = false;
+        await UiMotion.ExitAsync(_topMenuPanel, -12);
         if (version == _topMenuVersion) _topMenuLayer.IsVisible = false;
     }
 }
