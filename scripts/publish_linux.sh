@@ -11,15 +11,15 @@ mkdir -p "$appdir/usr/bin" "$appdir/usr/share/applications" "$appdir/usr/share/i
 dotnet publish src/Hibike.Desktop/Hibike.Desktop.csproj -c Release -r linux-x64 \
     --self-contained true -p:PublishSingleFile=false -o "$appdir/usr/bin"
 
-# Use the pinned Python zipapp instead of a glibc-dependent standalone extractor.
+# Bundle the official Linux x64 extractor; do not depend on system Python at runtime.
 python3 - "$appdir/usr/bin" <<'PY'
 import hashlib, json, pathlib, sys, urllib.request
 output = pathlib.Path(sys.argv[1])
 version = json.loads(pathlib.Path('scripts/runtime-lock.json').read_text())['yt_dlp']['version']
 base = f'https://github.com/yt-dlp/yt-dlp/releases/download/{version}'
 checksums = urllib.request.urlopen(base + '/SHA2-256SUMS', timeout=60).read().decode()
-expected = next(line.split()[0] for line in checksums.splitlines() if line.split()[-1].lstrip('*') == 'yt-dlp')
-data = urllib.request.urlopen(base + '/yt-dlp', timeout=120).read()
+expected = next(line.split()[0] for line in checksums.splitlines() if line.split()[-1].lstrip('*') == 'yt-dlp_linux')
+data = urllib.request.urlopen(base + '/yt-dlp_linux', timeout=120).read()
 assert hashlib.sha256(data).hexdigest() == expected, 'yt-dlp checksum mismatch'
 (output / 'yt-dlp').write_bytes(data)
 (output / 'yt-dlp').chmod(0o755)

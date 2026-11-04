@@ -71,7 +71,7 @@ jobs:
           - **Hibike-Setup-x64.exe**: instalador Windows.
           - **Hibike-win-x64.zip**: Windows portátil; extraia antes de executar.
           - **Hibike-Android-arm64.apk**: Android 7.0 ou superior, ARM64.
-          - **Hibike-x86_64.AppImage**: Linux x86_64 experimental; requer VLC e Python 3 do sistema. Instruções em **README-Linux.md** / experimental Linux build; requires system VLC and Python 3.
+          - **Hibike-x86_64.AppImage**: Linux x86_64 experimental; requer VLC do sistema. Instruções em **README-Linux.md** / experimental Linux build; requires system VLC.
           - **SHA256SUMS.txt**: hashes dos arquivos; **signing-certificate.txt**: certificado Android.
           - **libmpv-windows-20261021-1-sources.tar.xz**: fontes correspondentes do libmpv e dependências, com receitas de compilação; não precisa baixar para executar Hibike.
 
