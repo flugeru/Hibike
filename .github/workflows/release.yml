@@ -13,8 +13,10 @@ jobs:
     uses: ./.github/workflows/windows.yml
   android:
     uses: ./.github/workflows/android.yml
+  linux:
+    uses: ./.github/workflows/linux.yml
   release:
-    needs: [windows, android]
+    needs: [windows, android, linux]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -36,6 +38,10 @@ jobs:
         with:
           name: Hibike-libmpv-source
           path: release
+      - uses: actions/download-artifact@v4
+        with:
+          name: Hibike-Linux-x64
+          path: release/linux
       - name: Publish tagged release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -43,7 +49,10 @@ jobs:
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
           [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          (cd release && sha256sum *.exe *.zip *.apk *.tar.xz > SHA256SUMS.txt)
+          mv release/linux/Hibike-x86_64.AppImage release/
+          mv release/linux/README-Linux.md release/README-Linux.md
+          rmdir release/linux
+          (cd release && sha256sum *.exe *.zip *.apk *.tar.xz *.AppImage > SHA256SUMS.txt)
           cat > notes.txt <<'EOF'
           ## Hibike 0.2.0
 
@@ -62,6 +71,7 @@ jobs:
           - **Hibike-Setup-x64.exe**: instalador Windows.
           - **Hibike-win-x64.zip**: Windows portátil; extraia antes de executar.
           - **Hibike-Android-arm64.apk**: Android 7.0 ou superior, ARM64.
+          - **Hibike-x86_64.AppImage**: Linux x86_64 experimental; requer VLC e Python 3 do sistema. Instruções em **README-Linux.md** / experimental Linux build; requires system VLC and Python 3.
           - **SHA256SUMS.txt**: hashes dos arquivos; **signing-certificate.txt**: certificado Android.
           - **libmpv-windows-20261021-1-sources.tar.xz**: fontes correspondentes do libmpv e dependências, com receitas de compilação; não precisa baixar para executar Hibike.
 

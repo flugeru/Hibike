@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Hibike
+Comment=Music library and streaming player
+Comment[pt_BR]=Biblioteca musical e streaming
+Exec=Hibike.Desktop
+Icon=hibike
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+StartupWMClass=Hibike.Desktop

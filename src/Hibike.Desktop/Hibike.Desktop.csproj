@@ -26,6 +26,6 @@
    <!-- Use platform-neutral binding; Windows-specific LibVLCSharp pulls WinUI packaging into Avalonia. -->
    <PackageReference Include="LibVLCSharp" ExcludeAssets="all" GeneratePathProperty="true" />
    <Reference Include="LibVLCSharp"><HintPath>$(PkgLibVLCSharp)/lib/net8.0/LibVLCSharp.dll</HintPath></Reference>
-  <PackageReference Include="VideoLAN.LibVLC.Windows" />
+   <PackageReference Include="VideoLAN.LibVLC.Windows" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
  </ItemGroup>
 </Project>
