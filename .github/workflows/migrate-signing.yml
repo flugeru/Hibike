@@ -1,0 +1,56 @@
+name: Migrate existing APK key to encrypted Secrets payload
+
+on:
+  workflow_dispatch:
+    inputs:
+      public_key:
+        description: Repository Actions Secrets public key (not private)
+        required: true
+      key_id:
+        description: Repository Actions Secrets public key ID
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/cache/restore@v4
+        with:
+          path: ~/.local/share/hibike-signing
+          key: hibike-development-signing-v1
+          fail-on-cache-miss: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install PyNaCl==1.6.0
+      - name: Encrypt existing key for repository Secrets
+        env:
+          PUBLIC_KEY: ${{ inputs.public_key }}
+          KEY_ID: ${{ inputs.key_id }}
+        run: |
+          python - <<'PY'
+          import base64, hashlib, json, os, pathlib, subprocess
+          from nacl.public import PublicKey, SealedBox
+          path = pathlib.Path.home() / '.local/share/hibike-signing/development.jks'
+          assert path.is_file(), 'Existing signing key missing; refusing to generate a replacement'
+          cert = subprocess.check_output(['keytool', '-exportcert', '-keystore', str(path), '-alias', 'androiddebugkey', '-storepass', 'android'])
+          print('Existing certificate SHA-256:', hashlib.sha256(cert).hexdigest())
+          box = SealedBox(PublicKey(base64.b64decode(os.environ['PUBLIC_KEY'], validate=True)))
+          values = {'ANDROID_KEYSTORE_BASE64': base64.b64encode(path.read_bytes()).decode(),
+                    'ANDROID_KEY_ALIAS': 'androiddebugkey', 'ANDROID_KEY_PASSWORD': 'android',
+                    'ANDROID_STORE_PASSWORD': 'android'}
+          result = {name: {'key_id': os.environ['KEY_ID'], 'encrypted_value': base64.b64encode(box.encrypt(value.encode())).decode()} for name, value in values.items()}
+          pathlib.Path('encrypted-signing-secrets.json').write_text(json.dumps(result))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: encrypted-signing-secrets
+          path: encrypted-signing-secrets.json
+          retention-days: 1
+      - name: Remove runner copy
+        if: always()
+        run: rm -f "$HOME/.local/share/hibike-signing/development.jks"
