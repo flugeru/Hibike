@@ -13,6 +13,7 @@ jobs:
     uses: ./.github/workflows/windows.yml
   android:
     uses: ./.github/workflows/android.yml
+    secrets: inherit
   linux:
     uses: ./.github/workflows/linux.yml
   release:

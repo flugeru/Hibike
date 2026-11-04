@@ -8,6 +8,15 @@ on:
     paths: ['src/**', 'tests/**', 'scripts/**', 'Directory.*', 'global.json', 'Hibike.slnx', '.github/**']
   workflow_dispatch:
   workflow_call:
+    secrets:
+      ANDROID_KEYSTORE_BASE64:
+        required: true
+      ANDROID_KEY_ALIAS:
+        required: true
+      ANDROID_KEY_PASSWORD:
+        required: true
+      ANDROID_STORE_PASSWORD:
+        required: true
 
 permissions:
   contents: read
@@ -44,22 +53,30 @@ jobs:
         run: dotnet test tests/Hibike.Core.Tests/Hibike.Core.Tests.csproj -c Release --logger "trx;LogFileName=core.trx" --results-directory artifacts/tests
       - name: Prepare verified Python, QuickJS and YT-DLP
         run: python3 scripts/prepare_android_runtime.py --abi arm64-v8a
-      - name: Restore development signing key
-        uses: actions/cache@v4
-        with:
-          path: ~/.local/share/hibike-signing
-          key: hibike-development-signing-v1
-      - name: Prepare runner-owned development signing key
+      - name: Build pull request without release credentials
+        if: github.event_name == 'pull_request'
+        run: dotnet build src/Hibike.Android/Hibike.Android.csproj -f net10.0-android -c Release -r android-arm64 -p:RuntimeIdentifiers=android-arm64
+      - name: Restore signing key from Secrets
+        if: github.event_name != 'pull_request'
         shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
         run: |
-          mkdir -p "$HOME/.local/share/hibike-signing"
-          if [ ! -f "$HOME/.local/share/hibike-signing/development.jks" ]; then
-            keytool -genkeypair -keystore "$HOME/.local/share/hibike-signing/development.jks" \
-              -alias androiddebugkey -storepass android -keypass android \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=Hibike Development, O=Flugel, C=BR" -noprompt
-          fi
-      - name: Publish signed development APK
+          set -euo pipefail
+          test -n "$KEYSTORE_BASE64" && test -n "$KEY_ALIAS" && test -n "$KEY_PASSWORD" && test -n "$STORE_PASSWORD"
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/hibike-signing.jks"
+          keytool -exportcert -keystore "$RUNNER_TEMP/hibike-signing.jks" -alias "$KEY_ALIAS" -storepass:env STORE_PASSWORD > "$RUNNER_TEMP/hibike-signing.der"
+          echo "8dd0de091c98a3d8d969ac88dddf9fe6c2afa23edccb1df4d737d91d0480f98c  $RUNNER_TEMP/hibike-signing.der" | sha256sum --check
+      - name: Publish signed APK
+        if: github.event_name != 'pull_request'
+        env:
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
         run: |
           dotnet publish src/Hibike.Android/Hibike.Android.csproj \
             -f net10.0-android -c Release -r android-arm64 \
@@ -67,12 +84,13 @@ jobs:
             -p:AndroidSdkDirectory="$ANDROID_HOME" \
             -p:ApplicationVersion=$((20261181 + GITHUB_RUN_NUMBER)) \
             -p:AndroidKeyStore=true \
-            -p:AndroidSigningKeyStore="$HOME/.local/share/hibike-signing/development.jks" \
-            -p:AndroidSigningKeyAlias=androiddebugkey \
-            -p:AndroidSigningKeyPass=android \
-            -p:AndroidSigningStorePass=android \
+            -p:AndroidSigningKeyStore="$RUNNER_TEMP/hibike-signing.jks" \
+            -p:AndroidSigningKeyAlias="$KEY_ALIAS" \
+            -p:AndroidSigningKeyPass=env:KEY_PASSWORD \
+            -p:AndroidSigningStorePass=env:STORE_PASSWORD \
             -o artifacts/android
       - name: Validate APK and bundled engine
+        if: github.event_name != 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
@@ -90,12 +108,16 @@ jobs:
           cp "$apk" artifacts/release/Hibike-Android-arm64.apk
           cp artifacts/android/signing-certificate.txt artifacts/release/signing-certificate.txt
       - name: Upload installable APK
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: Hibike-Android-arm64
           path: artifacts/release/*
           if-no-files-found: error
           retention-days: 30
+      - name: Remove temporary signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/hibike-signing.jks" "$RUNNER_TEMP/hibike-signing.der"
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
