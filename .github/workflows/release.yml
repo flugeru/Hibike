@@ -32,6 +32,10 @@ jobs:
         with:
           name: Hibike-Android-arm64
           path: release
+      - uses: actions/download-artifact@v4
+        with:
+          name: Hibike-libmpv-source
+          path: release
       - name: Publish tagged release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -39,7 +43,7 @@ jobs:
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
           [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          (cd release && sha256sum *.exe *.zip *.apk > SHA256SUMS.txt)
+          (cd release && sha256sum *.exe *.zip *.apk *.tar.xz > SHA256SUMS.txt)
           cat > notes.txt <<'EOF'
           ## Hibike 0.2.0
 
@@ -59,8 +63,9 @@ jobs:
           - **Hibike-win-x64.zip**: Windows portátil; extraia antes de executar.
           - **Hibike-Android-arm64.apk**: Android 7.0 ou superior, ARM64.
           - **SHA256SUMS.txt**: hashes dos arquivos; **signing-certificate.txt**: certificado Android.
+          - **libmpv-windows-20261021-1-sources.tar.xz**: fontes correspondentes do libmpv e dependências, com receitas de compilação; não precisa baixar para executar Hibike.
 
           ### Limitações conhecidas
-          Integração Google/YouTube Music não oficial, sujeita a bloqueios, expiração e mudanças do serviço. Sem sincronização completa entre dispositivos. MediaInfo Android não incluído; leitura usa APIs nativas e parser FLAC. BASS exige DLL oficial e licença adequada; MediaInfo no Windows é opcional e não acompanha o download. APK usa chave de desenvolvimento do CI; pode não atualizar APKs locais assinados com outra chave. Não desinstale uma instalação existente sem preservar seus dados. Cobertura de formatos e persistência Google real ainda exigem validação física.
+          Integração Google/YouTube Music não oficial, sujeita a bloqueios, expiração e mudanças do serviço. Sem sincronização completa entre dispositivos. MediaInfo Android não incluído; leitura usa APIs nativas e parser FLAC. MediaInfo no Windows é opcional e não acompanha o download. Motores Windows: libmpv padrão e VLC. APK usa chave de desenvolvimento do CI; pode não atualizar APKs locais assinados com outra chave. Não desinstale uma instalação existente sem preservar seus dados. Cobertura de formatos e persistência Google real ainda exigem validação física.
           EOF
           gh release create "$tag" release/* --verify-tag --title "Hibike ${tag#v}" --notes-file notes.txt --latest

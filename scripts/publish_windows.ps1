@@ -27,11 +27,12 @@ if ((Get-FileHash $extractor -Algorithm SHA256).Hash -ne $expected) {
 }
 & $extractor --version
 if ($LASTEXITCODE -ne 0) { throw 'Bundled yt-dlp failed to start.' }
-$mpvUrl = 'https://github.com/zhongfly/mpv-winbuild/releases/download/2026-11-03-46787be250/mpv-dev-lgpl-x86_64-20261103-git-46787be250.7z'
-$mpvArchive = Join-Path $root 'artifacts/mpv-lgpl-20261103/mpv.7z'
+$mpvRelease = 'https://github.com/freeKC/libmpv-builds/releases/download/20261021-1'
+$mpvUrl = "$mpvRelease/mpv-dev-x86_64-20261021-git-0b7ed67.7z"
+$mpvArchive = Join-Path $root 'artifacts/mpv-lgpl-20261021-1/mpv.7z'
 New-Item -ItemType Directory -Force (Split-Path $mpvArchive) | Out-Null
 if (!(Test-Path $mpvArchive)) { Invoke-WebRequest $mpvUrl -OutFile $mpvArchive -UseBasicParsing }
-if ((Get-FileHash $mpvArchive -Algorithm SHA256).Hash -ne 'ce2563d352aac81c2e6e9b2b63e846ec847f4bdabdec74fb14c5b29049c161d7') { throw 'libmpv checksum mismatch.' }
+if ((Get-FileHash $mpvArchive -Algorithm SHA256).Hash -ne 'b3d1a4b3a8e202c28369a46f5fb776baa0742e38de8c9d0757b0255bcb8223d1') { throw 'libmpv checksum mismatch.' }
 $mpvDir = Join-Path $output 'licenses/libmpv'
 New-Item -ItemType Directory -Force $mpvDir | Out-Null
 tar -xf $mpvArchive -C $mpvDir
@@ -39,10 +40,18 @@ if ($LASTEXITCODE -ne 0) { throw 'libmpv extraction failed.' }
 $mpvDll = Get-ChildItem $mpvDir -Recurse -Filter 'libmpv-2.dll' | Select-Object -First 1
 if (!$mpvDll) { throw 'libmpv-2.dll missing.' }
 Move-Item $mpvDll.FullName (Join-Path $output 'libmpv-2.dll')
-Invoke-WebRequest 'https://raw.githubusercontent.com/mpv-player/mpv/46787be250/LICENSE.LGPL' -OutFile (Join-Path $mpvDir 'LICENSE.LGPL') -UseBasicParsing
-Invoke-WebRequest 'https://raw.githubusercontent.com/FFmpeg/FFmpeg/master/COPYING.LGPLv3' -OutFile (Join-Path $mpvDir 'COPYING.LGPLv3') -UseBasicParsing
+$sourceName = 'libmpv-windows-20261021-1-sources.tar.xz'
+$sourceDir = Join-Path $root 'artifacts/libmpv-source'
+New-Item -ItemType Directory -Force $sourceDir | Out-Null
+$sourceArchive = Join-Path $sourceDir $sourceName
+if (!(Test-Path $sourceArchive)) { Invoke-WebRequest "$mpvRelease/$sourceName" -OutFile $sourceArchive -UseBasicParsing }
+if ((Get-FileHash $sourceArchive -Algorithm SHA256).Hash -ne '77e612c8110b1731c9b180cda840bb965939440c743d480f34cab957861e9d11') { throw 'libmpv source checksum mismatch.' }
+Set-Content (Join-Path $mpvDir 'SOURCES.txt') "Corresponding source: $sourceName, supplied alongside Hibike release downloads. Upstream: $mpvRelease/$sourceName. SHA-256: 77e612c8110b1731c9b180cda840bb965939440c743d480f34cab957861e9d11. Replace libmpv-2.dll beside Hibike.Desktop.exe to use a modified compatible library."
 Copy-Item (Join-Path $root 'THIRD-PARTY-NOTICES.md') $output
-Set-Content (Join-Path $output 'LEIA-ME.txt') 'Abra Hibike.Desktop.exe. Mantenha todos os arquivos desta pasta juntos. Inclui .NET, libmpv LGPL (padrao), VLC, NAudio e yt-dlp. Motor selecionavel nas configuracoes; reinicie apos trocar. BASS nao incluido: exige bass.dll x64 oficial e licenca aplicavel. Media Foundation/NAudio dependem dos codecs Windows. Internet necessaria para busca e streaming. Login Google opcional para biblioteca; reproducao nao recebe credenciais da conta.'
+$certificates = Join-Path $output 'cacert.pem'
+Invoke-WebRequest 'https://curl.se/ca/cacert-2026-10-20.pem' -OutFile $certificates -UseBasicParsing
+if ((Get-FileHash $certificates -Algorithm SHA256).Hash -ne '796f1389bfea13c0ed78f663b765baaff54a508e5483786bd6ece73c5e3e3cbe') { throw 'CA bundle checksum mismatch.' }
+Set-Content (Join-Path $output 'LEIA-ME.txt') 'Abra Hibike.Desktop.exe. Mantenha todos os arquivos desta pasta juntos. Inclui .NET, libmpv LGPL (padrao), VLC e yt-dlp. Ambos os motores suportam arquivos locais e streaming. Motor selecionavel nas configuracoes; reinicie apos trocar. Internet necessaria para busca e streaming. Login Google opcional para biblioteca; reproducao nao recebe credenciais da conta.'
 Add-Type -AssemblyName System.IO.Compression
 $archivePath = Join-Path $root "artifacts\$Name.zip"
 $archiveStream = [IO.File]::Open($archivePath, [IO.FileMode]::Create)

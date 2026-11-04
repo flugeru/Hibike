@@ -950,7 +950,7 @@ public sealed partial class MainView : UserControl
             Avalonia.Automation.AutomationProperties.SetName(enginePicker, "Motor de áudio");
             enginePicker.SelectionChanged += (_, _) => { if (enginePicker.SelectedItem is string engine) { try { AppServices.SaveAudioEngine?.Invoke(engine); } catch { _music.SetStatus("Não foi possível salvar motor de áudio."); } } };
             sound.Children.Add(enginePicker);
-            var codecs = Text("libmpv/VLC: formatos amplos. Media Foundation/NAudio: codecs Windows e HTTP limitado. BASS exige DLL oficial e licença próprias.", UiTheme.Caption, Muted); codecs.TextWrapping = TextWrapping.Wrap; sound.Children.Add(codecs);
+            var codecs = Text("libmpv e VLC: arquivos locais e streaming. Reinicie após trocar o motor.", UiTheme.Caption, Muted); codecs.TextWrapping = TextWrapping.Wrap; sound.Children.Add(codecs);
         }
         sections.Add(PreferenceSection("Reprodução", "Volume salvo automaticamente neste dispositivo.", sound));
         sections.Add(PreferenceSection("Conta e biblioteca", "Sua conexão, músicas e recomendações.",

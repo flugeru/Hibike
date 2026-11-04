@@ -8,7 +8,6 @@
  </PropertyGroup>
   <ItemGroup Condition="!$([MSBuild]::IsOSPlatform('Windows'))">
     <Compile Remove="WebAccountLogin.cs" />
-    <Compile Remove="WindowsAudioPlayer.cs" />
   <Compile Remove="WindowsMediaSession.cs" />
   <Compile Remove="WindowsAppIdentity.cs" />
   </ItemGroup>
@@ -16,7 +15,6 @@
     <Using Include="System.Net.Http" />
     <Using Include="System.IO" />
     <PackageReference Include="Microsoft.Web.WebView2" />
-    <PackageReference Include="NAudio" />
   </ItemGroup>
  <ItemGroup Condition="'$(HibikeGoogleOAuthConfig)' != ''">
    <EmbeddedResource Include="$(HibikeGoogleOAuthConfig)" LogicalName="Hibike.GoogleOAuth.Desktop.json" />

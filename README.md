@@ -22,7 +22,7 @@ Player de música para **Windows x64 e Android 7.0+ ARM64**, com interface AMOLE
 - Miniplayer, player expandido e informações técnicas do áudio.
 - Login Google opcional, sessão protegida e restauração ao reabrir. Conta não é obrigatória.
 - Controles de mídia do sistema, reprodução Android em segundo plano e integração Discord no Windows.
-- Windows com libmpv padrão; VLC, Media Foundation, BASS e NAudio selecionáveis após reiniciar. BASS exige DLL oficial x64 e licença adequada.
+- Windows com libmpv padrão e VLC selecionável após reiniciar, para arquivos locais e streaming.
 
 ## Instalação
 

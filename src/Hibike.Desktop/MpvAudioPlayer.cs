@@ -30,7 +30,11 @@ public sealed class MpvAudioPlayer : IAudioPlayer
                 if (_handle == IntPtr.Zero) throw new IOException("libmpv não iniciou.");
                 Check(mpv_set_option_string(_handle, "config", "no"));
                 Check(mpv_set_option_string(_handle, "vid", "no"));
-                Check(mpv_set_option_string(_handle, "ytdl", "no"));
+                Check(mpv_set_option_string(_handle, "tls-verify", "yes"));
+                var certificates = Path.Combine(AppContext.BaseDirectory, "cacert.pem");
+                if (File.Exists(certificates)) Check(mpv_set_option_string(_handle, "tls-ca-file", certificates));
+                var ytdl = mpv_set_option_string(_handle, "ytdl", "no");
+                if (ytdl != -5) Check(ytdl); // MPV_ERROR_OPTION_NOT_FOUND: builds without the ytdl hook.
                 Check(mpv_initialize(_handle));
                 _timer = new Timer(Poll, null, 100, 100);
             }

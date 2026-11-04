@@ -1,6 +1,12 @@
 # libmpv distribution review — 0.2.0
 
-Status: incomplete. Keep libmpv as the default engine; do not publish the current Windows binaries until the source-distribution gap is resolved.
+Status: replacement passed local playback and live yt-dlp streaming checks with TLS verification enabled and the pinned Mozilla CA bundle. libmpv remains default; VLC is the only alternative. Previous Windows binaries below must not be used for the new release.
+
+## Replacement for public packaging
+
+Use https://github.com/freeKC/libmpv-builds/releases/tag/20261021-1. Binary archive SHA-256 `b3d1a4b3a8e202c28369a46f5fb776baa0742e38de8c9d0757b0255bcb8223d1` and source archive SHA-256 `77e612c8110b1731c9b180cda840bb965939440c743d480f34cab957861e9d11` verified locally. Source archive contains `recipe/`, `recipe-files/`, `libmpv-builds/windows/sources.lock` and `src_packages/` including mpv and FFmpeg. Binary archive includes dependency licenses and `BUILDINFO.txt` identifying pinned dependency revisions, compiler, recipe and container.
+
+Packaging retains these notices and headers, permits replacing the separate DLL, and uploads the corresponding source archive alongside the application downloads. This replaces the former source-link-only approach; it is not a blanket legal certification. The experimental source-build workflow is manual only and is not needed for releases.
 
 ## Identified build
 

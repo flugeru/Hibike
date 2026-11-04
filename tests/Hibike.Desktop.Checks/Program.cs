@@ -42,9 +42,9 @@ if (args.Contains("--engines"))
             writer.Write(88200); writer.Write((short)2); writer.Write((short)16);
             writer.Write("data"u8); writer.Write(88200 * 4); writer.Write(new byte[88200 * 4]);
         }
-        foreach (var name in new[] { "libmpv", "Media Foundation", "NAudio" })
+        foreach (var name in new[] { "libmpv", "VLC" })
         {
-            using IAudioPlayer engine = name == "libmpv" ? new MpvAudioPlayer() : new WindowsAudioPlayer(name == "Media Foundation");
+            using IAudioPlayer engine = name == "libmpv" ? new MpvAudioPlayer() : new VlcAudioPlayer();
             var ended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             engine.Ended += (_, _) => ended.TrySetResult();
             engine.Failed += (_, error) => ended.TrySetException(new IOException(error));
@@ -62,7 +62,15 @@ if (args.Contains("--engines"))
             Console.WriteLine(name + ": playback, duration, pause, resume, seek, volume, EOF and cancellation passed.");
         }
     }
-    finally { File.Delete(path); }
+    finally
+    {
+        // VLC disposes on its command queue; allow that queue to release the file.
+        for (var attempt = 0; ; attempt++)
+        {
+            try { File.Delete(path); break; }
+            catch (IOException) when (attempt < 50) { await Task.Delay(100); }
+        }
+    }
 }
 if (args.Contains("--online-mpv"))
 {
