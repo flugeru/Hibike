@@ -117,7 +117,8 @@ public sealed partial class MainView : UserControl
             _sidebar.IsVisible = !compact; _bottom.IsVisible = compact;
             headerImport.IsVisible = false;
             androidMenu.IsVisible = true;
-            brandIcon.IsVisible = _page == "home";
+            brandIcon.IsVisible = _page == "home" && compact;
+            _pageTitle.IsVisible = _page != "home" || compact;
             if (_page == "home") _pageTitle.Text = "Hibike";
             _main.IsVisible = !_showingPlayer;
             _bottom.IsVisible = compact && !_showingPlayer;
@@ -169,6 +170,10 @@ public sealed partial class MainView : UserControl
     private Border BuildSidebar()
     {
         var panel = new StackPanel { Spacing = 8, Margin = new Thickness(8, 24) };
+        var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 16) };
+        brand.Children.Add(new Image { Source = new Avalonia.Media.Imaging.Bitmap(Avalonia.Platform.AssetLoader.Open(new Uri("avares://Hibike.App/Assets/hibike-desktop.png"))), Width = 22, Height = 22 });
+        brand.Children.Add(UiTheme.Text("Hibike", 16, UiTheme.TextPrimary, FontWeight.SemiBold));
+        panel.Children.Add(brand);
         panel.Children.Add(NavButton("home", "Início", "home", false));
         panel.Children.Add(NavButton("explore", "Buscar", "search", false));
         panel.Children.Add(NavButton("library", "Biblioteca", "library", false));
@@ -299,7 +304,9 @@ public sealed partial class MainView : UserControl
             caption.HorizontalAlignment = HorizontalAlignment.Center;
             stack.Children.Add(caption); button.Content = stack;
         }
-        _brandIcon.IsVisible = _page == "home";
+        var compactHeader = _androidLayout || Bounds.Width < UiTheme.DesktopWidth;
+        _brandIcon.IsVisible = _page == "home" && compactHeader;
+        _pageTitle.IsVisible = _page != "home" || compactHeader;
         _pageTitle.Text = _page switch { "home" => "Hibike", "settings" => "Configurações", "account" => "Minha conta", "collection" => "Coleção", _ => "Buscar" };
         _homeScroll.IsVisible = _page == "home";
         if (_homeRefreshContainer is not null) _homeRefreshContainer.IsVisible = _page == "home";
