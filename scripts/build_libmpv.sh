@@ -3,6 +3,7 @@ set -euo pipefail
 
 # Fresh, dedicated directory: never reuse sources or dependency build caches.
 root="$PWD/artifacts/libmpv-own"
+mkdir -p "$(dirname "$root")"
 mkdir "$root"
 mkdir "$root/records" "$root/dist" "$root/source-release"
 exec > >(tee "$root/records/build.log") 2>&1
