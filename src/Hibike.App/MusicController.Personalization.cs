@@ -182,6 +182,7 @@ public sealed partial class MusicController
     }
     public void PlayNext(Track track)
     {
+        if (track.IsArtist) return;
         var existing = Queue.ToList().FindIndex(t => t.Source == track.Source);
         if (track.Source == Current?.Source) return;
         if (existing >= 0) Queue.RemoveAt(existing);

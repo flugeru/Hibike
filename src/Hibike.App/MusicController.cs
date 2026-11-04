@@ -68,6 +68,7 @@ public sealed partial class MusicController
     public MusicController(IMusicCatalog catalog, IAudioPlayer player, LibraryStore store, string directory)
     {
         _catalog = catalog; Player = player; _store = store; DataDirectory = directory;
+        LoadVolume();
         _session = new PlaybackSessionStore(directory);
         _stateWriter = new(WriteState, ReportSaveError);
         LoadPersonalization();
@@ -100,7 +101,7 @@ public sealed partial class MusicController
         try
         {
             foreach (var track in await _store.LoadAsync())
-                Favorites.Add(await Task.Run(() => LocalTrackMetadata.Read(track, Path.Combine(DataDirectory, "artwork"))));
+                Favorites.Add(await Task.Run(() => AppServices.ReadLocalTrack(track, Path.Combine(DataDirectory, "artwork"))));
             try
             {
                 if (_session.Load() is { } session)
@@ -160,6 +161,7 @@ public sealed partial class MusicController
     }
     private void AddToQueue(Track track, bool notify = true)
     {
+        if (track.IsArtist) return;
         var existing = Queue.ToList().FindIndex(t => t.Source == track.Source);
         if (existing >= 0 && existing == _queueIndex) { if (notify) SetStatus("Faixa já está tocando."); return; }
         if (existing > _queueIndex && !IsRecommended(Queue[existing])) { if (notify) SetStatus("Faixa já está na fila."); return; }
@@ -172,6 +174,7 @@ public sealed partial class MusicController
     }
     public async Task PlayAsync(Track track, int? queueIndex = null)
     {
+        if (track.IsArtist) { SetStatus("Abra o artista para escolher uma faixa."); return; }
         if (Current?.Source != track.Source) CancelRadioRequest();
         if (queueIndex is null)
         {
@@ -190,11 +193,13 @@ public sealed partial class MusicController
         var entered = false;
         try
         {
+            PlaybackDiagnostics.Write("Reprodução", "Aguardando tentativa anterior.");
             await _playGate.WaitAsync(request.Token); entered = true;
+            PlaybackDiagnostics.Write("Reprodução", "Tentativa liberada; preparando áudio.");
             if (track.IsLocal)
             {
                 var original = track;
-                track = await Task.Run(() => LocalTrackMetadata.Read(original, Path.Combine(DataDirectory, "artwork")), request.Token);
+                track = await Task.Run(() => AppServices.ReadLocalTrack(original, Path.Combine(DataDirectory, "artwork")), request.Token);
                 request.Token.ThrowIfCancellationRequested();
                 var index = Queue.IndexOf(original); if (index >= 0) Queue[index] = track;
                 index = Favorites.IndexOf(original); if (index >= 0) Favorites[index] = track;
@@ -211,6 +216,7 @@ public sealed partial class MusicController
                 : (Track: track, Audio: await _catalog.ResolveAsync(track, extractTimeout.Token));
             var source = resolved.Audio with { Title = track.Title, Artist = track.Artist, Artwork = track.Thumbnail ?? resolved.Audio.Artwork };
             stage = "Player";
+            PlaybackDiagnostics.Write("Reprodução", "Áudio resolvido; enviando ao player.");
             SetStatus("Conectando ao áudio…");
             using var playerTimeout = CancellationTokenSource.CreateLinkedTokenSource(request.Token);
             playerTimeout.CancelAfter(TimeSpan.FromSeconds(18));
@@ -228,20 +234,33 @@ public sealed partial class MusicController
             History.Insert(0, track); if (History.Count > 100) History.RemoveAt(100);
             RerankHome();
             if (OnboardingCompleted) _ = RefreshRecommendationsAsync();
-            CurrentSource = Player.PlaybackSource ?? source;
+            var playbackSource = Player.PlaybackSource ?? source;
+            CurrentSource = playbackSource with
+            {
+                Title = playbackSource.Title ?? source.Title ?? track.Title,
+                Artist = playbackSource.Artist ?? source.Artist ?? track.Artist,
+                BitrateKbps = playbackSource.BitrateKbps ?? source.BitrateKbps,
+                Codec = playbackSource.Codec ?? source.Codec,
+                SampleRateHz = playbackSource.SampleRateHz ?? source.SampleRateHz,
+                Channels = playbackSource.Channels ?? source.Channels,
+                Container = playbackSource.Container ?? source.Container,
+                Format = playbackSource.Format ?? source.Format,
+                BitDepth = playbackSource.BitDepth ?? source.BitDepth
+            };
             WarmNext();
             Status = resolved.Track.Source == track.Source ? "Tocando agora" : "Fonte alternativa · Correspondência provável. Pode ser cover ou outra gravação.";
             if (_radio && _queueIndex + 1 >= Queue.Count) _ = FillRadioAsync();
         }
         catch (OperationCanceledException)
         {
+            PlaybackDiagnostics.Write("Reprodução", "Cancelamento ou prazo excedido; etapa=" + stage);
             if (ReferenceEquals(_play, request))
             {
                 if (request.IsCancellationRequested) Status = "Reprodução cancelada.";
                 else Fail(stage == "YT-DLP" ? "O YT-DLP não respondeu em 35 s. Tente novamente ou escolha outra faixa." : "O servidor de áudio não respondeu em 18 s. Tente outra faixa.");
             }
         }
-        catch (Exception ex) { if (ReferenceEquals(_play, request)) Fail(ex.Message); }
+        catch (Exception ex) { PlaybackDiagnostics.Write("Reprodução", "Falha; etapa=" + stage + "; " + ex.Message); if (ReferenceEquals(_play, request)) Fail(ex.Message); }
         finally
         {
             if (Player is IAudioPreparation preparing && !Player.IsPlaying) preparing.CancelPreparation();
@@ -348,7 +367,7 @@ public sealed partial class MusicController
     }
     public void ReplaceQueue(IEnumerable<Track> tracks)
     {
-        var items = tracks.DistinctBy(t => t.Source).ToArray();
+        var items = tracks.Where(t => !t.IsArtist).DistinctBy(t => t.Source).ToArray();
         CancelPlayback(); CancelRadioRequest(); _recommended.Clear(); _radioSeed = null;
         _queueSession++;
         _radio = false;

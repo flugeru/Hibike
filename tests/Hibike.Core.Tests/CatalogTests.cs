@@ -168,6 +168,18 @@ public class CatalogTests
         }
         finally { Directory.Delete(directory, true); }
     }
+    [Fact]
+    public async Task BrowsePagesBeyondHundredAndRejectsForeignHost()
+    {
+        var runner = new FakeRunner("{\"entries\":[]}");
+        var catalog = new CachedMusicCatalog(new YtDlpCatalog(runner));
+        await catalog.BrowsePageAsync("https://www.youtube.com/channel/UCabcdefghijklmnopqrstuv/videos", 2, CancellationToken.None);
+        var args = runner.Arguments.ToList();
+        Assert.Equal("101", args[args.IndexOf("--playlist-start") + 1]);
+        Assert.Equal("150", args[args.IndexOf("--playlist-end") + 1]);
+        await Assert.ThrowsAsync<ArgumentException>(() => catalog.BrowsePageAsync("https://youtube.com.evil.test/channel/test", 0, CancellationToken.None));
+        Assert.Equal(1, runner.Calls);
+    }
     private sealed class FakeRunner(string output) : ICommandRunner
     {
         public IReadOnlyList<string> Arguments { get; private set; } = [];

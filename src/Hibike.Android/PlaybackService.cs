@@ -59,6 +59,8 @@ public sealed class PlaybackService : MediaSessionService
         _poll = () =>
         {
             if (_player is null) return;
+            try
+            {
             Playing = _player.IsPlaying; Position = Math.Max(0, _player.CurrentPosition) / 1000d;
             BufferedPosition = Math.Max(0, _player.BufferedPosition) / 1000d;
             Duration = Math.Max(0, _player.Duration) / 1000d; State = _player.PlaybackState;
@@ -66,7 +68,10 @@ public sealed class PlaybackService : MediaSessionService
             if (Error is not null && Error != _lastError) { _lastError = Error; Failed?.Invoke(this, Error); }
             if (State == 4 && _state != 4) Ended?.Invoke(this, EventArgs.Empty);
             _state = State;
-            _handler?.PostDelayed(_poll!, 100);
+            }
+            catch (Exception error) when (error is not OutOfMemoryException)
+            { PlaybackDiagnostics.Write("Atualizar reprodução Android", error.Message); }
+            finally { if (_player is not null) _handler?.PostDelayed(_poll!, 100); }
         };
         _handler.Post(_poll); Instance = this;
     }

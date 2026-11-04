@@ -2,7 +2,18 @@ using Hibike.Core.Services;
 namespace Hibike.App;
 public static class AppServices
 {
+    public static Func<Hibike.Core.Models.Track, string, Hibike.Core.Models.Track>? ReadLocalMetadata { get; set; }
+    public static Hibike.Core.Models.Track ReadLocalTrack(Hibike.Core.Models.Track track, string cache) =>
+        ReadLocalMetadata?.Invoke(track, cache) ?? LocalTrackMetadata.Read(track, cache);
+    public static Func<string, Task<IReadOnlyDictionary<string, string>>>? ReadMediaInfo { get; set; }
+    public static IReadOnlyList<string>? AudioEngines { get; set; }
+    public static string? SelectedAudioEngine { get; set; }
+    public static Func<string, bool>? AudioEngineAvailable { get; set; }
+    public static Action<string>? SaveAudioEngine { get; set; }
     public static Func<Task<YouTubeAccountLibrary>>? ConnectYouTubeAccount { get; set; }
+    public static Func<Task<YouTubeAccountLibrary?>>? RestoreYouTubeAccount { get; set; }
+    public static Action<YouTubeAccountLibrary>? SaveYouTubeAccount { get; set; }
+    public static Action? ClearYouTubeAccount { get; set; }
     private static IMusicCatalog? _catalog;
     public static Action? OpenPlayerView { get; set; }
     public static Action<Action<long>>? RequestDisplayFrame { get; set; }

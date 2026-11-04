@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Hibike.Core.Models;
+using Hibike.Core.Services;
 
 namespace Hibike.App.Views;
 
@@ -17,6 +18,13 @@ public sealed partial class MainView
     private ScrollViewer _mobileSearchScroll = null!;
     private Track[] _mobileSearchTracks = [];
     private Control _mobileSearchSuggestions = null!, _mobileSearchBusy = null!;
+    private string _searchKind = "Tudo";
+    private readonly List<Button> _searchKindButtons = [];
+    private StackPanel _searchContent = null!, _searchArtists = null!;
+    private IReadOnlyList<MusicArtist> _foundArtists = [];
+    private IReadOnlyList<ArtistCollection> _foundCollections = [];
+    private string? _artistResultsQuery;
+    private CancellationTokenSource? _artistLookup;
 
     private Grid BuildMobileSearch()
     {
@@ -34,6 +42,11 @@ public sealed partial class MainView
         _mobileSearchLocal = ScopeButton("Sua biblioteca");
         scopes.Children.Add(_mobileSearchOnline);
         scopes.Children.Add(_mobileSearchLocal);
+        foreach (var kind in new[] { "Tudo", "Músicas", "Artistas", "Álbuns", "Playlists" })
+        {
+            var button = ActionButton(kind, () => { _searchKind = kind; RefreshMobileSearch(); return Task.CompletedTask; });
+            button.Tag = kind; button.Classes.Add("pill"); _searchKindButtons.Add(button); scopes.Children.Add(button);
+        }
         Put(page, scopes, 1, 0);
 
         _mobileSearchHeading = new Grid { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = UiTheme.CompactGap };
@@ -56,7 +69,9 @@ public sealed partial class MainView
         Put(page, _mobileSearchError, 3, 0);
 
         _mobileSearchItems = CollectionList<Track>(track => TrackRow(track, showMenu: true));
-        _mobileSearchScroll = UiTheme.FadingScroll(_mobileSearchItems);
+        _searchArtists = new StackPanel { Spacing = UiTheme.CompactGap };
+        _searchContent = new StackPanel { Spacing = UiTheme.SectionGap, Children = { _searchArtists, _mobileSearchItems } };
+        _mobileSearchScroll = UiTheme.FadingScroll(_searchContent);
         _mobileSearchState = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch,
             VerticalContentAlignment = VerticalAlignment.Stretch };
         Put(page, new Grid { Children = { _mobileSearchScroll, _mobileSearchState } }, 4, 0);
@@ -115,13 +130,27 @@ public sealed partial class MainView
         var error = !local && !busy && query.Length > 0 && _mobileSearchAttempt == query && _music.SearchError is not null;
         _mobileSearchOnline.Classes.Set("primary", !local);
         _mobileSearchLocal.Classes.Set("primary", local);
+        foreach (var button in _searchKindButtons) { button.Classes.Set("primary", Equals(button.Tag, _searchKind)); button.IsVisible = !local; }
         _mobileSearchSubmit.IsEnabled = query.Length > 0 && !busy;
         _mobileSearchSubmit.Classes.Set("primary", _mobileSearchSubmit.IsEnabled);
         _clearSearch.IsVisible = !busy && !string.IsNullOrEmpty(_search.Text);
 
         var tracks = local && query.Length > 0
             ? _music.Favorites.Where(track => MatchesLibraryQuery($"{track.Title} {track.Artist} {track.Album}", query)).ToArray()
-            : hasResult && !busy && !error ? _music.Results.ToArray() : [];
+            : hasResult && !busy && !error && _searchKind is "Tudo" or "Músicas" ? _music.Results.Where(t => !t.IsArtist).ToArray() : [];
+        var artists = !local && !busy && _searchKind is "Tudo" or "Artistas" && _artistResultsQuery == query ? _foundArtists : [];
+        var collections = !local && !busy && _artistResultsQuery == query ? _foundCollections.Where(c => _searchKind == "Tudo" || (_searchKind == "Álbuns" && c.Kind != "Playlist") || (_searchKind == "Playlists" && c.Kind == "Playlist")).ToArray() : [];
+        _searchArtists.IsVisible = artists.Count > 0 || collections.Length > 0;
+        var catalogKey = (query, _searchKind, artists, _foundCollections);
+        if (!Equals(_searchArtists.Tag, catalogKey))
+        {
+            _searchArtists.Tag = catalogKey; _searchArtists.Children.Clear();
+            if (artists.Count > 0)
+                _searchArtists.Children.Add(ArtistShelf("Artistas", artists.Select(a => new ArtistCollection(a.Id, a.Name, "Artista", a.Image)),
+                    c => ShowArtistAsync(new(c.Id, c.Title, c.Image))));
+            foreach (var group in collections.GroupBy(c => c.Kind == "Playlist" ? "Playlists" : "Álbuns e singles"))
+                _searchArtists.Children.Add(ArtistShelf(group.Key, group, c => OpenArtistCollectionAsync(c, new(c.Id, c.Title, "YouTube Music", "", Thumbnail: c.Image))));
+        }
         if (!_mobileSearchTracks.SequenceEqual(tracks))
         {
             _mobileSearchTracks = tracks;
@@ -131,11 +160,13 @@ public sealed partial class MainView
         var notice = error ? _music.SearchError : !busy && tracks.Length > 0 && _music.HasError ? _music.Status : null;
         _mobileSearchError.Text = notice ?? "";
         _mobileSearchError.IsVisible = !string.IsNullOrWhiteSpace(notice);
-        _mobileSearchHeading.IsVisible = tracks.Length > 0;
-        _mobileSearchScroll.IsVisible = tracks.Length > 0;
-        _mobileSearchState.IsVisible = tracks.Length == 0;
-        _mobileSearchCount.Text = TrackCount(tracks.Length);
-        if (tracks.Length > 0) return;
+        var any = tracks.Length > 0 || artists.Count > 0 || collections.Length > 0;
+        _mobileSearchHeading.IsVisible = any;
+        _mobileSearchScroll.IsVisible = any;
+        _mobileSearchState.IsVisible = !any;
+        _mobileSearchCount.Text = (tracks.Length + artists.Count + collections.Length) + " resultados";
+        _mobileSearchOptions.IsVisible = tracks.Length > 0;
+        if (any) return;
 
         var state = busy ? "busy" : query.Length == 0 ? local ? "local" : "explore"
             : error ? "error" : local || hasResult ? "no-results" : _mobileSearchAttempt == query ? "retry" : "ready";
@@ -150,6 +181,25 @@ public sealed partial class MainView
             "no-results" => EmptyState("search", "Nenhum resultado", "Tente outro título ou nome de artista."),
             _ => EmptyState("search", "Pronto para buscar", "Toque em Buscar ou use o teclado.")
         };
+    }
+
+    private async Task SearchArtistResultsAsync(string query)
+    {
+        _artistLookup?.Cancel();
+        using var request = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        _artistLookup = request;
+        try
+        {
+            var artists = Uri.TryCreate(query, UriKind.Absolute, out _) ? [] : await _music.SearchArtistsAsync(query, request.Token);
+            IReadOnlyList<ArtistCollection> collections = [];
+            if (!Uri.TryCreate(query, UriKind.Absolute, out _))
+                try { collections = await MusicDiscovery.SearchCollectionsAsync(query, request.Token); }
+                catch (Exception e) when (e is not OutOfMemoryException) { PlaybackDiagnostics.Write("Busca de coleções", e.Message); }
+            if (!ReferenceEquals(_artistLookup, request)) return;
+            _foundArtists = artists; _foundCollections = collections; _artistResultsQuery = query;
+        }
+        catch (Exception e) when (e is not OutOfMemoryException) { PlaybackDiagnostics.Write("Busca de artistas", e.Message); }
+        finally { if (ReferenceEquals(_artistLookup, request)) { _artistLookup = null; RefreshMobileSearch(); } }
     }
 
     private void ShowMobileSearchOptions()

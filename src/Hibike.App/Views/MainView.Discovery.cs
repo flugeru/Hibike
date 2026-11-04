@@ -47,7 +47,7 @@ public sealed partial class MainView
             button.Classes.Add("subtle"); button.BorderThickness = new Thickness(0);
             button.HorizontalContentAlignment = HorizontalAlignment.Left;
             button.Padding = new Thickness(16, 8); button.CornerRadius = new(0);
-            button.Click += (_, _) => _songPopup?.SetCurrentValue(Popup.IsOpenProperty, false);
+            button.Click += (_, _) => { _songPopup?.SetCurrentValue(Popup.IsOpenProperty, false); ClosePlayer(); };
         }
         var popup = new Popup
         {
@@ -70,10 +70,7 @@ public sealed partial class MainView
     private bool _relatedTab;
     private Task ShowAccountMenuAsync()
     {
-        var panel = new StackPanel { Spacing = 8 };
-        panel.Children.Add(ActionButton("Personalizar meu som", () => { CloseSheet(); ShowMusicOnboarding(edit: true); return Task.CompletedTask; }));
-        panel.Children.Add(ActionButton("Configurações", () => { ShowSettings(); return Task.CompletedTask; }));
-        ShowSheet("Preferências", panel); return Task.CompletedTask;
+        ToggleTopMenu(); return Task.CompletedTask;
     }
 
     private Control SongActions(Track track)
@@ -103,13 +100,7 @@ public sealed partial class MainView
     }
     private void OpenLocalCollection(string title, IEnumerable<Track> tracks)
     {
-        _collectionTracks = tracks.DistinctBy(t => t.Source).ToArray();
-        var panel = new StackPanel { Spacing = 12 };
-        panel.Children.Add(ActionButton("Tocar tudo", () => PlayCollectionAsync(_collectionTracks)));
-        var list = new ItemsControl { ItemsSource = _collectionTracks, ItemTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<Track>((track, _) => track is null ? new Border() : TrackRow(track)), ItemsPanel = new Avalonia.Controls.Templates.FuncTemplate<Panel?>(() => new VirtualizingStackPanel()) };
-        // ponytail: collections open in bounded sheet; dedicated page only needed for richer album metadata.
-        panel.Children.Add(new ScrollViewer { Content = list, MaxHeight = Math.Max(180, Bounds.Height * .5) });
-        ShowSheet(title, panel);
+        OpenCollection(title, tracks.DistinctBy(t => t.Source).ToArray(), "Álbum");
     }
     private void ShowPlaylistPicker(Track track)
     {
@@ -126,6 +117,13 @@ public sealed partial class MainView
         ShowSheet("Nova playlist local", panel);
     }
     private void ShowLocalPlaylist(MusicController.LocalPlaylist playlist)
+    {
+        _page = "library";
+        Refresh();
+        _mobileLibraryTab = LibraryTab.Playlists;
+        _ = OpenMobileLibraryGroupAsync(new LibraryGroup(playlist.Name, TrackCount(playlist.Tracks.Count), playlist.Tracks.FirstOrDefault(), playlist.Tracks, playlist));
+    }
+    private void ShowLegacyPlaylistEditor(MusicController.LocalPlaylist playlist)
     {
         var panel = new StackPanel { Spacing = 8 };
         panel.Children.Add(ActionButton("Tocar tudo", async () => { CloseSheet(); await PlayCollectionAsync(playlist.Tracks); _music.SelectionContext = "Playlist " + playlist.Name; _music.SetStatus("Playlist iniciada."); }));

@@ -31,6 +31,15 @@ public sealed class YtDlpCatalog(ICommandRunner runner, string? dataDirectory = 
         EnsureSuccess(result);
         return ParseSearch(result.Output);
     }
+    public async Task<IReadOnlyList<Track>> BrowsePageAsync(string source, int page, CancellationToken token)
+    {
+        if (page < 0 || page > 100000 || !Uri.TryCreate(source, UriKind.Absolute, out var uri) || uri.Scheme != "https"
+            || !(uri.Host == "youtube.com" || uri.Host.EndsWith(".youtube.com", StringComparison.OrdinalIgnoreCase))) throw new ArgumentException("Endereço do catálogo inválido.");
+        var result = await runner.RunAsync([..Common, "--yes-playlist", "--playlist-start", (page * 50 + 1).ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "--playlist-end", (page * 50 + 50).ToString(System.Globalization.CultureInfo.InvariantCulture), "--flat-playlist", "--skip-download", "--quiet", "--dump-single-json", "--", source], token);
+        EnsureSuccess(result);
+        return ParseSearch(result.Output);
+    }
 
     public async Task<AudioSource> ResolveAsync(Track track, CancellationToken cancellationToken)
     {
@@ -88,6 +97,7 @@ public sealed class YtDlpCatalog(ICommandRunner runner, string? dataDirectory = 
             var thumbnail = Text(item, "thumbnail");
             if (thumbnail is null && item.TryGetProperty("thumbnails", out var thumbs) && thumbs.ValueKind == JsonValueKind.Array)
                 thumbnail = thumbs.EnumerateArray().Select(t => Text(t, "url")).LastOrDefault(t => t is not null);
+            if (thumbnail is null && source.Contains("/channel/", StringComparison.Ordinal)) thumbnail = Text(item, "channel_thumbnail");
             tracks.Add(new(id, title, Text(item, "artist") ?? Text(item, "uploader") ?? Text(item, "channel") ?? "YouTube", source, duration, thumbnail,
                 Album: Text(item, "album"), MusicTitle: Text(item, "track"), MusicArtist: Text(item, "artist")));
         }

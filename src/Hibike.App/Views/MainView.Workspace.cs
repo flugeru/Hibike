@@ -116,7 +116,7 @@ public sealed partial class MainView
         _dockQuality.TextWrapping = TextWrapping.Wrap;
         _dockQuality.TextTrimming = TextTrimming.None;
         _dockQuality.TextAlignment = TextAlignment.Center;
-        _dockQualityBadge = UiTheme.AudioBadge(_dockQuality);
+        _dockQualityBadge = AudioInfoBadge(_dockQuality);
         _dockQualityBadge.HorizontalAlignment = HorizontalAlignment.Center;
         rightHost.Children.Add(_dockQualityBadge);
         _dockFavorite = IconButton("heart", "Alternar favorito", TogglePlaybackFavoriteAsync);
@@ -128,7 +128,7 @@ public sealed partial class MainView
         sourceAndControls.Children.Add(_sourceButton); Put(sourceAndControls, rightHost, 0, 1);
         right.Children.Add(IconButton("queue", "Mostrar ou ocultar fila", ToggleDesktopQueueAsync));
         var volume = _dockVolume = new Slider { Minimum = 0, Maximum = 1, Value = _music.Player.Volume, Width = 88, MinHeight = 48 };
-        Avalonia.Automation.AutomationProperties.SetName(volume, "Volume da barra"); volume.ValueChanged += (_, _) => _music.Player.Volume = volume.Value;
+        Avalonia.Automation.AutomationProperties.SetName(volume, "Volume da barra"); volume.ValueChanged += (_, _) => _music.Volume = volume.Value;
         right.Children.Add(volume); Put(rightHost, right, 1, 0); Put(grid, sourceAndControls, 0, 2);
         _desktopDock.Child = grid; _desktopDock.Padding = new Thickness(20, 12, 20, 8); _desktopDock.Background = UiTheme.Brush(UiTheme.Surface);
         _desktopDock.BorderBrush = UiTheme.Brush(UiTheme.Outline); _desktopDock.BorderThickness = UiTheme.TopBorder;
@@ -210,28 +210,31 @@ public sealed partial class MainView
         if (_expandedQuality is not null)
         {
             _expandedQuality.Text = summary;
-            if (_expandedQuality.Parent is Border badge) badge.IsVisible = summary.Length > 0;
+            if (_expandedQuality.Parent is Button { Parent: Border badge }) badge.IsVisible = summary.Length > 0;
         }
     }
 
     private double PlaybackDuration => _music.Player.Duration > 0 ? _music.Player.Duration : _music.Current?.DurationSeconds ?? 0;
 
-    private void OpenCollection(string title, IReadOnlyList<Track> tracks)
+    private void OpenCollection(string title, IReadOnlyList<Track> tracks, string kind = "Playlist", Track? artwork = null, string? message = null, Func<Task>? retry = null)
     {
+        ClosePlayer(); CloseTopMenu(); CloseSheet();
         _collectionTracks = tracks;
         var grid = new Grid { RowDefinitions = new("Auto,Auto,*"), RowSpacing = 20 };
         var hero = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = 20 };
-        hero.Children.Add(new Artwork(tracks.FirstOrDefault(), 100));
+        hero.Children.Add(new Artwork(artwork ?? tracks.FirstOrDefault(), 100, highQuality: true));
         var labels = new StackPanel { Spacing = 8 };
-        labels.Children.Add(Text("PLAYLIST", UiTheme.Label, Muted));
+        labels.Children.Add(Text(kind, UiTheme.Label, Muted));
         var heading = Text(title, UiTheme.PageTitle); heading.TextWrapping = TextWrapping.Wrap; heading.MaxLines = 3; labels.Children.Add(heading);
         labels.Children.Add(Text($"{tracks.Count} faixas · {Time(tracks.Sum(t => Math.Max(0, t.DurationSeconds)))}", UiTheme.Caption, Muted)); Put(hero, labels, 0, 1); grid.Children.Add(hero);
         var actions = new WrapPanel { ItemSpacing = 8, LineSpacing = 8 };
-        var play = ActionButton("Reproduzir playlist", () => PlayCollectionAsync(_collectionTracks)); play.Classes.Add("primary"); actions.Children.Add(play);
-        actions.Children.Add(ActionButton("Adicionar à fila", () => { foreach (var track in _collectionTracks) _music.Enqueue(track); _music.SetStatus("Playlist adicionada à fila."); return Task.CompletedTask; }));
+        var play = ActionButton("Tocar tudo", () => PlayCollectionAsync(tracks)); play.IsEnabled = tracks.Count > 0; play.Classes.Add("primary"); actions.Children.Add(play);
+        var enqueue = ActionButton("Adicionar à fila", () => { foreach (var track in tracks) _music.Enqueue(track); _music.SetStatus("Faixas adicionadas à fila."); return Task.CompletedTask; });
+        enqueue.IsEnabled = tracks.Count > 0; actions.Children.Add(enqueue);
         actions.Children.Add(ActionButton("Voltar ao início", () => { _page = "home"; Refresh(); return Task.CompletedTask; })); Put(grid, actions, 1, 0);
         var list = new ItemsControl { ItemsSource = tracks, ItemsPanel = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel()), ItemTemplate = new FuncDataTemplate<Track>((track, _) => track is null ? new Border() : TrackRow(track)) };
-        Put(grid, UiTheme.FadingScroll(list), 2, 0);
+        Put(grid, tracks.Count > 0 ? UiTheme.FadingScroll(list)
+            : EmptyState("library", message ?? "Nenhuma faixa disponível", "", retry is null ? null : "Tentar novamente", retry), 2, 0);
         _collectionPage.Child = grid; _page = "collection"; CloseSheet(); Refresh();
     }
 }

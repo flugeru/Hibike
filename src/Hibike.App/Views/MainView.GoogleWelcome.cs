@@ -13,7 +13,9 @@ public sealed partial class MainView
 
     private void ShowGoogleWelcome(bool firstRun = false)
     {
-        if (_googleWelcome is not null || (firstRun && System.IO.File.Exists(GoogleWelcomePath))) return;
+        if (_googleWelcome is not null) return;
+        if (firstRun && System.IO.File.Exists(GoogleWelcomePath)) { ShowMusicOnboarding(); return; }
+        ClosePlayer(); CloseSheet(); CloseTopMenu();
         var items = new StackPanel { Spacing = 16, MaxWidth = 420, Margin = new Thickness(24), VerticalAlignment = VerticalAlignment.Center };
         items.Children.Add(new Image
         {
@@ -21,7 +23,7 @@ public sealed partial class MainView
             Width = 72, Height = 72, HorizontalAlignment = HorizontalAlignment.Center
         });
         var title = Text("Sua música no Hibike", UiTheme.DialogTitle); title.TextAlignment = TextAlignment.Center; title.TextWrapping = TextWrapping.Wrap; items.Children.Add(title);
-        var note = Text("Conecte sua conta Google para ver playlists e músicas curtidas do YouTube. Acesso somente leitura; login opcional.", UiTheme.Body, Muted);
+        var note = Text("Login web não oficial e opcional para consultar playlists e curtidas do YouTube Music. Cookies dão acesso à sessão sem escopo somente leitura. Sessão salva protegida neste dispositivo, fora dos backups do Hibike e sem logs; yt-dlp não recebe cookies. Google pode bloquear ou expirar sessão. Desconectar remove sessão salva.", UiTheme.Body, Muted);
         note.TextWrapping = TextWrapping.Wrap; note.TextAlignment = TextAlignment.Center; items.Children.Add(note);
         var error = Text("", UiTheme.Caption, UiTheme.Error); error.TextWrapping = TextWrapping.Wrap; error.IsVisible = false;
         Button? signIn = null, skip = null;
@@ -33,7 +35,14 @@ public sealed partial class MainView
             try
             {
                 if (AppServices.ConnectYouTubeAccount is null) throw new InvalidOperationException("Login Google indisponível neste build.");
-                _account = await AppServices.ConnectYouTubeAccount();
+                var connected = await AppServices.ConnectYouTubeAccount();
+                try
+                {
+                    var save = AppServices.SaveYouTubeAccount ?? throw new InvalidOperationException("Armazenamento da sessão indisponível.");
+                    save(connected);
+                }
+                catch { connected.Dispose(); throw new InvalidOperationException("Não foi possível salvar sessão protegida. Tente novamente."); }
+                _account?.Dispose(); _account = connected; _accountExpired = false; _accountRestoreFailed = false; _accountError = null;
                 if (!DismissGoogleWelcome()) return;
                 _page = "home"; Refresh(); await LoadAccountHomeAsync();
             }
@@ -56,7 +65,7 @@ public sealed partial class MainView
         });
         signIn.Classes.Add("primary"); items.Children.Add(signIn);
         skip = ActionButton("Continuar sem conta", () => { DismissGoogleWelcome(); return Task.CompletedTask; }); items.Children.Add(skip); items.Children.Add(error);
-        var session = Text("Nesta versão, conexão vale durante sessão do aplicativo. Para reconectar depois, use Conta nas configurações.", UiTheme.Caption, Muted);
+        var session = Text("Conta permanece conectada após reiniciar. Se Google expirar acesso, use Perfil · Minha conta para entrar novamente.", UiTheme.Caption, Muted);
         session.TextWrapping = TextWrapping.Wrap; items.Children.Add(session);
         var legal = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 8 };
         legal.Children.Add(ActionButton("Privacidade", () => OpenLegalAsync("privacy.html")));
@@ -86,6 +95,8 @@ public sealed partial class MainView
             return false;
         }
         if (_googleWelcome is not null) _root.Children.Remove(_googleWelcome);
-        _googleWelcome = null; return true;
+        _googleWelcome = null; RefreshProfile();
+        if (!_music.OnboardingCompleted) ShowMusicOnboarding();
+        return true;
     }
 }

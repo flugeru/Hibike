@@ -1,14 +1,23 @@
 <Project Sdk="Microsoft.NET.Sdk">
  <PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net10.0</TargetFramework></PropertyGroup>
  <PropertyGroup><ApplicationIcon>../Hibike.App/Assets/hibike-desktop.ico</ApplicationIcon></PropertyGroup>
- <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <UseWPF>true</UseWPF>
   <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
   <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
  </PropertyGroup>
- <ItemGroup Condition="!$([MSBuild]::IsOSPlatform('Windows'))">
+  <ItemGroup Condition="!$([MSBuild]::IsOSPlatform('Windows'))">
+    <Compile Remove="WebAccountLogin.cs" />
+    <Compile Remove="WindowsAudioPlayer.cs" />
   <Compile Remove="WindowsMediaSession.cs" />
   <Compile Remove="WindowsAppIdentity.cs" />
- </ItemGroup>
+  </ItemGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <Using Include="System.Net.Http" />
+    <Using Include="System.IO" />
+    <PackageReference Include="Microsoft.Web.WebView2" />
+    <PackageReference Include="NAudio" />
+  </ItemGroup>
  <ItemGroup Condition="'$(HibikeGoogleOAuthConfig)' != ''">
    <EmbeddedResource Include="$(HibikeGoogleOAuthConfig)" LogicalName="Hibike.GoogleOAuth.Desktop.json" />
  </ItemGroup>

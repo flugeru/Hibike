@@ -16,8 +16,14 @@ internal static class Program
         // Keep existing absolute audio/artwork paths valid for installations created before rename.
         var legacyDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Hibiki");
         if (!Directory.Exists(directory) && Directory.Exists(legacyDirectory)) directory = legacyDirectory;
-        AppServices.Configure(new YtDlpCatalog(new DesktopCommandRunner(), directory), new VlcAudioPlayer(), directory);
+        AppServices.Configure(new YtDlpCatalog(new DesktopCommandRunner(), directory), DesktopAudio.Configure(directory), directory);
+        AppServices.ReadMediaInfo = MediaInfoReader.ReadAsync;
+#if WINDOWS
+        AppServices.ConnectYouTubeAccount = WebAccountLogin.ConnectAsync;
+        WebSessionStore.Configure();
+#else
         AppServices.ConnectYouTubeAccount = () => GoogleAccountLogin.ConnectAsync(directory);
+#endif
         DiscordPresence? presence = null;
         IDisposable? mediaSession = null;
         try
@@ -45,6 +51,6 @@ internal static class Program
                     }
                 })).StartWithClassicDesktopLifetime(args);
         }
-        finally { mediaSession?.Dispose(); presence?.Dispose(); }
+        finally { mediaSession?.Dispose(); presence?.Dispose(); AppServices.Suspend(); AppServices.Player?.Dispose(); }
     }
 }

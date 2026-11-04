@@ -19,6 +19,7 @@ public sealed partial class MainView
     private void ShowMusicOnboarding(bool edit = false)
     {
         if (_onboarding is not null || !edit && _music.OnboardingCompleted) return;
+        ClosePlayer(); CloseSheet(); CloseTopMenu();
         _selectedArtists.Clear(); _selectedArtists.AddRange(_music.FavoriteArtists);
         _selectedGenres.Clear(); _selectedGenres.UnionWith(_music.FavoriteGenres);
         var genreStage = false;
@@ -31,7 +32,7 @@ public sealed partial class MainView
         var description = Text("Escolha pelo menos 3 artistas para personalizarmos suas recomendações.", UiTheme.Body, Muted); description.TextWrapping = TextWrapping.Wrap; body.Children.Add(description);
         var search = UiTheme.Field("Buscar artistas"); body.Children.Add(search);
         var selected = new WrapPanel { ItemSpacing = 8, LineSpacing = 8 }; body.Children.Add(selected);
-        var state = Text("Busque artistas no catálogo YouTube Music. Sem conta Google.", UiTheme.Caption, Muted); state.TextWrapping = TextWrapping.Wrap; body.Children.Add(state);
+        var state = Text("Busque artistas no catálogo YouTube Music. Conta opcional.", UiTheme.Caption, Muted); state.TextWrapping = TextWrapping.Wrap; body.Children.Add(state);
         var cards = new WrapPanel { ItemWidth = 112, ItemHeight = 112, ItemSpacing = 18, LineSpacing = 18 }; body.Children.Add(cards);
         var genres = new WrapPanel { ItemSpacing = 18, LineSpacing = 18, IsVisible = false }; body.Children.Add(genres);
         cards.SizeChanged += (_, e) =>
@@ -44,7 +45,8 @@ public sealed partial class MainView
             var size = Math.Floor((width - (columns - 1) * cards.ItemSpacing) * scaling / columns) / scaling;
             cards.ItemWidth = cards.ItemHeight = Math.Clamp(size, 1, 220);
         };
-        var scroll = new ScrollViewer { Content = body, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled }; Put(layout, scroll, 1, 0);
+        var content = new StackPanel(); content.Children.Add(body);
+        var scroll = new ScrollViewer { Content = content, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled }; Put(layout, scroll, 1, 0);
         var footer = new StackPanel { Spacing = 8 }; var count = Text("", UiTheme.Caption, Muted); footer.Children.Add(count);
         Button? continueButton = null;
         continueButton = ActionButton("Continuar", async () =>
@@ -132,28 +134,44 @@ public sealed partial class MainView
         }
         _ = LoadSuggestionsAsync();
     }
-    private Task FinishOnboardingAsync(bool skip)
+    private bool _savingOnboarding;
+    private async Task FinishOnboardingAsync(bool skip)
     {
+        if (_savingOnboarding) return;
+        _savingOnboarding = true;
         try
         {
-            _music.CompleteOnboarding(skip ? [] : _selectedArtists, skip ? [] : _selectedGenres);
+            await _music.CompleteOnboardingAsync(skip ? [] : _selectedArtists, skip ? [] : _selectedGenres);
             _artistSearch?.Cancel();
             if (_onboarding is not null) _root.Children.Remove(_onboarding); _onboarding = null;
             _ = _music.RefreshRecommendationsAsync(true);
         }
         catch (Exception e) { _music.SetStatus("Não foi possível salvar suas escolhas: " + e.Message); }
-        return Task.CompletedTask;
+        finally { _savingOnboarding = false; }
     }
     private async Task ShowArtistAsync(MusicArtist artist)
     {
-        var panel = new StackPanel { Spacing = 12 }; var status = Text("Buscando músicas…", UiTheme.Caption, Muted); panel.Children.Add(status); ShowSheet(artist.Name, panel);
+        var artwork = new Track(artist.Id, artist.Name, artist.Name, "https://music.youtube.com/channel/" + artist.Id, Thumbnail: artist.Image);
+        OpenCollection(artist.Name, [], "Artista", artwork, "Buscando músicas…");
+        var page = _collectionPage.Child;
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(25));
         try
         {
-            var tracks = await _music.SearchArtistTracksAsync(artist, timeout.Token);
-            status.Text = "Resultados do catálogo · " + artist.Name;
-            foreach (var track in tracks.Take(20)) panel.Children.Add(TrackRow(track));
+            var profile = await GetArtistProfileAsync(artist.Id, timeout.Token);
+            if (_page != "collection" || !ReferenceEquals(_collectionPage.Child, page)) return;
+            ShowArtistCatalog(artist, profile);
         }
-        catch (Exception) { status.Text = "Catálogo indisponível. Tente novamente mais tarde."; }
+        catch (Exception e) when (e is not OutOfMemoryException)
+        {
+            if (_page == "collection" && ReferenceEquals(_collectionPage.Child, page))
+                OpenCollection(artist.Name, [], "Artista", artwork, "Catálogo indisponível", () => ShowArtistAsync(artist));
+        }
+    }
+    private Task ShowChannelAsync(Track channel)
+    {
+        var id = new Uri(channel.Source).AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries).ElementAtOrDefault(1);
+        return id is not null && System.Text.RegularExpressions.Regex.IsMatch(id, "^UC[\\w-]{22}$")
+            ? ShowArtistAsync(new MusicArtist(id, channel.Title, channel.Thumbnail))
+            : ShowPagedCollectionAsync(channel.Title, channel.Source.TrimEnd('/') + "/videos", channel, "Vídeos");
     }
 }

@@ -149,7 +149,8 @@ public sealed partial class MainView
 
         var query = _mobileLibrarySearch.Text?.Trim() ?? "";
         var tracks = detail is null ? FilterMobileLibraryTracks().ToArray()
-            : detail.Playlist?.Tracks.ToArray() ?? detail.Tracks.Where(_music.IsFavorite).ToArray();
+            : detail.Playlist?.Tracks.ToArray() ?? _music.Favorites.Where(track => detail.Tracks.FirstOrDefault() is { } seed
+                && track.Artist == seed.Artist && (_mobileLibraryTab == LibraryTab.Artists || track.Album == seed.Album)).ToArray();
         var showingTracks = detail is not null || _mobileLibraryTab == LibraryTab.Songs;
         var count = showingTracks ? tracks.Length : 0;
 
@@ -279,7 +280,7 @@ public sealed partial class MainView
         var labels = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
         var kind = group.Playlist is not null ? "Playlist" : _mobileLibraryTab == LibraryTab.Albums ? "Álbum" : "Artista";
         labels.Children.Add(CollectionText(kind, UiTheme.Caption, Muted));
-        labels.Children.Add(CollectionText(group.Playlist is not null ? "Sua coleção" : group.Subtitle, UiTheme.Body, Muted));
+        labels.Children.Add(CollectionText(group.Playlist is not null ? "Sua coleção" : "Faixas na sua biblioteca · " + group.Subtitle, UiTheme.Body, Muted));
         Put(hero, labels, 0, 1);
         return UiTheme.Inner(hero);
     }

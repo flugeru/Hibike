@@ -7,6 +7,7 @@ public interface ICommandRunner
 }
 public interface IMusicCatalog
 {
+    Task<IReadOnlyList<Track>> BrowsePageAsync(string source, int page, CancellationToken token) => page == 0 ? SearchAsync(source, token) : Task.FromResult<IReadOnlyList<Track>>([]);
     Task<IReadOnlyList<Track>> RadioAsync(Track seed, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<Track>>([]);
     Task<IReadOnlyList<Track>> SearchAsync(string query, CancellationToken cancellationToken);
     Task<AudioSource> ResolveAsync(Track track, CancellationToken cancellationToken);

@@ -8,6 +8,7 @@ public sealed class CachedMusicCatalog(IMusicCatalog inner) : IMusicCatalog
     private readonly ConcurrentDictionary<string, (AudioSource Source, DateTimeOffset Expires)> _cache = new();
     private readonly ConcurrentDictionary<string, Lazy<Task<AudioSource>>> _inflight = new();
     public Task<IReadOnlyList<Track>> SearchAsync(string query, CancellationToken token) => inner.SearchAsync(query, token);
+    public Task<IReadOnlyList<Track>> BrowsePageAsync(string source, int page, CancellationToken token) => inner.BrowsePageAsync(source, page, token);
     public Task<IReadOnlyList<Track>> RadioAsync(Track seed, CancellationToken token) => inner.RadioAsync(seed, token);
     public async Task<AudioSource> ResolveAsync(Track track, CancellationToken token)
     {

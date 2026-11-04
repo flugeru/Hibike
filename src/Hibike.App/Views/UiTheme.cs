@@ -34,7 +34,7 @@ internal static class UiTheme
         MiniMargin = new(14, 0, 14, 8), TopBorder = new(0, 1, 0, 0), BottomBorder = new(0, 0, 0, 1),
         RoundInset = new(2), MiniPlayInset = new(4);
     public static readonly Thickness SearchIconPadding = new(16, 0, 12, 0);
-    public static readonly Thickness MobileContentPadding = new(MobileGutter, 8, MobileGutter, 4),
+    public static readonly Thickness MobileContentPadding = new(MobileGutter, 2, MobileGutter, 4),
         MobileMiniMargin = new(MobileGutter, 0, MobileGutter, CompactGap),
         MobilePlayerMargin = new(MobileGutter, CompactGap, MobileGutter, CompactGap);
     public static readonly Thickness ContentPadding = new(14, 14, 14, 8);
@@ -48,8 +48,7 @@ internal static class UiTheme
             HorizontalScrollBarVisibility = horizontal ? ScrollBarVisibility.Hidden : ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = horizontal ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Hidden
         };
-        // ponytail: Android uses plain clipping; restore edge fades only after device frame-time profiling.
-        if (OperatingSystem.IsAndroid()) return scroll;
+        var android = OperatingSystem.IsAndroid();
         (double Fade, byte Start, byte End)? previous = null;
         void UpdateMask()
         {
@@ -58,9 +57,10 @@ internal static class UiTheme
             var offset = horizontal ? scroll.Offset.X : scroll.Offset.Y;
             var remaining = Math.Max(0, extent - length - offset);
             if (length <= 0 || extent <= length + 1) { scroll.OpacityMask = null; previous = null; return; }
-            var fade = Math.Min(.5, (horizontal ? 20 : 16) / length);
-            var start = (byte)(255 - 191 * Math.Clamp(offset / 12, 0, 1));
-            var end = (byte)(255 - 191 * Math.Clamp(remaining / 12, 0, 1));
+            var fade = Math.Min(.5, (android ? 12 : horizontal ? 20 : 16) / length);
+            var strength = android ? 144 : 191;
+            var start = (byte)(255 - strength * Math.Clamp(offset / 12, 0, 1));
+            var end = (byte)(255 - strength * Math.Clamp(remaining / 12, 0, 1));
             if (previous == (fade, start, end)) return;
             previous = (fade, start, end);
             // Fade only hidden content; keep first/last items intact at scroll limits.
@@ -76,7 +76,10 @@ internal static class UiTheme
                 ]
             };
         }
-        scroll.ScrollChanged += (_, _) => UpdateMask();
+        scroll.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == ScrollViewer.OffsetProperty || e.Property == ScrollViewer.ExtentProperty || e.Property == ScrollViewer.ViewportProperty) UpdateMask();
+        };
         scroll.SizeChanged += (_, _) => UpdateMask();
         return scroll;
     }

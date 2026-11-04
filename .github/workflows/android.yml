@@ -65,7 +65,7 @@ jobs:
             -f net10.0-android -c Release -r android-arm64 \
             -p:RuntimeIdentifiers=android-arm64 \
             -p:AndroidSdkDirectory="$ANDROID_HOME" \
-            -p:ApplicationVersion=$((10000 + GITHUB_RUN_NUMBER)) \
+            -p:ApplicationVersion=$((20261181 + GITHUB_RUN_NUMBER)) \
             -p:AndroidKeyStore=true \
             -p:AndroidSigningKeyStore="$HOME/.local/share/hibike-signing/development.jks" \
             -p:AndroidSigningKeyAlias=androiddebugkey \

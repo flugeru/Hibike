@@ -42,17 +42,18 @@ public sealed partial class MainView
         var items = new StackPanel { Spacing = 4, Margin = new Thickness(8) };
         void Add(string icon, string label, Func<Task> action)
         {
-            var button = ActionButton("", async () => { CloseTopMenu(); await action(); });
+            var button = ActionButton("", async () => { CloseTopMenu(); ClosePlayer(); CloseSheet(); await action(); });
             button.Classes.Add("topMenuAction");
             var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, VerticalAlignment = VerticalAlignment.Center };
             row.Children.Add(Icons.Make(icon, Muted, 22)); row.Children.Add(Text(label, UiTheme.Body)); button.Content = row;
             Avalonia.Automation.AutomationProperties.SetName(button, label); items.Children.Add(button);
         }
+        Add("account", "Minha conta", ShowAccountAsync);
+        Add("settings", "Configurações", () => { ShowSettings(); return Task.CompletedTask; });
         Add("folder", "Importar músicas do dispositivo", OpenLocalAsync);
         Add("plus", "Nova playlist local", () => { ShowNewPlaylist(); return Task.CompletedTask; });
         foreach (var playlist in _music.Playlists.Where(p => p.Pinned))
             Add("queue", playlist.Name, () => { ShowLocalPlaylist(playlist); return Task.CompletedTask; });
-        Add("settings", "Preferências", () => { ShowSettings(); return Task.CompletedTask; });
         _topMenuPanel.Child = new ScrollViewer { Content = items, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
         _topMenuVersion++; _topMenuOpen = true; _topMenuLayer.IsVisible = true;
         SizeTopMenu(); _topMenuPanel.Opacity = 1;

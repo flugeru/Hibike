@@ -41,14 +41,18 @@ jobs:
           [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           (cd release && sha256sum *.exe *.zip *.apk > SHA256SUMS.txt)
           cat > notes.txt <<'EOF'
-          ## Hibike 0.1.0
+          ## Hibike 0.2.0
 
-          Primeira versão pública experimental para Windows x64 e Android ARM64.
+          Atualização experimental para Windows x64 e Android ARM64.
 
           - Player AMOLED, biblioteca local, favoritos, playlists e fila persistente.
           - Busca musical, rádio e reprodução pelos provedores integrados.
           - Onboarding de artistas/gêneros, perfil local e Início personalizado sem conta.
-          - Rankings públicos YouTube Music com cache e identificação da fonte.
+          - Login Google opcional com sessão protegida e restauração ao reabrir.
+          - Interface responsiva, páginas de conta/configurações e melhorias de busca e coleções.
+          - Metadados locais ampliados, informações técnicas do áudio e volume persistente.
+          - libmpv padrão no Windows e seleção de motores de áudio nas configurações.
+          - Instalador escuro; caixa de progresso exclusiva para atualização e restauração da conta.
 
           ### Downloads
           - **Hibike-Setup-x64.exe**: instalador Windows.
@@ -57,6 +61,6 @@ jobs:
           - **SHA256SUMS.txt**: hashes dos arquivos; **signing-certificate.txt**: certificado Android.
 
           ### Limitações conhecidas
-          Login Google e seletor experimental de fontes estão ocultos. Descoberta e rankings usam integração não oficial do YouTube Music e podem ficar indisponíveis. APK usa chave de desenvolvimento do CI; pode não atualizar APKs locais assinados com outra chave. Não desinstale uma instalação existente sem preservar seus dados. Testes em emulador não fazem parte desta publicação.
+          Integração Google/YouTube Music não oficial, sujeita a bloqueios, expiração e mudanças do serviço. Sem sincronização completa entre dispositivos. MediaInfo Android não incluído; leitura usa APIs nativas e parser FLAC. BASS exige DLL oficial e licença adequada; MediaInfo no Windows é opcional e não acompanha o download. APK usa chave de desenvolvimento do CI; pode não atualizar APKs locais assinados com outra chave. Não desinstale uma instalação existente sem preservar seus dados. Cobertura de formatos e persistência Google real ainda exigem validação física.
           EOF
           gh release create "$tag" release/* --verify-tag --title "Hibike ${tag#v}" --notes-file notes.txt --latest

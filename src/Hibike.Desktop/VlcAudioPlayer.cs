@@ -8,34 +8,79 @@ public sealed class VlcAudioPlayer : IAudioPlayer
     private LibVLC? _engine;
     private MediaPlayer? _player;
     private double _volume = 0.8;
+    private readonly object _commands = new();
+    private Task _tail = Task.CompletedTask;
+    private bool _disposed;
+    private volatile bool _isPlaying;
+    private long _position, _duration;
     public event EventHandler? Ended;
     public event EventHandler<string>? Failed;
-    public bool IsPlaying => _player?.IsPlaying ?? false;
-    public double Position => Math.Max(0, _player?.Time ?? 0) / 1000d;
-    public double Duration => Math.Max(0, _player?.Length ?? 0) / 1000d;
+    public bool IsPlaying => _isPlaying;
+    public double Position => Math.Max(0, Interlocked.Read(ref _position)) / 1000d;
+    public double Duration => Math.Max(0, Interlocked.Read(ref _duration)) / 1000d;
     public AudioSource? PlaybackSource { get; private set; }
     public double Volume
     {
         get => _volume;
-        set { _volume = Math.Clamp(value, 0, 1); if (_player is not null) _player.Volume = (int)(_volume * 100); }
+        set { if (!double.IsFinite(value)) return; _volume = Math.Clamp(value, 0, 1); Send(() => { if (_player is not null) _player.Volume = (int)(_volume * 100); }); }
     }
-    public async Task PlayAsync(AudioSource source, CancellationToken cancellationToken)
+    // Native calls stay serialized off the UI thread; cancellation never releases ownership of an in-flight VLC call.
+    private Task QueueCommand(Func<Task> action)
+    {
+        lock (_commands)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            var previous = _tail;
+            return _tail = Task.Run(async () =>
+            {
+                try { await previous.ConfigureAwait(false); } catch { /* Each caller observes its own failure. */ }
+                await action().ConfigureAwait(false);
+            });
+        }
+    }
+    private void Send(Action action)
+    {
+        lock (_commands)
+        {
+            if (_disposed) return;
+            _ = ObserveAsync(QueueCommand(() => { action(); return Task.CompletedTask; }));
+        }
+    }
+    private async Task ObserveAsync(Task command)
+    {
+        try { await command.ConfigureAwait(false); }
+        catch (Exception e) { PlaybackDiagnostics.Write("VLC", e.Message); Failed?.Invoke(this, "Falha no player: " + e.Message); }
+    }
+    public Task PlayAsync(AudioSource source, CancellationToken cancellationToken) => QueueCommand(async () =>
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (_engine is null)
         {
+            PlaybackDiagnostics.Write("VLC", "Iniciando motor nativo.");
+            var startup = System.Diagnostics.Stopwatch.StartNew();
             try { LibVLCSharp.Shared.Core.Initialize(); _engine = new LibVLC("--no-video", "--quiet"); }
             catch (Exception ex) { throw new InvalidOperationException("Não foi possível iniciar o LibVLC. No Linux, instale libvlc e os plugins de áudio do VLC.", ex); }
             _player = new MediaPlayer(_engine);
-            _player.EndReached += (_, _) => Ended?.Invoke(this, EventArgs.Empty);
-            _player.EncounteredError += (_, _) => Failed?.Invoke(this, "Não foi possível reproduzir este áudio. Tente abrir a faixa novamente.");
+            _player.TimeChanged += (_, e) => Interlocked.Exchange(ref _position, e.Time);
+            _player.LengthChanged += (_, e) => Interlocked.Exchange(ref _duration, e.Length);
+            _player.Playing += (_, _) => _isPlaying = true;
+            _player.Paused += (_, _) => _isPlaying = false;
+            _player.Stopped += (_, _) => _isPlaying = false;
+            _player.EndReached += (_, _) => { _isPlaying = false; Ended?.Invoke(this, EventArgs.Empty); };
+            _player.EncounteredError += (_, _) => { _isPlaying = false; Failed?.Invoke(this, "Não foi possível reproduzir este áudio. Tente abrir a faixa novamente."); };
+            PlaybackDiagnostics.Write("VLC", $"Inicialização: {startup.ElapsedMilliseconds} ms");
         }
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        PlaybackDiagnostics.Write("VLC", "Parando mídia anterior.");
         _player!.Stop();
+        PlaybackDiagnostics.Write("VLC", $"Stop: {watch.ElapsedMilliseconds} ms");
+        cancellationToken.ThrowIfCancellationRequested();
+        Interlocked.Exchange(ref _position, 0); Interlocked.Exchange(ref _duration, 0);
         using var media = new Media(_engine, source.Url, Uri.TryCreate(source.Url, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http" ? FromType.FromLocation : FromType.FromPath);
         PlaybackSource = source;
         if (File.Exists(source.Url))
         {
-            var status = await media.Parse(MediaParseOptions.ParseLocal, 5000, cancellationToken);
+            var status = await media.Parse(MediaParseOptions.ParseLocal, 5000, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             if (status == MediaParsedStatus.Done)
             {
@@ -86,11 +131,24 @@ public sealed class VlcAudioPlayer : IAudioPlayer
         }
         if (source.Headers.TryGetValue("User-Agent", out var agent)) media.AddOption(":http-user-agent=" + agent);
         if (source.Headers.TryGetValue("Referer", out var referer)) media.AddOption(":http-referrer=" + referer);
+        cancellationToken.ThrowIfCancellationRequested();
+        watch.Restart();
+        PlaybackDiagnostics.Write("VLC", "Abrindo mídia.");
         if (!_player.Play(media)) throw new IOException("O player não conseguiu abrir o áudio.");
+        PlaybackDiagnostics.Write("VLC", $"Play: {watch.ElapsedMilliseconds} ms");
         _player.Volume = (int)(_volume * 100);
+        if (cancellationToken.IsCancellationRequested) { _player.Stop(); cancellationToken.ThrowIfCancellationRequested(); }
+    }).WaitAsync(cancellationToken);
+    public void Pause() => Send(() => _player?.SetPause(true));
+    public void Resume() => Send(() => _player?.SetPause(false));
+    public void Seek(double seconds) { if (double.IsFinite(seconds)) Send(() => { if (_player is not null) _player.Time = (long)(Math.Clamp(seconds, 0, Duration) * 1000); }); }
+    public void Dispose()
+    {
+        lock (_commands)
+        {
+            if (_disposed) return;
+            Send(() => { _player?.Dispose(); _engine?.Dispose(); _isPlaying = false; });
+            _disposed = true;
+        }
     }
-    public void Pause() => _player?.SetPause(true);
-    public void Resume() => _player?.SetPause(false);
-    public void Seek(double seconds) { if (_player is not null) _player.Time = (long)(Math.Clamp(seconds, 0, Duration) * 1000); }
-    public void Dispose() { _player?.Dispose(); _engine?.Dispose(); }
 }

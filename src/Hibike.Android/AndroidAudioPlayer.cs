@@ -14,6 +14,7 @@ public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPr
     public bool IsPlaying => PlaybackService.Instance?.Playing ?? false;
     public double Position => PlaybackService.Instance?.Position ?? 0;
     public double Duration => PlaybackService.Instance?.Duration ?? 0;
+    public AudioSource? PlaybackSource { get; private set; }
     public double Volume { get => _volume; set { _volume = Math.Clamp(value, 0, 1); Main(() => PlaybackService.Instance?.SetVolume(_volume)); } }
     public async Task BeginPreparationAsync(Track track, CancellationToken cancellationToken)
     {
@@ -29,6 +30,9 @@ public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPr
     }
     public async Task PlayAsync(AudioSource source, CancellationToken cancellationToken)
     {
+        PlaybackSource = null;
+        if (Path.IsPathFullyQualified(source.Url) && File.Exists(source.Url))
+            source = await Task.Run(() => AndroidMetadata.ReadAudioSource(source), cancellationToken);
         if (PlaybackService.Instance is null) await BeginPreparationAsync(new("audio", source.Title ?? "Hibike", source.Artist ?? "", source.Url), cancellationToken);
         var service = PlaybackService.Instance!;
         var started = System.Diagnostics.Stopwatch.StartNew();
@@ -42,6 +46,7 @@ public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPr
                 await Task.Delay(25, cancellationToken);
             }
             PlaybackDiagnostics.Write("Player", $"Streaming iniciado em {started.ElapsedMilliseconds} ms; buffer inicial configurado em 250 ms.");
+            PlaybackSource = source;
         }
         catch { Main(service.CancelPreparation); throw; }
     }

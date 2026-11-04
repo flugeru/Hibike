@@ -7,6 +7,20 @@ namespace Hibike.Core.Tests;
 public class MusicDiscoveryTests
 {
     [Fact]
+    public void ArtistProfileSeparatesSongsAlbumsAndDiscography()
+    {
+        var profile = MusicDiscovery.ParseArtist("""
+            {"microformatDataRenderer":{"title":"Artist","thumbnail":{"thumbnails":[{"url":"https://example.org/photo.jpg"}]}},
+             "items":[{"musicResponsiveListItemRenderer":{"flexColumns":[{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Song"}]}}}],"watchEndpoint":{"videoId":"song"}}},
+             {"musicTwoRowItemRenderer":{"title":{"runs":[{"text":"Album"}]},"browseEndpoint":{"browseId":"MPREalbum"},"watchEndpoint":{"videoId":"preview"}}}],
+             "musicCarouselShelfBasicHeaderRenderer":{"title":{"runs":[{"text":"Albums"}]},"moreContentButton":{"buttonRenderer":{"browseEndpoint":{"browseId":"MPADartist","params":"page"}}}}}
+            """, "UCabcdefghijklmnopqrstuv");
+        Assert.Equal("https://example.org/photo.jpg", profile.Image);
+        Assert.Equal("Song", Assert.Single(profile.Tracks).Title);
+        Assert.Equal("Álbum", Assert.Single(profile.Collections).Kind);
+        Assert.Equal("MPADartist", Assert.Single(profile.Sections).Id);
+    }
+    [Fact]
     public void ParsesRealArtistIdentityNotTrackUploader()
     {
         var json = """{"contents":[{"musicResponsiveListItemRenderer":{"flexColumns":[{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Artist"}]}}}],"navigationEndpoint":{"browseEndpoint":{"browseId":"UCabcdefghijklmnopqrstuv"}},"thumbnails":[{"url":"https://example.org/artist.jpg"}]}},{"musicResponsiveListItemRenderer":{"flexColumns":[{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Song"}]}}}],"watchEndpoint":{"videoId":"abcdefghijk"}}}]}""";

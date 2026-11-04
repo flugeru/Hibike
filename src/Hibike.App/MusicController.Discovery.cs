@@ -21,7 +21,7 @@ public sealed partial class MusicController
     private DateTime _homeUpdated;
     private bool _discoveryCacheLoaded;
     private sealed record DiscoveryCache(DateTime SavedUtc, string Region, Track[] Recommendations, Track[] Related, string Seed, MusicChart? Regional, MusicChart? Global, MusicChart? Trending = null);
-    public void CompleteOnboarding(IEnumerable<MusicArtist> artists, IEnumerable<string> genres)
+    public async Task CompleteOnboardingAsync(IEnumerable<MusicArtist> artists, IEnumerable<string> genres)
     {
         var selected = artists.DistinctBy(a => a.Id).ToList();
         if (selected.Count is > 0 and < 3 || selected.Count > 20 || selected.Any(a => !System.Text.RegularExpressions.Regex.IsMatch(a.Id, "^UC[\\w-]{22}$") || string.IsNullOrWhiteSpace(a.Name)))
@@ -30,8 +30,8 @@ public sealed partial class MusicController
         if (styles.Count > 30 || styles.Any(s => string.IsNullOrWhiteSpace(s) || s.Length > 60)) throw new ArgumentException("Gêneros inválidos.");
         var old = (_personal.Artists, _personal.Genres, _personal.OnboardingCompleted);
         _personal.Artists = selected; _personal.Genres = styles; _personal.OnboardingCompleted = true;
-        try { SavePersonalization(); }
-        catch { (_personal.Artists, _personal.Genres, _personal.OnboardingCompleted) = old; throw; }
+        try { SavePersonalization(); await FlushPendingSavesAsync(); }
+        catch { (_personal.Artists, _personal.Genres, _personal.OnboardingCompleted) = old; SavePersonalization(); throw; }
         _discoveryCacheLoaded = true; _homeUpdated = DateTime.MinValue; Changed?.Invoke();
     }
     public void SetChartRegion(string region)
@@ -51,14 +51,17 @@ public sealed partial class MusicController
             History.ToArray(), Favorites.ToArray(), _personal.Dismissed, Affinity, _personal.Weights);
     }
     public Task<IReadOnlyList<MusicArtist>> SearchArtistsAsync(string query, CancellationToken token) => MusicDiscovery.SearchArtistsAsync(query, token);
-    public Task<IReadOnlyList<Track>> SearchArtistTracksAsync(MusicArtist artist, CancellationToken token) => _catalog.SearchAsync(artist.Name, token);
+    public Task<IReadOnlyList<Track>> SearchArtistTracksAsync(MusicArtist artist, CancellationToken token) => _catalog.SearchAsync("https://www.youtube.com/channel/" + artist.Id + "/videos", token);
+    public Task<IReadOnlyList<Track>> SearchChannelAsync(string source, CancellationToken token) => _catalog.SearchAsync(source.TrimEnd('/') + "/videos", token);
+    public Task<IReadOnlyList<Track>> BrowsePageAsync(string source, int page, CancellationToken token) => _catalog.BrowsePageAsync(source, page, token);
     public async Task RefreshRecommendationsAsync(bool force = false)
     {
         if (HomeLoading) return;
         HomeLoading = true;
         try
         {
-            var path = Path.Combine(DataDirectory, "discovery-cache.json");
+            // Keep legacy chart-seeded cache untouched; this cache contains only personalized candidates.
+            var path = Path.Combine(DataDirectory, "discovery-personalized-cache.json");
             if (!_discoveryCacheLoaded)
             {
                 _discoveryCacheLoaded = true;
@@ -80,26 +83,6 @@ public sealed partial class MusicController
             var token = timeout.Token;
             var candidates = new List<Track>();
             var region = ChartRegion;
-            async Task LoadChart(bool global)
-            {
-                var existing = global ? GlobalChart : RegionalChart;
-                if (existing is not null && DateTime.UtcNow - existing.RetrievedUtc < TimeSpan.FromHours(6)) return;
-                try
-                {
-                    var chart = await MusicDiscovery.ChartAsync(global ? "ZZ" : region, token);
-                    if (region != ChartRegion) return;
-                    if (global) GlobalChart = chart ?? GlobalChart; else RegionalChart = chart ?? RegionalChart;
-                    Changed?.Invoke();
-                }
-                catch (Exception e) when (e is HttpRequestException or OperationCanceledException or JsonException) { PlaybackDiagnostics.Write("Rankings", e.Message); }
-            }
-            async Task LoadTrending()
-            {
-                if (TrendingChart is not null && DateTime.UtcNow - TrendingChart.RetrievedUtc < TimeSpan.FromHours(3)) return;
-                try { var chart = await MusicDiscovery.ChartAsync(region, token, trending: true); if (region == ChartRegion) TrendingChart = chart ?? TrendingChart; }
-                catch (Exception e) when (e is HttpRequestException or OperationCanceledException or JsonException) { PlaybackDiagnostics.Write("Tendências", e.Message); }
-            }
-            var charts = Task.WhenAll(LoadChart(false), LoadChart(true), LoadTrending());
             var artistNames = FavoriteArtists.Select(a => a.Name).Concat(History.OrderByDescending(Affinity).Select(t => TrackTextFormatter.Artist(t.Artist)))
                 .Concat(Favorites.Select(t => TrackTextFormatter.Artist(t.Artist))).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             // Rotate seed daily; cap network work rather than query all 20 artists at startup.
@@ -116,11 +99,25 @@ public sealed partial class MusicController
             if (seed is not null && !token.IsCancellationRequested)
                 try { HomeRelated = (await _catalog.RadioAsync(seed, token)).Where(t => t.Source != seed.Source && !_personal.Dismissed.Contains(t.Source)).Take(20).ToArray(); HomeSeed = TrackTextFormatter.Artist(seed.Artist); candidates.AddRange(HomeRelated); }
                 catch (Exception e) when (e is not OutOfMemoryException) { PlaybackDiagnostics.Write("Descoberta", e.Message); }
-            await charts;
-            candidates.AddRange(RegionalChart?.Tracks ?? []);
             var ranked = MusicRecommendations.Rank(candidates, FavoriteArtists.Select(a => a.Name).ToHashSet(StringComparer.OrdinalIgnoreCase),
                 History.ToArray(), Favorites.ToArray(), _personal.Dismissed, Affinity, _personal.Weights);
-            if (ranked.Count > 0) { HomeRecommendations = ranked; HomeMessage = ""; }
+            var enriched = new List<Track>();
+            foreach (var track in ranked)
+            {
+                var result = track;
+                if (track.IsArtist && track.Thumbnail is null && !token.IsCancellationRequested)
+                {
+                    try
+                    {
+                        var artists = await SearchArtistsAsync(track.Title, token);
+                        var match = artists.FirstOrDefault(a => track.Source.TrimEnd('/').EndsWith("/" + a.Id, StringComparison.Ordinal));
+                        if (match is not null) result = track with { Thumbnail = match.Image };
+                    }
+                    catch (Exception e) when (e is HttpRequestException or OperationCanceledException or JsonException) { PlaybackDiagnostics.Write("Imagem do artista", e.Message); }
+                }
+                enriched.Add(result);
+            }
+            if (ranked.Count > 0) { HomeRecommendations = enriched; HomeMessage = ""; }
             else if (HomeRecommendations.Count == 0) HomeMessage = "Escolha artistas ou busque músicas para descobrir seu som.";
             _homeUpdated = DateTime.UtcNow;
             try

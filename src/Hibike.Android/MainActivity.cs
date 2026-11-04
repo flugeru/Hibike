@@ -10,11 +10,17 @@ namespace Hibike.Android;
 public sealed class MainActivity : AvaloniaMainActivity
 {
     private GoogleAccountLogin? _googleLogin;
+    private WebAccountLogin? _webLogin;
     protected override void OnCreate(global::Android.OS.Bundle? savedInstanceState)
     {
+        // Avalonia may attach MainView during base.OnCreate; persistence must already be ready.
+        WebSessionStore.Configure(this);
+        AppServices.ReadLocalMetadata = AndroidMetadata.Read;
+        AppServices.ReadMediaInfo = AndroidMetadata.DetailsAsync;
         base.OnCreate(savedInstanceState);
         _googleLogin = new GoogleAccountLogin(this);
-        AppServices.ConnectYouTubeAccount = _googleLogin.ConnectAsync;
+        _webLogin = new WebAccountLogin(this);
+        AppServices.ConnectYouTubeAccount = _webLogin.ConnectAsync;
         OnBackPressedDispatcher.AddCallback(this, new BackCallback(this));
 #if HIBIKE_SMOKE_TEST
         if (Intent?.GetBooleanExtra("hibike.smoke.playback", false) == true) { Intent.RemoveExtra("hibike.smoke.playback"); _ = PlaybackProbe.RunAsync(this); }
@@ -38,6 +44,7 @@ public sealed class MainActivity : AvaloniaMainActivity
     protected override void OnDestroy()
     {
         _googleLogin?.Cancel();
+        _webLogin?.Cancel();
         AppServices.ConnectYouTubeAccount = null;
         base.OnDestroy();
     }

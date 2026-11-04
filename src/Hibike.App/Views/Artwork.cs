@@ -4,6 +4,7 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Hibike.Core.Models;
+using Hibike.Core.Services;
 namespace Hibike.App.Views;
 
 internal sealed class Artwork : Border
@@ -33,16 +34,34 @@ internal sealed class Artwork : Border
             }
             _bitmap = bitmap; picture.Source = bitmap; picture.Opacity = 1;
         }
-        if (track?.Thumbnail is { } url)
+        if (track is not null && (!string.IsNullOrWhiteSpace(track.Thumbnail) || track.IsArtist))
         {
             AttachedToVisualTree += async (_, _) =>
             {
                 _cancel?.Dispose(); _cancel = new CancellationTokenSource(); var token = _cancel.Token;
                 try
                 {
+                    var url = track.Thumbnail;
+                    if (track.IsArtist)
+                    {
+                        var id = System.Text.RegularExpressions.Regex.IsMatch(track.Id, "^UC[\\w-]{22}$") ? track.Id
+                            : new Uri(track.Source).AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries).ElementAtOrDefault(1);
+                        if (id is not null && System.Text.RegularExpressions.Regex.IsMatch(id, "^UC[\\w-]{22}$"))
+                        {
+                            try
+                            {
+                                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+                                timeout.CancelAfter(TimeSpan.FromSeconds(15));
+                                var profile = await MusicDiscovery.ArtistAsync(id, timeout.Token);
+                                if (!string.IsNullOrWhiteSpace(profile.Image)) url = profile.Image;
+                            }
+                            catch (Exception e) when (e is not OutOfMemoryException) { PlaybackDiagnostics.Write("Imagem do artista", e.Message); }
+                        }
+                    }
+                    if (string.IsNullOrWhiteSpace(url)) return;
                     // Square crops need extra source width for landscape video thumbnails.
                     var pixels = fullResolution ? 1200 : (int)Math.Clamp(size * (TopLevel.GetTopLevel(this)?.RenderScaling ?? 1) * (highQuality ? 2 : 1), 128, 1200);
-                    var imageUrl = fullResolution || highQuality ? PlayerImageUrl(url) : url;
+                    var imageUrl = PlayerImageUrl(url);
                     var lease = await ArtworkCache.AcquireAsync(imageUrl, url, pixels, token);
                     if (token.IsCancellationRequested || _cancel?.Token != token)
                     { lease.Dispose(); return; }
@@ -63,7 +82,7 @@ internal sealed class Artwork : Border
         if (uri.Host == "i.ytimg.com" && System.Text.RegularExpressions.Regex.IsMatch(uri.AbsolutePath, @"^/vi(?:_webp)?/[\w-]+/[\w.-]+$"))
             return uri.GetLeftPart(UriPartial.Authority) + uri.AbsolutePath[..(uri.AbsolutePath.LastIndexOf('/') + 1)]
                 + (uri.AbsolutePath.StartsWith("/vi_webp/") ? "maxresdefault.webp" : "maxresdefault.jpg");
-        if (uri.Host == "lh3.googleusercontent.com" || uri.Host == "lh3.ggpht.com")
+        if (uri.Host is "lh3.googleusercontent.com" or "lh3.ggpht.com" or "yt3.ggpht.com" or "yt3.googleusercontent.com")
             return System.Text.RegularExpressions.Regex.Replace(url, @"([=\-])([swh])\d+(?=[\-&#?]|$)", "${1}${2}1200");
         return url;
     }
@@ -72,10 +91,13 @@ internal sealed class Artwork : Border
 // Keep the cover square even when the player's remaining space is rectangular.
 internal sealed class SquareArtworkSlot : Decorator
 {
+    public SquareArtworkSlot() => ClipToBounds = true;
     protected override Size MeasureOverride(Size availableSize)
     {
         var side = Math.Min(availableSize.Width, availableSize.Height);
-        return double.IsFinite(side) ? base.MeasureOverride(new Size(side, side)) : base.MeasureOverride(availableSize);
+        if (!double.IsFinite(side)) return base.MeasureOverride(availableSize);
+        Child?.Measure(new Size(side, side));
+        return new Size(side, side);
     }
 
     protected override Size ArrangeOverride(Size finalSize)

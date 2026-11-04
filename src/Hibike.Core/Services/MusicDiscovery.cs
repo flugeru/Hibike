@@ -7,14 +7,94 @@ namespace Hibike.Core.Services;
 
 public sealed record MusicArtist(string Id, string Name, string? Image);
 public sealed record MusicChart(string Region, string Title, DateTime RetrievedUtc, IReadOnlyList<Track> Tracks, string? PlaylistId = null);
+public sealed record ArtistCollection(string Id, string Title, string Kind, string? Image);
+public sealed record ArtistSection(string Title, string Id, string? Parameters);
+public sealed record ArtistProfile(string Id, string Name, string? Image, IReadOnlyList<Track> Tracks, IReadOnlyList<ArtistCollection> Collections, IReadOnlyList<ArtistSection> Sections);
 
 public static class MusicDiscovery
 {
+    public static async Task<ArtistProfile> ArtistAsync(string id, CancellationToken token)
+    {
+        if (!Regex.IsMatch(id, "^UC[\\w-]{22}$")) throw new ArgumentException("ID de artista inválido.");
+        return ParseArtist(await RequestAsync("browse", new { browseId = id }, token), id);
+    }
+    public static ArtistProfile ParseArtist(string json, string id)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        if (Nodes(root, "messageRenderer").Any() && !Nodes(root, "musicTwoRowItemRenderer").Any() && !Nodes(root, "musicResponsiveListItemRenderer").Any())
+            throw new InvalidOperationException("YouTube Music não disponibilizou este catálogo.");
+        var meta = Nodes(root, "microformatDataRenderer").FirstOrDefault();
+        var name = meta.ValueKind == JsonValueKind.Object && meta.TryGetProperty("title", out var title) ? title.GetString() ?? "Artista" : "Artista";
+        var image = Nodes(meta, "url").Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString()).LastOrDefault(u => u?.StartsWith("https://") == true);
+        if (image is null)
+            foreach (var header in Nodes(root, "musicImmersiveHeaderRenderer").Concat(Nodes(root, "musicVisualHeaderRenderer")).Concat(Nodes(root, "musicHeaderRenderer")))
+                image ??= Nodes(header, "url").Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString()).FirstOrDefault(u => u?.StartsWith("https://") == true);
+        var tracks = new List<Track>();
+        var collections = new List<ArtistCollection>();
+        foreach (var item in Nodes(root, "musicTwoRowItemRenderer").Concat(Nodes(root, "musicResponsiveListItemRenderer")))
+        {
+            var label = item.TryGetProperty("title", out var t) ? Text(t) : Nodes(item, "musicResponsiveListItemFlexColumnRenderer").Select(c => c.TryGetProperty("text", out var text) ? Text(text) : "").FirstOrDefault() ?? "";
+            var thumb = Nodes(item, "url").Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString()).LastOrDefault(u => u?.StartsWith("https://") == true);
+            var video = Nodes(item, "videoId").Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString()).FirstOrDefault();
+            var browse = Nodes(item, "browseId").Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString()).FirstOrDefault(b => b is not null && (b.StartsWith("VL") || b.StartsWith("MPRE")));
+            if (browse is not null)
+            {
+                var subtitle = item.TryGetProperty("subtitle", out var sub) ? Text(sub) : "";
+                collections.Add(new(browse, label, browse.StartsWith("MPRE") ? subtitle.Contains("Single", StringComparison.OrdinalIgnoreCase) || subtitle.Contains("EP", StringComparison.OrdinalIgnoreCase) ? "Single / EP" : "Álbum" : "Playlist", thumb));
+            }
+            else if (video is not null) tracks.Add(new(video, label, name, "https://www.youtube.com/watch?v=" + video, Thumbnail: thumb));
+        }
+        var sections = new List<ArtistSection>();
+        foreach (var header in Nodes(root, "musicCarouselShelfBasicHeaderRenderer"))
+        {
+            if (!header.TryGetProperty("moreContentButton", out var more)) continue;
+            var endpoint = Nodes(more, "browseEndpoint").FirstOrDefault();
+            if (endpoint.ValueKind != JsonValueKind.Object || !endpoint.TryGetProperty("browseId", out var browseId)) continue;
+            sections.Add(new(header.TryGetProperty("title", out var heading) ? Text(heading) : "Catálogo", browseId.GetString()!,
+                endpoint.TryGetProperty("params", out var parameters) ? parameters.GetString() : null));
+        }
+        return new(id, name, image, tracks.DistinctBy(t => t.Source).ToArray(), collections.DistinctBy(c => c.Id).ToArray(), sections);
+    }
+    public static async Task<ArtistProfile> ArtistSectionAsync(ArtistSection section, CancellationToken token)
+    {
+        var json = await RequestAsync("browse", new { browseId = section.Id, @params = section.Parameters }, token);
+        var profile = ParseArtist(json, section.Id);
+        var tracks = profile.Tracks.ToList();
+        var collections = profile.Collections.ToList();
+        var seen = new HashSet<string>();
+        while (true)
+        {
+            using var doc = JsonDocument.Parse(json);
+            var next = Nodes(doc.RootElement, "nextContinuationData").SelectMany(n => Nodes(n, "continuation"))
+                .Concat(Nodes(doc.RootElement, "continuationCommand").SelectMany(n => Nodes(n, "token")))
+                .Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString()).FirstOrDefault();
+            if (next is null) break;
+            if (!seen.Add(next)) throw new InvalidOperationException("Continuação repetida no catálogo.");
+            json = await RequestAsync("browse", new { }, token, next);
+            ArtistProfile page;
+            try { page = ParseArtist(json, section.Id); }
+            catch (InvalidOperationException)
+            {
+                // ponytail: anonymous continuation can fail; retain loaded items and expose retry, never claim a complete catalog.
+                return profile with { Tracks = tracks.DistinctBy(t => t.Source).ToArray(), Collections = collections.DistinctBy(c => c.Id).ToArray(), Sections = [section with { Title = "Catálogo parcial · tentar novamente" }] };
+            }
+            tracks.AddRange(page.Tracks); collections.AddRange(page.Collections);
+        }
+        return profile with { Tracks = tracks.DistinctBy(t => t.Source).ToArray(), Collections = collections.DistinctBy(c => c.Id).ToArray(), Sections = [] };
+    }
+    public static async Task<string?> AlbumPlaylistAsync(string id, CancellationToken token)
+    {
+        if (!Regex.IsMatch(id, "^MPRE[\\w-]+$")) throw new ArgumentException("Álbum inválido.");
+        using var doc = JsonDocument.Parse(await RequestAsync("browse", new { browseId = id }, token));
+        return Nodes(doc.RootElement, "playlistId").Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString()).FirstOrDefault();
+    }
     private static readonly HttpClient Client = new() { Timeout = TimeSpan.FromSeconds(15), MaxResponseContentBufferSize = 8_000_000 };
     // ponytail: anonymous WEB_REMIX is unofficial; schema failures hide remote sections, never substitute search results for rankings.
-    private static async Task<string> RequestAsync(string endpoint, object body, CancellationToken token)
+    private static async Task<string> RequestAsync(string endpoint, object body, CancellationToken token, string? continuation = null)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "https://music.youtube.com/youtubei/v1/" + endpoint + "?prettyPrint=false");
+        var query = continuation is null ? "" : "&continuation=" + Uri.EscapeDataString(continuation) + "&ctoken=" + Uri.EscapeDataString(continuation);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://music.youtube.com/youtubei/v1/" + endpoint + "?prettyPrint=false" + query);
         request.Headers.Add("Origin", "https://music.youtube.com");
         var values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(JsonSerializer.Serialize(body))!;
         values["context"] = JsonSerializer.SerializeToElement(new { client = new { clientName = "WEB_REMIX", clientVersion = "1.20261026.01.00", hl = "en" } });
@@ -52,6 +132,11 @@ public static class MusicDiscovery
     {
         if (string.IsNullOrWhiteSpace(query) || query.Length > 200) return [];
         return ParseArtists(await RequestAsync("search", new { query = query.Trim(), @params = "EgWKAQIgAQ==" }, token));
+    }
+    public static async Task<IReadOnlyList<ArtistCollection>> SearchCollectionsAsync(string query, CancellationToken token)
+    {
+        if (string.IsNullOrWhiteSpace(query) || query.Length > 200) return [];
+        return ParseArtist(await RequestAsync("search", new { query = query.Trim() }, token), "search").Collections;
     }
     public static async Task<MusicChart?> ChartAsync(string region, CancellationToken token, bool trending = false)
     {

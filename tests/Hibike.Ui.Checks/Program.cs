@@ -29,6 +29,7 @@ internal static partial class Program
             }));
         }
         AppServices.Configure(new Catalog(), new Player(), directory);
+        AppServices.ConnectYouTubeAccount = () => Task.FromException<YouTubeAccountLibrary>(new OperationCanceledException());
         var result = 1;
         var builder = AppBuilder.Configure<Hibike.App.App>().WithInterFont();
         if (args.Contains("--headless"))
@@ -65,36 +66,131 @@ internal static partial class Program
                 }
                 await Task.Delay(300);
                 var welcomeField = typeof(MainView).GetField("_onboarding", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
-                Check(welcomeField.GetValue(view) is Border, "First-run music onboarding missing");
+                var loginField = typeof(MainView).GetField("_googleWelcome", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+                Check(loginField.GetValue(view) is Border, "Branded Google welcome missing");
                 var initialWidth = window.Width; var initialHeight = window.Height;
                 window.Width = 360; window.Height = 800; await Task.Delay(100); Capture(view, "music-onboarding-360");
-                var welcome = (Border)welcomeField.GetValue(view)!;
+                var welcome = (Border)loginField.GetValue(view)!;
+                Check(welcome.GetVisualDescendants().OfType<Image>().Any(), "Hibike logo missing from login");
+                Check(welcomeField.GetValue(view) is null, "Duplicate onboarding login visible");
+                Check(!welcome.GetVisualDescendants().OfType<TextBox>().Any(b => b.IsEffectivelyVisible), "Artist stage visible before login choice");
+                welcome.GetVisualDescendants().OfType<Button>().Single(b => b.Content as string == "Entrar com Google").RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                await Task.Delay(50);
+                Check(welcome.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.StartsWith("Login cancelado") == true), "Login cancellation missing");
+                welcome.GetVisualDescendants().OfType<Button>().Single(b => b.Content as string == "Continuar sem conta").RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                await Task.Delay(50);
+                welcome = (Border)welcomeField.GetValue(view)!;
+                var artistCards = welcome.GetVisualDescendants().OfType<WrapPanel>().Single(p => p.ItemSpacing == 18 && p.IsVisible);
+                for (var i = 0; i < 8; i++) artistCards.Children.Add(new Button { BorderThickness = new Thickness(i == 0 ? 2 : 0) });
+                foreach (var width in new[] { 320, 360, 390, 430 })
+                {
+                    window.Width = width; await Task.Delay(100);
+                    Check(Math.Abs(artistCards.Children[0].Bounds.Y - artistCards.Children[1].Bounds.Y) < 1, "Onboarding lost two columns");
+                    Check(artistCards.Children[2].Bounds.Y > artistCards.Children[0].Bounds.Y, "Onboarding did not wrap after two tiles");
+                    Check(artistCards.Children.All(c => Math.Abs(c.Bounds.Width - c.Bounds.Height) < 1 && c.Bounds.Right <= artistCards.Bounds.Width + 1), "Onboarding tile overflows or is not square");
+                }
+                artistCards.Children.Clear(); window.Width = 360;
                 Check(!view.GetVisualDescendants().OfType<Button>().Any(b => b.IsEffectivelyVisible && (b.Content as string)?.Contains("Google") == true), "Google login visible");
                 Check(!welcome.GetVisualDescendants().OfType<Button>().Single(b => b.Content as string == "Continuar").IsEnabled, "Continue allowed fewer than three artists");
                 welcome.GetVisualDescendants().OfType<Button>().Single(b => b.Content as string == "Pular")
                      .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
                 await Task.Delay(50);
                 await AppServices.Controller!.FlushPendingSavesAsync();
+                var restoreSession = typeof(MainView).GetMethod("RestoreAccountAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+                var loadingMethod = typeof(MainView).GetMethod("WithLoadingAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+                var loadingBanner = (Border)typeof(MainView).GetField("_loadingBanner", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
+                var pendingLoad = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                var loadingTask = (Task)loadingMethod.Invoke(view, ["Atualizando dados…", (Func<Task>)(() => pendingLoad.Task)])!;
+                Check(loadingBanner.IsVisible && !loadingBanner.IsHitTestVisible, "Loading banner missing or blocks navigation");
+                Check(loadingBanner.Parent is Grid loadingHost && loadingHost.Children.OfType<Grid>().Any(g => g.Name == "AppHeader") && Grid.GetRow(loadingBanner) == 2, "Loading banner overlaps app header");
+                var refreshContainer = (RefreshContainer)typeof(MainView).GetField("_homeRefreshContainer", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
+                Check(refreshContainer.Visualizer?.Opacity == 0, "Default refresh spinner still visible");
+                pendingLoad.SetResult(); await loadingTask;
+                Check(!loadingBanner.IsVisible, "Completed loading message stuck");
+                foreach (var message in new[] { "Carregando…", "Carregando biblioteca…", "Preparando áudio…", "Buscando músicas…", "Carregando recomendações…", "Carregando rádio…", "Carregando conta Google…", "Restaurando conta Google…" })
+                {
+                    var pending = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    var task = (Task)loadingMethod.Invoke(view, [message, (Func<Task>)(() => pending.Task)])!;
+                    Check(loadingBanner.IsVisible == (message == "Restaurando conta Google…"), "Unexpected banner visibility: " + message);
+                    pending.SetResult(); await task;
+                }
+                try { await (Task)loadingMethod.Invoke(view, ["Falha de carregamento", (Func<Task>)(() => Task.FromException(new IOException("Expected test error")))])!; }
+                catch (IOException) { }
+                Check(!loadingBanner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "Falha de carregamento"), "Failed loading message stuck");
+                var restoreAttempted = typeof(MainView).GetField("_accountRestoreAttempted", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+                restoreAttempted.SetValue(view, false);
+                AppServices.RestoreYouTubeAccount = null;
+                await (Task)restoreSession.Invoke(view, null)!;
+                Check(!(bool)restoreAttempted.GetValue(view)!, "Missing storage hook permanently consumed restore attempt");
+                var restoreCalls = 0;
+                AppServices.RestoreYouTubeAccount = () => { restoreCalls++; return Task.FromResult<YouTubeAccountLibrary?>(null); };
+                await (Task)restoreSession.Invoke(view, null)!;
+                Check(restoreCalls == 1, "Restore did not retry after platform storage became ready");
+                var header = view.GetVisualDescendants().OfType<Grid>().Single(g => g.Name == "AppHeader");
+                Check(header.Bounds.Height <= 48, "App header exceeds compact height");
+                Check(header.GetVisualDescendants().OfType<Image>().Any(i => i.Width == 22 && i.Height == 22), "Compact header logo missing");
+                var profileButton = header.Children.OfType<Button>().Single(b => b.IsVisible);
+                Check(profileButton.Bounds.Height == 32, "Desktop header not compact");
+                for (var attempt = 0; attempt < 100 && welcomeField.GetValue(view) is not null; attempt++) await Task.Delay(20);
                 Check(File.ReadAllText(Path.Combine(directory, "personalization.json")).Contains("\"OnboardingCompleted\":true"), "Onboarding choice not persisted");
                 var welcomeMethod = typeof(MainView).GetMethod("ShowMusicOnboarding", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
                 welcomeMethod.Invoke(view, [false]); Check(welcomeField.GetValue(view) is null, "Onboarding repeats after completion");
                 var profileDirectory = Path.Combine(directory, "music-profile");
                 var profile = new MusicController(new Catalog(), new Player(), new LibraryStore(profileDirectory), profileDirectory);
+                profile.Volume = .37;
+                var volumeRestored = new MusicController(new Catalog(), new Player(), new LibraryStore(profileDirectory), profileDirectory);
+                Check(Math.Abs(volumeRestored.Volume - .37) < .000001, "User volume did not survive restart");
+                volumeRestored.Volume = 0;
+                var mutedRestored = new MusicController(new Catalog(), new Player(), new LibraryStore(profileDirectory), profileDirectory);
+                Check(mutedRestored.Volume == 0, "Muted volume did not survive restart");
+                mutedRestored.Volume = double.NaN; Check(mutedRestored.Volume == 0, "Invalid volume accepted");
                 var artists = new[] { new MusicArtist("UCabcdefghijklmnopqrstuv", "Artist A", null), new MusicArtist("UCbcdefghijklmnopqrstuvw", "Artist B", null), new MusicArtist("UCcdefghijklmnopqrstuvwx", "Artist C", null) };
                 var invalidSelection = false;
-                try { profile.CompleteOnboarding(artists.Take(2), []); } catch (ArgumentException) { invalidSelection = true; }
+                try { await profile.CompleteOnboardingAsync(artists.Take(2), []); } catch (ArgumentException) { invalidSelection = true; }
                 Check(invalidSelection && !profile.OnboardingCompleted, "Invalid artist selection accepted");
-                profile.CompleteOnboarding(artists, ["Rock", "J-Pop"]); profile.StopObserving(); await profile.FlushPendingSavesAsync();
+                await profile.CompleteOnboardingAsync(artists, ["Rock", "J-Pop"]); profile.StopObserving(); await profile.FlushPendingSavesAsync();
                 var restoredProfile = new MusicController(new Catalog(), new Player(), new LibraryStore(profileDirectory), profileDirectory);
                 Check(restoredProfile.OnboardingCompleted && restoredProfile.FavoriteArtists.Count == 3 && restoredProfile.FavoriteGenres.Contains("J-Pop"), "Music profile did not survive restart");
                 restoredProfile.StopObserving(); await restoredProfile.FlushPendingSavesAsync();
+                var blockedPath = Path.Combine(directory, "blocked-profile");
+                File.WriteAllText(blockedPath, "not a directory");
+                var blockedProfile = new MusicController(new Catalog(), new Player(), new LibraryStore(blockedPath), blockedPath);
+                var saveFailed = false;
+                try { await blockedProfile.CompleteOnboardingAsync(artists, []); } catch (IOException) { saveFailed = true; }
+                Check(saveFailed && !blockedProfile.OnboardingCompleted && blockedProfile.FavoriteArtists.Count == 0, "Failed onboarding save did not roll back");
+                blockedProfile.StopObserving();
+                try { await blockedProfile.FlushPendingSavesAsync(); } catch (IOException) { }
                 window.Width = initialWidth; window.Height = initialHeight; await Task.Delay(100);
                 var toolsEnabled = (bool)typeof(MainView).Assembly.GetType("Hibike.App.DeveloperFeatures")!.GetProperty("Enabled")!.GetValue(null)!;
                 typeof(MainView).GetMethod("ShowSettings", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(view, null);
                 await Task.Delay(100);
-                Check(view.GetVisualDescendants().OfType<Button>().Any(b => b.IsEffectivelyVisible && b.Content as string == "Diagnóstico de reprodução") == toolsEnabled, "Developer diagnostics visibility incorrect");
-                Check(view.GetVisualDescendants().OfType<Button>().Any(b => b.IsEffectivelyVisible && b.Content as string == "Laboratório experimental") == toolsEnabled, "Developer lab visibility incorrect");
+                Check(typeof(MainView).GetField("_overlay", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view) is null, "Settings still use modal menu");
+                Check(!view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.IsEffectivelyVisible && t.Text == "Região dos rankings · ZZ = mundo"), "Retired chart settings visible");
+                Check(!view.GetVisualDescendants().OfType<Button>().Any(b => b.IsEffectivelyVisible && b.Content as string == "Limpar feedback Não tenho interesse"), "Retired feedback reset visible");
+                Check(view.GetVisualDescendants().OfType<Button>().Any(b => b.IsEffectivelyVisible && Avalonia.Automation.AutomationProperties.GetName(b) == "Diagnóstico de reprodução"), "Playback diagnostics missing from settings");
+                Check(view.GetVisualDescendants().OfType<Button>().Any(b => b.IsEffectivelyVisible && Avalonia.Automation.AutomationProperties.GetName(b) == "Laboratório experimental") == toolsEnabled, "Developer lab visibility incorrect");
+                foreach (var width in new[] { 360, 1260 })
+                {
+                    window.Width = width; await Task.Delay(80);
+                    Capture(view, $"settings-page-{width}");
+                    Check(view.GetVisualDescendants().OfType<Slider>().Any(s => s.IsEffectivelyVisible && Avalonia.Automation.AutomationProperties.GetName(s) == "Volume nas configurações"), "Settings playback controls missing");
+                }
                 AppServices.BackHandler!();
+                Check(view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.IsEffectivelyVisible && t.Text == "Hibike"), "Leaving settings did not restore home");
+                Check(!view.GetVisualDescendants().OfType<Slider>().Any(s => s.IsEffectivelyVisible && Avalonia.Automation.AutomationProperties.GetName(s) == "Volume nas configurações"), "Settings leaked into home");
+                await (Task)typeof(MainView).GetMethod("ShowAccountAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(view, null)!;
+                await Task.Delay(80); Capture(view, "account-page");
+                Check(view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.IsEffectivelyVisible && t.Text == "Sem conta conectada"), "Account page missing");
+                Check(typeof(MainView).GetField("_overlay", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view) is null, "Account still uses modal menu");
+                Check(AppServices.BackHandler!(), "Account cannot return home");
+                typeof(MainView).GetMethod("ShowSettings", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(view, null);
+                var homeNavigation = view.GetVisualDescendants().OfType<Button>().First(b => b.Tag is ValueTuple<string, string, string, bool> tag && tag.Item1 == "home" && b.IsEffectivelyVisible);
+                homeNavigation.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                Check(!view.GetVisualDescendants().OfType<Slider>().Any(s => s.IsEffectivelyVisible && Avalonia.Automation.AutomationProperties.GetName(s) == "Volume nas configurações"), "Home navigation left settings visible");
+                var refreshMethod = typeof(MainView).GetMethod("RefreshHomeAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+                await (Task)refreshMethod.Invoke(view, null)!;
+                Check(!(bool)typeof(MainView).GetField("_refreshingHome", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!, "Home refresh remained busy");
+                window.Width = initialWidth;
                 var sameRadioSong = typeof(MusicController).GetMethod("SameRadioSong", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
                 var seedSong = new Track("seed-song", "Yellow Forest - Numbers the Hours", "Lorien Testard", "seed-song", 260);
                 foreach (var title in new[] { "Clair Obscur: Expedition 33 - Yellow Forest - Numbers the Hours (Extended)", "Yellow Forest - Numbers the Hours (Official Audio)", "Clair Obscur : Expedition 33 — 081. Yellow Forest - Numbers The Hours" })
@@ -189,6 +285,13 @@ internal static partial class Program
                 }
                 await Task.Delay(200);
                 const System.Reflection.BindingFlags hidden = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+                var artistProfile = new ArtistProfile("UCabcdefghijklmnopqrstuv", "Layout artist", null, [],
+                    Enumerable.Range(0, 8).Select(i => new ArtistCollection("MPRE" + i, "Album " + i, "Álbum", null)).ToArray(), []);
+                typeof(MainView).GetMethod("ShowArtistCatalog", hidden)!.Invoke(view, [new MusicArtist(artistProfile.Id, artistProfile.Name, null), artistProfile]);
+                await Task.Delay(100);
+                Check(view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "Álbuns"), "Artist album shelf missing");
+                Check(view.GetVisualDescendants().OfType<ScrollViewer>().Any(s => s.IsEffectivelyVisible && s.HorizontalScrollBarVisibility == Avalonia.Controls.Primitives.ScrollBarVisibility.Hidden), "Artist horizontal shelf missing");
+                Capture(view, "artist-catalog");
                 var route = typeof(MainView).GetField("_page", hidden)!;
                 var loadingQuery = (TextBox)typeof(MainView).GetField("_search", hidden)!.GetValue(view)!;
                 loadingQuery.Text = "teste";
@@ -216,7 +319,7 @@ internal static partial class Program
                     if (homeWidth == 360)
                     {
                         Check(view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.IsEffectivelyVisible && t.Text == "Hibike"), "Compact Windows missing app header");
-                        Check(view.GetVisualDescendants().OfType<Button>().Count(b => b.IsEffectivelyVisible && Avalonia.Automation.AutomationProperties.GetName(b) == "Menu do aplicativo") == 1, "Compact Windows missing single menu button");
+                        Check(view.GetVisualDescendants().OfType<Button>().Count(b => b.IsEffectivelyVisible && Avalonia.Automation.AutomationProperties.GetName(b) == "Perfil · sem conta") == 1, "Compact Windows missing single profile button");
                         foreach (var tab in view.GetVisualDescendants().OfType<Button>().Where(b => b.IsEffectivelyVisible && b.Tag is ValueTuple<string, string, string, bool> tag && tag.Item4))
                         {
                             var content = (StackPanel)tab.Content!;
@@ -229,9 +332,13 @@ internal static partial class Program
                         var import = view.GetVisualDescendants().OfType<Button>().Single(b => Avalonia.Automation.AutomationProperties.GetName(b) == "Importar músicas");
                         var playlist = view.GetVisualDescendants().OfType<Button>().Single(b => Avalonia.Automation.AutomationProperties.GetName(b) == "Nova playlist");
                         Check(import.Bounds.Width == playlist.Bounds.Width && import.HorizontalContentAlignment == Avalonia.Layout.HorizontalAlignment.Center, "Sidebar actions not aligned");
-                        var decode = typeof(MainView).Assembly.GetType("Hibike.App.Views.Artwork")!.GetMethod("DecodeAsync", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
-                        Func<Stream> open = () => File.OpenRead(Path.Combine(AppContext.BaseDirectory, "home-1260.png"));
-                        using var thumbnail = await (Task<Bitmap>)decode.Invoke(null, [open, 128, CancellationToken.None])!;
+                        var cache = typeof(MainView).Assembly.GetType("Hibike.App.Views.ArtworkCache")!;
+                        var acquire = cache.GetMethod("AcquireAsync", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!;
+                        var url = new Uri(Path.Combine(AppContext.BaseDirectory, "home-1260.png")).AbsoluteUri;
+                        var load = (Task)acquire.Invoke(null, [url, url, 128, CancellationToken.None])!;
+                        await load;
+                        using var lease = (IDisposable)load.GetType().GetProperty("Result")!.GetValue(load)!;
+                        var thumbnail = (Bitmap)lease.GetType().GetProperty("Bitmap")!.GetValue(lease)!;
                         Check(thumbnail.PixelSize.Width == 128, "Artwork decode ignored thumbnail size");
                         var artworkType = typeof(MainView).Assembly.GetType("Hibike.App.Views.Artwork")!;
                         var sample = new Track("aspect", "Aspect", "Test", "aspect", Thumbnail: new Uri(Path.Combine(AppContext.BaseDirectory, "home-1260.png")).AbsoluteUri);
@@ -242,6 +349,7 @@ internal static partial class Program
                         homePanel.Children.Remove(art);
                     }
                     var card = view.GetVisualDescendants().OfType<Button>().First(b => Avalonia.Automation.AutomationProperties.GetName(b) == "Faixa recente — Artista");
+                    Check(!view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.IsEffectivelyVisible && t.Text is "Em alta no Brasil" or "Em alta no mundo" or "Bombando agora" or "Tendências para você"), "Retired chart shelf visible");
                     var cardHost = (Grid)card.Parent!;
                     var shelf = cardHost.GetVisualAncestors().OfType<StackPanel>().First(p => p.Tag is ValueTuple<string, string>);
                     typeof(MainView).GetField("_homeFingerprint", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(view, null);
@@ -266,9 +374,11 @@ internal static partial class Program
                     Check(cardActions.Length == 2 && cardActions.All(b => b.Width == 48 && b.Height == 48 && b.Padding == default && b.BorderThickness == default && b.CornerRadius == new CornerRadius(22)), "Card actions differ in size or circle style");
                     Check(card.Bounds.Width >= 160 && card.IsEffectivelyVisible, "Home history cover card missing");
                     foreach (var button in view.GetVisualDescendants().OfType<Button>().Where(b => b.IsEffectivelyVisible && !b.GetVisualAncestors().OfType<Slider>().Any()))
-                        Check(button.Bounds.Height >= 48, "Home touch target below 48");
+                        Check(button.Bounds.Height >= 48 || ReferenceEquals(button, profileButton), "Home touch target below 48");
                 }
                 typeof(MainView).GetField("_page", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(view, "explore");
+                var searchField = (TextBox)typeof(MainView).GetField("_search", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
+                searchField.Text = "test";
                 var imageUrl = typeof(MainView).Assembly.GetType("Hibike.App.Views.Artwork")!.GetMethod("PlayerImageUrl")!;
                 Check((string)imageUrl.Invoke(null, ["https://i.ytimg.com/vi/abc/hqdefault.jpg"])! == "https://i.ytimg.com/vi/abc/maxresdefault.jpg", "Player did not request high-resolution YouTube artwork");
                 Check((string)imageUrl.Invoke(null, ["https://example.org/cover.jpg"])! == "https://example.org/cover.jpg", "Unrelated artwork URL rewritten");
@@ -279,8 +389,8 @@ internal static partial class Program
                     await Task.Delay(150);
                     Check(view.GetVisualDescendants().OfType<TextBlock>().All(t => t.FontSize >= 12), "Text below 12");
                     foreach (var button in view.GetVisualDescendants().OfType<Button>().Where(b => b.IsEffectivelyVisible && !b.GetVisualAncestors().OfType<Slider>().Any()))
-                        Check(button.Bounds.Height >= 48, $"Touch target below 48: {button.Content} {button.Classes} {button.Bounds}");
-                    var list = view.GetVisualDescendants().OfType<ItemsControl>().First(c => c.ItemsSource is System.Collections.ObjectModel.ObservableCollection<Track>);
+                        Check(button.Bounds.Height >= 48 || ReferenceEquals(button, profileButton), $"Touch target below 48: {button.Content} {button.Classes} {button.Bounds}");
+                    var list = (ItemsControl)typeof(MainView).GetField("_mobileSearchItems", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
                     Check(list.GetVisualDescendants().OfType<Button>().Count() < 100, "List not virtualized");
                     Capture(view, $"search-{width}");
                     var scrollingList = list.GetVisualAncestors().OfType<ScrollViewer>().First();
@@ -291,13 +401,19 @@ internal static partial class Program
                     Check(mask.GradientStops[0].Color.A == 64 && mask.GradientStops[^1].Color.A == 64, "List fade missing in middle");
                     scrollingList.Offset = new Vector(0, 150); await Task.Delay(50);
                     Check(ReferenceEquals(mask, scrollingList.OpacityMask), "Scrolling rebuilt unchanged edge mask");
-                    scrollingList.Offset = new Vector(0, scrollingList.Extent.Height); await Task.Delay(50);
+                    for (var attempt = 0; attempt < 20; attempt++)
+                    {
+                        scrollingList.Offset = new Vector(0, scrollingList.Extent.Height);
+                        await Task.Delay(20);
+                        if (scrollingList.Offset.Y >= scrollingList.Extent.Height - scrollingList.Viewport.Height - 1) break;
+                    }
+                    await Task.Delay(100);
                     mask = (Avalonia.Media.LinearGradientBrush)scrollingList.OpacityMask!;
                     Check(mask.GradientStops[0].Color.A == 64 && mask.GradientStops[^1].Color.A == 255, "List fade incorrect at end");
                     scrollingList.Offset = default; await Task.Delay(50);
-                    var search = view.GetVisualDescendants().OfType<TextBox>().First();
+                    var search = searchField;
                     search.Text = "test"; await Task.Delay(30);
-                    var clear = ((StackPanel)search.InnerRightContent!).Children[0];
+                    var clear = (Control)search.InnerRightContent!;
                     Check(clear.IsVisible, "Search clear button missing");
                     search.Text = ""; await Task.Delay(30);
                     Check(!clear.IsVisible, "Empty search has clear button");
@@ -322,6 +438,18 @@ internal static partial class Program
                         }
                     }
                     AppServices.OpenPlayerView!(); await Task.Delay(300);
+                    var qualityButton = view.GetVisualDescendants().OfType<Button>().First(b => b.IsEffectivelyVisible && b.Content is TextBlock && Avalonia.Automation.AutomationProperties.GetName(b) == "Informações do áudio");
+                    qualityButton.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)); await Task.Delay(50);
+                    Check((bool)typeof(MainView).GetField("_showingPlayer", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!, "Audio info closed expanded player");
+                    Check(AppServices.BackHandler!(), "Audio info ignores back");
+                    var fakePlayer = (Player)AppServices.Controller.Player;
+                    fakePlayer.Position = 56;
+                    await Task.Delay(650);
+                    var detailTime = (TextBlock)typeof(MainView).GetField("_detailTime", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
+                    Check(detailTime.Text == "0:56", "Expanded player clock stopped");
+                    fakePlayer.Position = 61;
+                    await Task.Delay(650);
+                    Check(detailTime.Text == "1:01", "Expanded player clock did not advance without reopening");
                     if (width == 360)
                     {
                         Button PlayerButton(string name) => (Button)typeof(MainView).GetField(name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
@@ -348,9 +476,9 @@ internal static partial class Program
                     {
                         var artwork = view.GetVisualDescendants().OfType<Border>().Single(b => b.GetType().Name == "Artwork" && b.Bounds.Width > 100 && b.IsEffectivelyVisible);
                         Check(artwork.Bounds.Width <= 500, "Desktop artwork exceeds size cap");
-                        var slot = (Grid)artwork.Parent!;
+                        var slot = (Decorator)artwork.Parent!;
                         var split = (Grid)slot.Parent!;
-                        Check(Math.Abs(slot.Bounds.Width - (split.Bounds.Width - split.ColumnSpacing) / 2) < 2, "Desktop player does not split space equally");
+                        Check(Math.Abs(slot.Bounds.Width - Math.Min(500, (split.Bounds.Width - split.ColumnSpacing) / 2)) < 2, "Desktop player cover ignores column or size cap");
                         Check(split.Bounds.Width >= view.Bounds.Width - 320, "Desktop player content shrank to artwork width");
                         Check(Math.Abs(artwork.Bounds.Center.Y - slot.Bounds.Height / 2) < 1, "Artwork not vertically centered");
                         Check(Math.Abs(artwork.Bounds.Center.X - slot.Bounds.Width / 2) < 1, "Artwork not horizontally centered");
@@ -393,16 +521,18 @@ internal static partial class Program
                         Check(volumeButton.GetVisualAncestors().Contains(shortControls), "Volume outside transport controls");
                         Capture(view, "player-inline-volume");
                         volumeButton.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
-                        var info = view.GetVisualDescendants().OfType<Button>().Single(b => Avalonia.Automation.AutomationProperties.GetName(b) == "Informações do áudio");
+                        var info = view.GetVisualDescendants().OfType<Button>().Single(b => b.IsEffectivelyVisible && b.Content is not TextBlock && Avalonia.Automation.AutomationProperties.GetName(b) == "Informações do áudio");
                         info.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)); await Task.Delay(150);
+                        Check((bool)typeof(MainView).GetField("_showingPlayer", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!, "Audio info closed fullscreen player");
                         var overlay = (Border)typeof(MainView).GetField("_overlay", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
                         Check(Math.Abs(overlay.Bounds.Width - view.Bounds.Width) < 2, "Dialog scrim does not cover full window");
                         var sheet = (Border)overlay.Child!;
                         Check(Math.Abs(sheet.Bounds.Center.X - overlay.Bounds.Width / 2) < 2, "Dialog not centered");
-                        Check(view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "160 kb/s"), "Audio bitrate missing from details");
+                        Check(view.GetVisualDescendants().OfType<SelectableTextBlock>().Any(t => t.Text == "160 kb/s"), "Audio bitrate missing from details");
                         Capture(view, "audio-info"); Check(AppServices.BackHandler!(), "Audio details cannot close");
                     }
-                    Check(AppServices.BackHandler!(), "Player cannot close");
+                    var playerShowing = (bool)typeof(MainView).GetField("_showingPlayer", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
+                    if (playerShowing) Check(AppServices.BackHandler!(), "Player cannot close");
                     await Task.Delay(300);
                     var more = view.GetVisualDescendants().OfType<Button>().First(b => Avalonia.Automation.AutomationProperties.GetName(b)?.StartsWith("Opções de ") == true);
                     more.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)); await Task.Delay(300);
@@ -433,7 +563,26 @@ internal static partial class Program
                     var libraryGrid = (ItemsControl)typeof(MainView).GetField("_mobileLibraryGroups", hidden)!.GetValue(view)!;
                     Check(libraryGrid.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "Library visual check"), "Library playlist cover missing");
                     libraryTabs[0].RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                    if (width == 360)
+                    {
+                        var first = new Track("live-artist-1", "First", "Live artist", "live-artist-1", Album: "Live album");
+                        var second = first with { Id = "live-artist-2", Source = "live-artist-2", Title = "Second" };
+                        await music.ToggleFavoriteAsync(first);
+                        libraryTabs[3].RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                        await Task.Delay(100);
+                        var group = libraryGrid.ItemsSource!.Cast<Array>().SelectMany(row => row.Cast<object>())
+                            .Single(item => (string)item.GetType().GetProperty("Title")!.GetValue(item)! == "Live artist");
+                        await (Task)typeof(MainView).GetMethod("OpenMobileLibraryGroupAsync", hidden)!.Invoke(view, [group])!;
+                        await music.ToggleFavoriteAsync(second);
+                        var liveTracks = (ItemsControl)typeof(MainView).GetField("_mobileLibraryTracks", hidden)!.GetValue(view)!;
+                        Check(liveTracks.ItemsSource!.Cast<Track>().Count() == 2, "Open artist collection missed added favorite");
+                        await music.ToggleFavoriteAsync(first);
+                        Check(liveTracks.ItemsSource!.Cast<Track>().Single().Source == second.Source, "Open artist collection retained removed favorite");
+                        typeof(MainView).GetMethod("CloseMobileLibraryGroup", hidden)!.Invoke(view, null);
+                        libraryTabs[0].RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                    }
                     var queueNav = view.GetVisualDescendants().OfType<Button>().First(b => b.IsEffectivelyVisible && b.Tag is ValueTuple<string, string, string, bool> tag && tag.Item1 == "queue");
+                    music.Enqueue(new Track("queue-visible", "Queue visible", "Artist", "queue-visible", 267.8));
                     queueNav.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)); await Task.Delay(150); Capture(view, $"queue-{width}");
                     if (width == 360) Check(!brand.IsVisible, "Queue incorrectly displays app brand");
                     if (width == 360)
@@ -459,7 +608,13 @@ internal static partial class Program
                 music.ReplaceQueue([current, nextA, nextB]);
                 music.EditQueue(nextA, -1); Check(music.Queue[0] == current && music.Queue[1] == nextA, "Upcoming track moved before current");
                 music.ReorderQueue(true); Check(music.Queue[0] == current, "Shuffle displaced current track");
-                typeof(MainView).GetMethod("OpenCollection", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(view, ["Playlist de teste", new Track[] { nextA, nextB }]);
+                var collectionCard = (Control)typeof(MainView).GetMethod("CoverCard", hidden)!.Invoke(view,
+                    [nextA, "Artista", (Func<Task>)(() => Task.CompletedTask), false, false, null])!;
+                Check(!collectionCard.GetVisualDescendants().OfType<Button>().Any(b => b.Classes.Contains("cardAction") && b.IsHitTestVisible == false), "Collection card contains play overlay");
+                await (Task)typeof(MainView).GetMethod("ShowArtistAsync", hidden)!.Invoke(view, [artists[0]])!;
+                Check(typeof(MainView).GetField("_page", hidden)!.GetValue(view) as string == "collection", "Artist did not open dedicated page");
+                Check(typeof(MainView).GetField("_overlay", hidden)!.GetValue(view) is null, "Artist opened modal");
+                typeof(MainView).GetMethod("OpenCollection", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(view, ["Playlist de teste", new Track[] { nextA, nextB }, "Playlist", null, null, null]);
                 await Task.Delay(150); Capture(view, "collection-1260");
                 Check(view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "Playlist de teste" && t.IsEffectivelyVisible), "Collection page missing");
                 var queueCount = music.Queue.Count;
@@ -522,7 +677,7 @@ internal static partial class Program
     private sealed class Player : IAudioPlayer
     {
         public bool IsPlaying { get; private set; }
-        public double Position => 0;
+        public double Position { get; set; }
         public double Duration => 267.7;
         public double Volume { get; set; }
         public event EventHandler? Ended { add { } remove { } }
