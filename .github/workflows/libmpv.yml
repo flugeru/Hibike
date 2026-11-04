@@ -1,0 +1,41 @@
+name: Hibike libmpv from source
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    container: archlinux:base-devel
+    steps:
+      - name: Install build tools
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --needed --noconfirm git ninja cmake meson clang lld unzip ragel yasm nasm gperf python-docutils curl wget ccache python-pip 7zip mercurial subversion gyp autoconf automake libtool pkgconf texinfo bison flex gettext patch
+          git config --global --add safe.directory '*'
+          git config --global user.name 'Hibike build'
+          git config --global user.email 'build@hibike.invalid'
+      - uses: actions/checkout@v4
+      - name: Build LGPL x64 and preserve sources
+        shell: bash
+        run: bash scripts/build_libmpv.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Hibike-libmpv-build-records
+          path: artifacts/libmpv-own/records
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Hibike-libmpv-x64
+          path: artifacts/libmpv-own/dist
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Hibike-libmpv-corresponding-source
+          path: artifacts/libmpv-own/source-release
+          if-no-files-found: error
