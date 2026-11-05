@@ -15,6 +15,7 @@ public interface IMusicCatalog
 public interface IAudioPlayer : IDisposable
 {
     bool IsPlaying { get; }
+    bool IsBuffering => false;
     double Position { get; }
     double Duration { get; }
     double Volume { get; set; }
@@ -30,5 +31,6 @@ public interface IAudioPlayer : IDisposable
 public interface IAudioPreparation
 {
     Task BeginPreparationAsync(Track track, CancellationToken cancellationToken);
+    Task BeginRecoveryAsync(Track track, CancellationToken cancellationToken) => BeginPreparationAsync(track, cancellationToken);
     void CancelPreparation();
 }

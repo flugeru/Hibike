@@ -5,7 +5,6 @@ using Hibike.Core.Services;
 
 namespace Hibike.App;
 
-// ponytail: no automatic reconnect; user reconnects after network loss or Gateway rejection.
 internal sealed class DiscordAccountPresence : IDisposable
 {
     private readonly ClientWebSocket _socket = new();
@@ -23,6 +22,8 @@ internal sealed class DiscordAccountPresence : IDisposable
     private string? _lastKey;
     private double _lastPosition;
     private DateTimeOffset _lastUpdate;
+    public bool IsClosed => Volatile.Read(ref _disposed) != 0;
+    public bool CredentialsRejected { get; private set; }
     public string Status { get; private set; } = "Desconectado";
     internal sealed record DiscordProfile(string Id, string Name, string Username, string? Avatar);
     public DiscordProfile? Profile { get; private set; }
@@ -35,7 +36,10 @@ internal sealed class DiscordAccountPresence : IDisposable
     {
         if (string.IsNullOrWhiteSpace(token) || token.Any(char.IsWhiteSpace) || token.Length > 512)
         {
-            PlaybackDiagnostics.Write(DiagnosticSector.Discord, "Conexão", "Formato do token inválido.");
+            CredentialsRejected = true;
+            Status = "Formato do token inválido.";
+            PlaybackDiagnostics.Write(DiagnosticSector.Discord, "Conexão", Status);
+            Dispose();
             throw new ArgumentException("Token inválido.");
         }
         try
@@ -262,7 +266,10 @@ internal sealed class DiscordAccountPresence : IDisposable
         {
             result = await _socket.ReceiveAsync(new ArraySegment<byte>(buffer), _stop.Token);
             if (result.MessageType == WebSocketMessageType.Close)
+            {
+                if ((int?)result.CloseStatus == 4004) CredentialsRejected = true;
                 throw new InvalidOperationException(CloseMessage((int?)result.CloseStatus));
+            }
             ValidateFrame(result.MessageType, data.Length + result.Count);
             data.Write(buffer, 0, result.Count);
         } while (!result.EndOfMessage);

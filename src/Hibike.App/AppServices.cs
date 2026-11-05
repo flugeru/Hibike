@@ -17,6 +17,8 @@ public static class AppServices
     public static (Func<string?> Read, Action<string> Save, Action Clear, Func<bool> Exists)? DiscordTokenStorage { get; set; }
     private static IMusicCatalog? _catalog;
     public static Action? OpenPlayerView { get; set; }
+    public static Func<bool>? IsNetworkAvailable { get; set; }
+    internal static bool HasNetwork => IsNetworkAvailable?.Invoke() != false;
     public static Action<Action<long>>? RequestDisplayFrame { get; set; }
     public static void InvalidateCatalog() => (_catalog as CachedMusicCatalog)?.Clear();
     public static Func<bool>? BackHandler { get; set; }

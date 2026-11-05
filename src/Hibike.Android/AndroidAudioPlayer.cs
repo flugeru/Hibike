@@ -12,15 +12,22 @@ public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPr
     public event EventHandler? Ended;
     public event EventHandler<string>? Failed;
     public bool IsPlaying => PlaybackService.Instance?.Playing ?? false;
+    public bool IsBuffering => PlaybackService.Instance?.Buffering == true;
     public double Position => PlaybackService.Instance?.Position ?? 0;
     public double Duration => PlaybackService.Instance?.Duration ?? 0;
     public AudioSource? PlaybackSource { get; private set; }
     public double Volume { get => _volume; set { _volume = Math.Clamp(value, 0, 1); Main(() => PlaybackService.Instance?.SetVolume(_volume)); } }
-    public async Task BeginPreparationAsync(Track track, CancellationToken cancellationToken)
+    public Task BeginPreparationAsync(Track track, CancellationToken cancellationToken) => PrepareAsync(track, cancellationToken, reuseService: false);
+    public Task BeginRecoveryAsync(Track track, CancellationToken cancellationToken) => PrepareAsync(track, cancellationToken, reuseService: true);
+
+    private async Task PrepareAsync(Track track, CancellationToken cancellationToken, bool reuseService)
     {
-        var intent = new Intent(context, typeof(PlaybackService)).SetAction(PlaybackService.PrepareAction)!.PutExtra("title", track.Title);
-        await MainAsync(() => { if (Build.VERSION.SdkInt >= BuildVersionCodes.O) context.StartForegroundService(intent); else context.StartService(intent); }).WaitAsync(cancellationToken);
-        while (PlaybackService.Instance is null) await Task.Delay(20, cancellationToken);
+        if (!reuseService || PlaybackService.Instance is null)
+        {
+            var intent = new Intent(context, typeof(PlaybackService)).SetAction(PlaybackService.PrepareAction)!.PutExtra("title", track.Title);
+            await MainAsync(() => { if (Build.VERSION.SdkInt >= BuildVersionCodes.O) context.StartForegroundService(intent); else context.StartService(intent); }).WaitAsync(cancellationToken);
+            while (PlaybackService.Instance is null) await Task.Delay(20, cancellationToken);
+        }
         var service = PlaybackService.Instance;
         if (!ReferenceEquals(_service, service))
         {

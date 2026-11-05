@@ -49,6 +49,8 @@ public sealed partial class MainView : UserControl
     private readonly List<Button> _nav = [];
     private Border? _overlay;
     private Border? _playerPage;
+    private TextBlock? _expandedRecoveryNotice;
+    private readonly TextBlock _miniRecoveryNotice = Text("", UiTheme.Caption, UiTheme.Warning);
     private readonly Dictionary<string, Border> _rows = new();
     private readonly Dictionary<string, TextBlock> _rowTitles = new();
     private readonly Dictionary<string, Equalizer> _equalizers = new();
@@ -156,18 +158,20 @@ public sealed partial class MainView : UserControl
         }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, OnPlaybackKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         AddHandler(KeyUpEvent, OnPlaybackKeyUp, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        InitializeDiscordRecovery();
         AttachedToVisualTree += async (_, _) =>
         {
             if (TopLevel.GetTopLevel(this) is Window desktopWindow) { desktopWindow.Deactivated -= ResetPlaybackKey; desktopWindow.Deactivated += ResetPlaybackKey; }
             _music.Changed -= Refresh; _music.Tick -= RefreshPlayback; _music.Tick -= RefreshDock;
             _music.Changed += Refresh; _music.Tick += RefreshPlayback; _music.Tick += RefreshDock;
             _music.StartObserving(); Refresh();
+            StartDiscordRecovery();
             await WithLoadingAsync("Carregando biblioteca…", _music.InitializeAsync);
             await WithLoadingAsync("Restaurando conta Google…", RestoreAccountAsync); _accountRefreshTimer.Start();
             if (!_music.OnboardingCompleted) ShowGoogleWelcome(firstRun: true);
             if (_music.OnboardingCompleted) _ = _music.RefreshRecommendationsAsync();
         };
-        DetachedFromVisualTree += (_, _) => { _accountRefreshTimer.Stop(); _music.Changed -= Refresh; _music.Tick -= RefreshPlayback; _music.Tick -= RefreshDock; _music.StopObserving(); };
+        DetachedFromVisualTree += (_, _) => { StopDiscordRecovery(); _accountRefreshTimer.Stop(); _music.Changed -= Refresh; _music.Tick -= RefreshPlayback; _music.Tick -= RefreshDock; _music.StopObserving(); };
         Refresh();
     }
     private Border BuildSidebar()
@@ -219,7 +223,7 @@ public sealed partial class MainView : UserControl
     }
     private Border BuildMiniPlayer()
     {
-        var grid = new Grid { RowDefinitions = new("Auto,Auto"), RowSpacing = UiTheme.CompactGap };
+        var grid = new Grid { RowDefinitions = new("Auto,Auto,Auto"), RowSpacing = UiTheme.CompactGap };
         var row = new Grid { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = UiTheme.ProgressRadius };
         var open = ActionButton("", () => { ShowPlayer(); return Task.CompletedTask; }); Avalonia.Automation.AutomationProperties.SetName(open, "Abrir player"); open.Classes.Add("subtle"); open.Padding = UiTheme.Zero; open.HorizontalContentAlignment = HorizontalAlignment.Stretch;
         var metadata = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = UiTheme.CompactGap };
@@ -229,6 +233,10 @@ public sealed partial class MainView : UserControl
         var next = IconButton("next", "Próxima faixa", _music.NextAsync); next.Classes.Add("subtle");
         open.Content = metadata; row.Children.Add(open); Put(row, _play, 0, 1); Put(row, next, 0, 2);
         grid.Children.Add(row); Put(grid, _progress, 1, 0);
+        _miniRecoveryNotice.IsVisible = false;
+        _miniRecoveryNotice.TextWrapping = TextWrapping.Wrap;
+        _miniRecoveryNotice.MaxLines = 2;
+        Put(grid, _miniRecoveryNotice, 2, 0);
         var card = UiTheme.Card(grid, UiTheme.ControlRadius); card.Margin = UiTheme.MiniMargin; card.ClipToBounds = true;
         card.MaxWidth = UiTheme.PageMaxWidth - UiTheme.PageMargin.Left - UiTheme.PageMargin.Right; return card;
     }
@@ -425,8 +433,6 @@ public sealed partial class MainView : UserControl
         var albumTracks = _music.HomeRecommendations.Concat(_music.Favorites).Where(t => !string.IsNullOrWhiteSpace(t.Album)).GroupBy(t => (t.Artist, t.Album));
         Shelf("Álbuns para você", "Álbuns identificados no catálogo · faixas disponíveis", albumTracks.Take(12).Select(g => Card(g.First() with { Title = g.Key.Album! }, () => CoverCard(g.First() with { Title = g.Key.Album! }, g.Key.Artist, () => { OpenLocalCollection(g.Key.Album!, g); return Task.CompletedTask; }, songActions: false))));
         if (_music.HomeLoading || !string.IsNullOrEmpty(_music.HomeMessage)) next.Add(Text(_music.HomeLoading ? "Preparando descobertas… Sua biblioteca já está disponível." : _music.HomeMessage, UiTheme.Caption, Muted));
-        var personalize = ActionButton("Personalizar meu som", () => { ShowMusicOnboarding(edit: true); return Task.CompletedTask; });
-        var refresh = ActionButton("Atualizar recomendações", () => _music.RefreshRecommendationsAsync(true));
         var recommended = _music.Queue.Where(_music.IsRecommended).Take(12).ToArray();
         if (recommended.Length > 0) Shelf("Porque você ouviu…", _music.PlaybackContext, recommended.Select(t => Card(t, () => TrackCard(t))));
         if (_music.History.Count >= 5)
@@ -440,16 +446,11 @@ public sealed partial class MainView : UserControl
                 var art = new Track(p.Id, p.Title, "Playlist", "https://www.youtube.com/playlist?list=" + Uri.EscapeDataString(p.Id), Thumbnail: p.Thumbnail);
                 return Card(art, () => CoverCard(art, "Playlist", () => ShowAccountTracksAsync(_account!, p.Id, p.Title), playlist: true));
             }));
-            var update = ActionButton(_accountLoading ? "Carregando…" : "Atualizar biblioteca", LoadAccountHomeAsync); update.HorizontalAlignment = HorizontalAlignment.Left; next.Add(update);
         }
         if (!_androidLayout && Bounds.Width >= UiTheme.DesktopWidth && _music.Queue.Count > 0)
             Shelf("A seguir", "Próximas músicas da sua fila", _music.Upcoming.Take(20).Select(t => Card(t, () => TrackCard(t))));
         Shelf("Suas músicas favoritas", "Favoritos e arquivos salvos no Hibike", _music.Favorites.OrderByDescending(t => _music.Listening.GetValueOrDefault(MusicController.SongKey(t))?.LastPlayed).Take(30).Select(t => Card(t, () => TrackCard(t))));
         if (_music.Favorites.Count == 0) next.Add(ActionButton("Importar músicas para sua coleção", OpenLocalAsync));
-        var tools = new WrapPanel { ItemSpacing = UiTheme.CompactGap, LineSpacing = UiTheme.CompactGap };
-        personalize.Classes.Add("pill"); refresh.Classes.Add("pill");
-        tools.Children.Add(personalize); tools.Children.Add(refresh);
-        next.Add(tools);
         if (_androidLayout)
             foreach (var control in next.Where(control => control.Tag is not ValueTuple<string, string>))
                 control.Margin = new Thickness(UiTheme.MobileGutter, control.Margin.Top, UiTheme.MobileGutter, control.Margin.Bottom);
@@ -772,6 +773,11 @@ public sealed partial class MainView : UserControl
         artistLink.Padding = UiTheme.Zero;
         artistLink.HorizontalContentAlignment = HorizontalAlignment.Left;
         labels.Children.Add(artistLink);
+        _expandedRecoveryNotice = Text("", UiTheme.Caption, UiTheme.Warning);
+        _expandedRecoveryNotice.IsVisible = false;
+        _expandedRecoveryNotice.TextWrapping = TextWrapping.Wrap;
+        _expandedRecoveryNotice.MaxLines = 2;
+        labels.Children.Add(_expandedRecoveryNotice);
         metadata.Children.Add(labels);
         Track? artworkTrack = null;
         _updatePlayerTrack = UpdatePlayerTrack;
@@ -966,6 +972,7 @@ public sealed partial class MainView : UserControl
     {
         if (!_showingPlayer && _playerPage is null) return;
         if (_playerPage is { } closingPlayer) RemoveAfterExit(closingPlayer, 14);
+        _expandedRecoveryNotice = null;
         _playerPage = null; _showingPlayer = false; _main.IsVisible = true; _bottom.IsVisible = _androidLayout || Bounds.Width < UiTheme.DesktopWidth;
         _detailShuffle = _detailRepeat = _detailFavorite = null; _detailVolume = null;
         _updatePlayerTrack = null;
@@ -1015,6 +1022,14 @@ public sealed partial class MainView : UserControl
         if ((_page == "queue" || _queuePane.IsVisible) && _mobileQueuePlay is not null) RefreshPlayButton(_mobileQueuePlay);
         UpdateRows(_music.Pending ?? _music.Current);
         RefreshPlayButton(_play);
+        var recovery = _music.PlaybackRecoveryMessage;
+        _miniRecoveryNotice.Text = recovery;
+        _miniRecoveryNotice.IsVisible = recovery is not null;
+        if (_expandedRecoveryNotice is { } notice)
+        {
+            notice.Text = recovery;
+            notice.IsVisible = recovery is not null;
+        }
         if (_detailPlay is not null) RefreshPlayButton(_detailPlay);
         var duration = PlaybackDuration;
         _progress.Maximum = Math.Max(1, duration); _progress.Value = Math.Min(_music.Position, _progress.Maximum);
@@ -1102,7 +1117,6 @@ public sealed partial class MainView : UserControl
         OpenPreferencesPage("settings", "Configurações", sections.ToArray());
     }
     private YouTubeAccountLibrary? _account;
-    private DiscordAccountPresence? _discordAccount;
     private Task ShowDiscordAccountAsync()
     {
         var storage = AppServices.DiscordTokenStorage;
@@ -1145,8 +1159,10 @@ public sealed partial class MainView : UserControl
             try
             {
                 storage?.Clear();
-                _discordAccount?.Dispose();
-                _discordAccount = null;
+                _discordRetryAllowed = false;
+                _discordRetryTimer.Stop();
+                _discordRecoveryStatus = null;
+                ReplaceDiscordConnection(null);
                 CloseSheet();
             }
             catch (Exception error)
@@ -1156,11 +1172,10 @@ public sealed partial class MainView : UserControl
             }
             return Task.CompletedTask;
         });
-        DiscordAccountPresence? observed = null;
         DiscordAccountPresence.DiscordProfile? rendered = null;
         void UpdatePresence()
         {
-            var profile = observed?.Profile;
+            var profile = _discordAccount?.Profile;
             if (!Equals(profile, rendered))
             {
                 rendered = profile;
@@ -1173,27 +1188,19 @@ public sealed partial class MainView : UserControl
             username.Text = profile is null ? "" : "@" + profile.Username;
             hasSaved = storage?.Exists() == true;
             useSaved.IsVisible = hasSaved;
-            disconnect.IsVisible = hasSaved || observed is not null;
-            status.Text = observed?.Status ?? (hasSaved ? "Token salvo neste aparelho" : "Desconectado");
+            disconnect.IsVisible = hasSaved || _discordAccount is not null;
+            status.Text = _discordRecoveryStatus ?? _discordAccount?.Status ?? (hasSaved ? "Token salvo neste aparelho" : "Desconectado");
             profileLink.IsVisible = profile is not null;
-            activity.Text = observed?.PublishedTrack is { } current
+            activity.Text = _discordAccount?.PublishedTrack is { } current
                 ? "Atividade enviada · " + TrackTextFormatter.Title(current.Title, current.Artist) + " · " + TrackTextFormatter.Artist(current.Artist)
                 : "Sem faixa publicada";
         }
-        void OnPresenceChanged() => Dispatcher.UIThread.Post(UpdatePresence);
-        void Observe(DiscordAccountPresence? connection)
+        panel.AttachedToVisualTree += (_, _) =>
         {
-            if (observed is not null) observed.Changed -= OnPresenceChanged;
-            observed = connection;
-            if (observed is not null) observed.Changed += OnPresenceChanged;
+            DiscordConnectionChanged += UpdatePresence;
             UpdatePresence();
-        }
-        panel.AttachedToVisualTree += (_, _) => Observe(_discordAccount);
-        panel.DetachedFromVisualTree += (_, _) =>
-        {
-            if (observed is not null) observed.Changed -= OnPresenceChanged;
-            observed = null;
         };
+        panel.DetachedFromVisualTree += (_, _) => DiscordConnectionChanged -= UpdatePresence;
 
         actions.Children.Add(CollectionAction("Conectar", () => ConnectAsync(saved: false), prominent: true));
         actions.Children.Add(useSaved);
@@ -1225,26 +1232,7 @@ public sealed partial class MainView : UserControl
                 }
                 token.Text = "";
                 if (string.IsNullOrWhiteSpace(value)) { status.Text = "Informe um token para conectar."; return; }
-                _discordAccount?.Dispose();
-                var connection = new DiscordAccountPresence(_music);
-                _discordAccount = connection;
-                Observe(connection);
-                await connection.ConnectAsync(value);
-                if (!ReferenceEquals(_discordAccount, connection)) return;
-                if (!saved && storage is { } local)
-                {
-                    try
-                    {
-                        if (remember.IsChecked == true) local.Save(value);
-                        else local.Clear();
-                    }
-                    catch (Exception error)
-                    {
-                        PlaybackDiagnostics.WriteFailure(DiagnosticSector.Discord, "Atualizar token local", error);
-                        status.Text = "Discord conectado. Não foi possível atualizar o token salvo.";
-                        return;
-                    }
-                }
+                await ConnectDiscordAsync(value, saved, remember.IsChecked == true);
                 UpdatePresence();
             }
             catch

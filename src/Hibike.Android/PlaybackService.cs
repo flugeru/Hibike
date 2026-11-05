@@ -31,6 +31,7 @@ public sealed class PlaybackService : MediaSessionService
     private string? _lastError;
     public global::Android.Media.Session.MediaSession.Token? PlatformToken => _session?.PlatformToken;
     public bool Playing { get; private set; }
+    public bool Buffering { get; private set; }
     public double Position { get; private set; }
     public double Duration { get; private set; }
     public double BufferedPosition { get; private set; }
@@ -64,6 +65,7 @@ public sealed class PlaybackService : MediaSessionService
             Playing = _player.IsPlaying; Position = Math.Max(0, _player.CurrentPosition) / 1000d;
             BufferedPosition = Math.Max(0, _player.BufferedPosition) / 1000d;
             Duration = Math.Max(0, _player.Duration) / 1000d; State = _player.PlaybackState;
+            Buffering = State == 2 && _player.PlayWhenReady;
             Error = _player.PlayerError?.Message;
             if (Error is not null && Error != _lastError) { _lastError = Error; Failed?.Invoke(this, Error); }
             if (State == 4 && _state != 4) Ended?.Invoke(this, EventArgs.Empty);
@@ -127,6 +129,16 @@ public sealed class PlaybackService : MediaSessionService
     {
         public override bool IsCommandAvailable(int command) => AvailableCommands?.Contains(command) ?? false;
         public override PlayerCommands? AvailableCommands => new PlayerCommands.Builder().AddAll(base.AvailableCommands)!.AddAll(6, 7, 8, 9)!.Build();
+        public override void Play()
+        {
+            if (AppServices.Controller is { } controller) Dispatcher.UIThread.Post(async () => await controller.ResumePlaybackAsync());
+            else base.Play();
+        }
+        public override void Pause()
+        {
+            if (AppServices.Controller is { } controller) Dispatcher.UIThread.Post(() => controller.PausePlayback());
+            else base.Pause();
+        }
         public override void SeekToNext() => Next();
         public override void SeekToNextMediaItem() => Next();
         public override void SeekToPrevious() => Previous();

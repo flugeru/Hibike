@@ -59,6 +59,7 @@ internal static partial class Program
                 if (args.Contains("--queue-only"))
                 {
                     await RunQueueRegressionChecksAsync(directory, view, window);
+                    await RunRecoveryChecksAsync(directory, view);
                     await CheckHomeInertiaAsync(view);
                     result = 0;
                     Console.WriteLine("Queue, radio and home inertia regression checks passed.");
@@ -416,7 +417,9 @@ internal static partial class Program
                         toggleTopMenu.Invoke(view, null); await Task.Delay(300);
                         var topMenu = (Grid)typeof(MainView).GetField("_topMenuLayer", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
                         Check(topMenu.IsVisible && topMenu.Children[0].Bounds.Height > 100 && topMenu.Children[0].Bounds.Width <= view.Bounds.Width, "Top menu clipped or collapsed");
-                        Check(topMenu.GetVisualDescendants().OfType<Button>().Count() >= 4, "Top menu missing actions");
+                        var menuNames = topMenu.GetVisualDescendants().OfType<Button>().Select(Avalonia.Automation.AutomationProperties.GetName).ToArray();
+                        Check(menuNames.Length >= 6 && menuNames.Contains("Personalizar meu som") && menuNames.Contains("Atualizar recomendações"),
+                            "Home actions missing from the profile menu");
                         Capture(view, "top-menu-360"); Check(AppServices.BackHandler!(), "Top menu ignores back"); await Task.Delay(300);
                         Check(!topMenu.IsVisible, "Top menu did not close");
                     }

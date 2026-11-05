@@ -28,7 +28,9 @@ public sealed partial class MusicController
     private int _queueSession;
     public int CurrentQueueIndex => Current is null ? -1 : Queue.ToList().FindIndex(t => t.Source == Current.Source);
     public IEnumerable<Track> Upcoming => Queue.Skip(CurrentQueueIndex + 1);
-    public double Position => _restored ? _resumePosition : _seekAfterLoad ?? Player.Position;
+    public double Position => _restored ? _resumePosition
+        : _playbackRecovery is { } recovery && Current?.Source == recovery.Track.Source ? recovery.Position
+        : _seekAfterLoad ?? Player.Position;
     public string DataDirectory { get; }
     public IAudioPlayer Player { get; }
     public ObservableCollection<Track> Results { get; } = [];
@@ -74,15 +76,31 @@ public sealed partial class MusicController
         LoadPersonalization();
         Queue.CollectionChanged += (_, _) => _queueIndex = CurrentQueueIndex;
         Changed += SaveSession;
-        Player.Ended += (_, _) => Dispatcher.UIThread.Post(async () =>
-        { RecordFinish(); if (Repeat && Current is not null) await PlayAsync(Current, CurrentQueueIndex); else await NextAsync(); });
-        Player.Failed += (_, message) => Dispatcher.UIThread.Post(() => Fail(message));
+        Player.Ended += (_, _) =>
+        {
+            var generation = _playGeneration;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                if (generation != _playGeneration || LoadingAudio || _playbackRecovery is not null) return;
+                RecordFinish();
+                if (Repeat && Current is not null) await PlayAsync(Current, CurrentQueueIndex);
+                else await NextAsync();
+            });
+        };
+        Player.Failed += (_, message) =>
+        {
+            var generation = _playGeneration;
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (generation == _playGeneration && !LoadingAudio) HandlePlaybackFailure(message);
+            });
+        };
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _timer.Tick += (_, _) =>
         {
             RecordListening();
             if (SleepAt is { } sleep && DateTime.UtcNow >= sleep)
-            { SleepAt = null; Player.Pause(); SetStatus("Sleep timer: reprodução pausada."); }
+            { SleepAt = null; PausePlayback(); SetStatus("Sleep timer: reprodução pausada."); }
             if (_seekAfterLoad is { } seek && Player.Duration > 0)
             { Player.Seek(Math.Min(seek, Player.Duration)); _seekAfterLoad = null; }
             if ((DateTime.UtcNow - _lastSave).TotalSeconds >= 5) SaveSession();
@@ -90,6 +108,7 @@ public sealed partial class MusicController
             { _radio = true; _radioSeed = Current; }
             if (_radio && !LoadingAudio && Player.IsPlaying && _queueIndex + 1 >= Queue.Count && DateTime.UtcNow >= _radioRetryAt)
                 _ = FillRadioAsync();
+            ObservePlaybackRecovery(DateTime.UtcNow);
             Tick?.Invoke();
         };
         _timer.Start();
@@ -184,11 +203,19 @@ public sealed partial class MusicController
         else Queue.Add(track);
         if (notify) SetStatus("Adicionada à fila: " + track.Title);
     }
-    public async Task PlayAsync(Track track, int? queueIndex = null)
+    public Task PlayAsync(Track track, int? queueIndex = null) => PlayCoreAsync(track, queueIndex, null);
+
+    private async Task PlayCoreAsync(Track track, int? queueIndex, PlaybackRecovery? recovery)
     {
         if (track.IsArtist) { SetStatus("Abra o artista para escolher uma faixa."); return; }
+        var continuing = recovery is not null && !_restored && Current?.Source == track.Source;
+        _playGeneration++;
+        _wantsPlayback = true;
+        _playbackRecovery = track.IsLocal ? null : recovery;
+        _bufferingSince = null;
+        if (recovery is null) _lastPlaybackPosition = 0;
         if (Current?.Source != track.Source) CancelRadioRequest();
-        if (queueIndex is null)
+        if (queueIndex is null && recovery is null)
         {
             _radio = Autoplay && !track.IsLocal && (_queueIndex + 1 >= Queue.Count || Queue.Count == 1 && Queue[0].Source == track.Source);
             _radioSeed = _radio ? track : null;
@@ -198,7 +225,7 @@ public sealed partial class MusicController
         if (Current is not null && Current.Source != track.Source) RecordSkip();
         _play?.Cancel();
         var request = new CancellationTokenSource();
-        var requestedSource = _requestedPlaybackSource;
+        var requestedSource = recovery?.Source ?? _requestedPlaybackSource;
         _play = request;
         HasError = false; Pending = track; LoadingAudio = true; SetStatus("Obtendo áudio…");
         var stage = "YT-DLP";
@@ -208,6 +235,12 @@ public sealed partial class MusicController
             PlaybackDiagnostics.Write("Reprodução", "Aguardando tentativa anterior.");
             await _playGate.WaitAsync(request.Token); entered = true;
             PlaybackDiagnostics.Write("Reprodução", "Tentativa liberada; preparando áudio.");
+            if (!track.IsLocal && !AppServices.HasNetwork)
+            {
+                Player.Pause();
+                ScheduleRecovery(recovery ?? new(track, queueIndex, requestedSource, 0));
+                return;
+            }
             if (track.IsLocal)
             {
                 var original = track;
@@ -217,7 +250,11 @@ public sealed partial class MusicController
                 index = Favorites.IndexOf(original); if (index >= 0) Favorites[index] = track;
                 Pending = track;
             }
-            if (Player is IAudioPreparation preparing) await preparing.BeginPreparationAsync(track, request.Token);
+            if (Player is IAudioPreparation preparing)
+            {
+                if (continuing) await preparing.BeginRecoveryAsync(track, request.Token);
+                else await preparing.BeginPreparationAsync(track, request.Token);
+            }
             Player.Pause();
             PlaybackDiagnostics.Write("Reprodução", "Iniciando resolução de " + track.Id);
             using var extractTimeout = CancellationTokenSource.CreateLinkedTokenSource(request.Token);
@@ -240,12 +277,23 @@ public sealed partial class MusicController
             Current = track;
             _queueIndex = CurrentQueueIndex;
             ActivePlaybackTrack = resolved.Track;
-            BeginListening(track);
-            var previousHistory = History.FirstOrDefault(t => t.Source == track.Source);
-            if (previousHistory is not null) History.Remove(previousHistory);
-            History.Insert(0, track); if (History.Count > 100) History.RemoveAt(100);
-            RerankHome();
-            if (OnboardingCompleted) _ = RefreshRecommendationsAsync();
+            if (recovery is { Position: > 0 })
+            {
+                if (Player.Duration > 0) Player.Seek(Math.Min(recovery.Position, Player.Duration));
+                else _seekAfterLoad = recovery.Position;
+                _lastPlaybackPosition = recovery.Position;
+            }
+            _playbackRecovery = null;
+            if (continuing) _listenTick = DateTime.UtcNow;
+            else
+            {
+                BeginListening(track);
+                var previousHistory = History.FirstOrDefault(t => t.Source == track.Source);
+                if (previousHistory is not null) History.Remove(previousHistory);
+                History.Insert(0, track); if (History.Count > 100) History.RemoveAt(100);
+                RerankHome();
+                if (OnboardingCompleted) _ = RefreshRecommendationsAsync();
+            }
             var playbackSource = Player.PlaybackSource ?? source;
             CurrentSource = playbackSource with
             {
@@ -269,10 +317,20 @@ public sealed partial class MusicController
             if (ReferenceEquals(_play, request))
             {
                 if (request.IsCancellationRequested) Status = "Reprodução cancelada.";
+                else if (!track.IsLocal) ScheduleRecovery(recovery ?? new(track, queueIndex, requestedSource, 0));
                 else Fail(stage == "YT-DLP" ? "O YT-DLP não respondeu em 35 s. Tente novamente ou escolha outra faixa." : "O servidor de áudio não respondeu em 18 s. Tente outra faixa.");
             }
         }
-        catch (Exception ex) { PlaybackDiagnostics.Write("Reprodução", "Falha; etapa=" + stage + "; " + ex.Message); if (ReferenceEquals(_play, request)) Fail(ex.Message); }
+        catch (Exception ex)
+        {
+            PlaybackDiagnostics.Write("Reprodução", "Falha; etapa=" + stage + "; " + ex.Message);
+            if (ReferenceEquals(_play, request) && !request.IsCancellationRequested)
+            {
+                if (!track.IsLocal && (recovery is not null || !AppServices.HasNetwork || ex is HttpRequestException or IOException))
+                    ScheduleRecovery(recovery ?? new(track, queueIndex, requestedSource, 0));
+                else Fail(ex.Message);
+            }
+        }
         finally
         {
             if (Player is IAudioPreparation preparing && !Player.IsPlaying) preparing.CancelPreparation();
@@ -281,36 +339,25 @@ public sealed partial class MusicController
             request.Dispose();
         }
     }
-    public void CancelPlayback() => _play?.Cancel();
-    public async Task ToggleAsync()
+    public void CancelPlayback()
     {
-        if (LoadingAudio) { CancelPlayback(); return; }
-        try
-        {
-            if (Player.IsPlaying) Player.Pause();
-            else if (Current is not null && _restored)
-            {
-                var position = _resumePosition;
-                await PlayAsync(Current, _queueIndex >= 0 ? _queueIndex : null);
-                if (!HasError)
-                {
-                    if (Player.Duration > 0) Player.Seek(Math.Min(position, Player.Duration));
-                    else _seekAfterLoad = position;
-                    SaveSession();
-                }
-                return;
-            }
-            else if (Current is not null) Player.Resume();
-            else if (Queue.Count > 0) await PlayAsync(Queue[0], 0);
-            else { SetStatus("Escolha uma faixa ou abra um arquivo de áudio."); return; }
-            Status = Player.IsPlaying ? "Tocando agora" : "Pausado"; Changed?.Invoke();
-        }
-        catch (Exception ex) { SetStatus(ex.Message); }
+        _playbackRecovery = null;
+        _bufferingSince = null;
+        if (_play is not null || !Player.IsPlaying) _wantsPlayback = false;
+        _play?.Cancel();
+    }
+
+    public Task ToggleAsync()
+    {
+        if (LoadingAudio) { CancelPlayback(); return Task.CompletedTask; }
+        if (Player.IsPlaying) { PausePlayback(); return Task.CompletedTask; }
+        return ResumePlaybackAsync();
     }
     public async Task NextAsync()
     {
         if (_advancing) return;
         _advancing = true;
+        _playbackRecovery = null;
         var session = _queueSession; var current = Current;
         try
         {
@@ -319,7 +366,7 @@ public sealed partial class MusicController
             if (session != _queueSession || Current != current || Queue.Count == 0) return;
             var next = Shuffle && Queue.Count > 1 ? PickRandomIndex() : _queueIndex + 1;
             if (next >= Queue.Count && RepeatQueue) next = 0;
-            if (next >= Queue.Count) { Player.Pause(); SetStatus("Você chegou ao fim da fila."); return; }
+            if (next >= Queue.Count) { PausePlayback(); SetStatus("Você chegou ao fim da fila."); return; }
             await PlayAsync(Queue[next], next);
         }
         finally { _advancing = false; }

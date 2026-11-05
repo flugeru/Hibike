@@ -37,14 +37,23 @@ public sealed partial class MainView
         {
             var button = ActionButton("", async () => { CloseTopMenu(); ClosePlayer(); CloseSheet(); await action(); });
             button.Classes.Add("topMenuAction");
-            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, VerticalAlignment = VerticalAlignment.Center };
-            row.Children.Add(Icons.Make(icon, Muted, 22)); row.Children.Add(Text(label, UiTheme.Body)); button.Content = row;
+            var row = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = 12, VerticalAlignment = VerticalAlignment.Center };
+            row.Children.Add(Icons.Make(icon, Muted, 22));
+            var caption = Text(label, UiTheme.Body);
+            caption.TextWrapping = TextWrapping.Wrap;
+            Put(row, caption, 0, 1);
+            button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+            button.Content = row;
             Avalonia.Automation.AutomationProperties.SetName(button, label); items.Children.Add(button);
         }
         Add("account", "Minha conta", ShowAccountAsync);
         Add("settings", "Configurações", () => { ShowSettings(); return Task.CompletedTask; });
         Add("folder", "Importar músicas do dispositivo", OpenLocalAsync);
         Add("plus", "Nova playlist local", () => { ShowNewPlaylist(); return Task.CompletedTask; });
+        if (_account is not null)
+            Add("refresh", "Atualizar biblioteca", LoadAccountHomeAsync);
+        Add("heart", "Personalizar meu som", () => { ShowMusicOnboarding(edit: true); return Task.CompletedTask; });
+        Add("refresh", "Atualizar recomendações", () => _music.RefreshRecommendationsAsync(true));
         foreach (var playlist in _music.Playlists.Where(p => p.Pinned))
             Add("queue", playlist.Name, () => { ShowLocalPlaylist(playlist); return Task.CompletedTask; });
         _topMenuPanel.Child = new ScrollViewer { Content = items, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
