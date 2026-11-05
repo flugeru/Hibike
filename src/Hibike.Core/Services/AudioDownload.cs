@@ -14,7 +14,7 @@ namespace Hibike.Core.Services;
 /// <param name="BytesPerSecond">Measured throughput over the most recent reporting interval.</param>
 public readonly record struct AudioDownloadProgress(long Bytes, long? TotalBytes, double BytesPerSecond = 0);
 
-public static class AudioDownload
+public static partial class AudioDownload
 {
     private const int BufferSize = 128 * 1024;
     private const int MaxAttempts = 3;
@@ -55,7 +55,11 @@ public static class AudioDownload
             token.ThrowIfCancellationRequested();
             try
             {
-                await TransferAsync(client ?? Client, uri, source.Headers, temporary, metadataPath, progress, token).ConfigureAwait(false);
+                var segmented = (uri.Host.Equals("googlevideo.com", StringComparison.OrdinalIgnoreCase)
+                    || uri.Host.EndsWith(".googlevideo.com", StringComparison.OrdinalIgnoreCase))
+                    && await TrySegmentedAsync(client ?? Client, uri, source.Headers, temporary, metadataPath, progress, token).ConfigureAwait(false);
+                if (!segmented)
+                    await TransferAsync(client ?? Client, uri, source.Headers, temporary, metadataPath, progress, token).ConfigureAwait(false);
                 token.ThrowIfCancellationRequested();
                 File.Move(temporary, destination, overwrite: true);
                 File.Delete(metadataPath);

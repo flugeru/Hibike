@@ -128,6 +128,123 @@ public sealed class AudioDownloadTests
     private static AudioSource Source() => new("https://example.test/audio", new Dictionary<string, string>(), Container: "mp3");
 
     [Fact]
+    public async Task CdnBlocksRunInParallelAndPublishExactOrderedBytes()
+    {
+        var directory = CreateDirectory();
+        try
+        {
+            var payload = RandomNumberGenerator.GetBytes(1400000);
+            var active = 0;
+            var maximum = 0;
+            using var client = new HttpClient(new AsyncHandler(async (request, token) =>
+            {
+                var requested = request.Headers.Range!.Ranges.Single();
+                var from = (int)requested.From!.Value;
+                var to = (int)requested.To!.Value;
+                if (to > 0)
+                {
+                    Assert.Equal("\"blocks-v1\"", request.Headers.IfRange?.EntityTag?.Tag);
+                    var current = Interlocked.Increment(ref active);
+                    Interlocked.Exchange(ref maximum, Math.Max(maximum, current));
+                    await Task.Delay(25, token);
+                    Interlocked.Decrement(ref active);
+                }
+                var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
+                    { Content = new ByteArrayContent(payload[from..(to + 1)]) };
+                response.Headers.ETag = EntityTagHeaderValue.Parse("\"blocks-v1\"");
+                response.Content.Headers.ContentRange = new ContentRangeHeaderValue(from, to, payload.Length);
+                return response;
+            }));
+            var source = Source() with { Url = "https://test.googlevideo.com/audio" };
+            var path = await AudioDownload.SaveAsync(source, directory, null, CancellationToken.None, "parallel", client);
+            Assert.InRange(maximum, 2, 4);
+            Assert.Equal(payload, await File.ReadAllBytesAsync(path));
+            Assert.False(File.Exists(path + ".part"));
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CdnFallsBackWhenRangeIgnoredOrValidatorChanges(bool changeValidator)
+    {
+        var directory = CreateDirectory();
+        try
+        {
+            var payload = RandomNumberGenerator.GetBytes(600000);
+            var fullRequests = 0;
+            using var client = new HttpClient(new StubHandler(request =>
+            {
+                if (request.Headers.Range is null)
+                {
+                    fullRequests++;
+                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(payload) };
+                }
+                var requested = request.Headers.Range.Ranges.Single();
+                var from = (int)requested.From!.Value;
+                var to = (int)requested.To!.Value;
+                if (!changeValidator)
+                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(payload) };
+                var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
+                    { Content = new ByteArrayContent(payload[from..(to + 1)]) };
+                response.Headers.ETag = EntityTagHeaderValue.Parse(to == 0 ? "\"original\"" : "\"changed\"");
+                response.Content.Headers.ContentRange = new ContentRangeHeaderValue(from, to, payload.Length);
+                return response;
+            }));
+            var path = await AudioDownload.SaveAsync(Source() with { Url = "https://test.googlevideo.com/audio" },
+                directory, null, CancellationToken.None, "fallback", client);
+            Assert.Equal(1, fullRequests);
+            Assert.Equal(payload, await File.ReadAllBytesAsync(path));
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    private sealed class AsyncHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> respond) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => respond(request, cancellationToken);
+    }
+
+    [Fact]
+    public async Task CancelledBlockBatchResumesFromValidatedContiguousPrefix()
+    {
+        var directory = CreateDirectory();
+        try
+        {
+            var payload = RandomNumberGenerator.GetBytes(1600000);
+            using var cancellation = new CancellationTokenSource();
+            var ranges = new List<long>();
+            using var client = new HttpClient(new StubHandler(request =>
+            {
+                var range = request.Headers.Range!.Ranges.Single();
+                var from = (int)range.From!.Value;
+                var to = (int)range.To!.Value;
+                ranges.Add(from);
+                var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
+                    { Content = new ByteArrayContent(payload[from..(to + 1)]) };
+                response.Headers.ETag = EntityTagHeaderValue.Parse("\"resume-v1\"");
+                response.Content.Headers.ContentRange = new ContentRangeHeaderValue(from, to, payload.Length);
+                return response;
+            }));
+            var source = Source() with { Url = "https://test.googlevideo.com/audio" };
+            var progress = new ImmediateProgress(update => { if (update.Bytes > 0) cancellation.Cancel(); });
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                AudioDownload.SaveAsync(source, directory, progress, cancellation.Token, "resume-blocks", client));
+            Assert.Empty(Directory.GetFiles(directory, "*.mp3"));
+            var partial = Directory.GetFiles(directory, "*.part").Single();
+            var saved = new FileInfo(partial).Length;
+            Assert.Equal(1048576, saved);
+            ranges.Clear();
+            var path = await AudioDownload.SaveAsync(source, directory, null, CancellationToken.None, "resume-blocks", client);
+            Assert.Contains(saved, ranges);
+            Assert.DoesNotContain(262144L, ranges);
+            Assert.Equal(payload, await File.ReadAllBytesAsync(path));
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Fact]
     public async Task ReportsLengthBeforeFirstReadAndHonorsCancellationWithoutRetry()
     {
         var directory = CreateDirectory();
