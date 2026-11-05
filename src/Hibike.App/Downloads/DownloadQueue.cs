@@ -1,6 +1,5 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Runtime.CompilerServices;
 using Hibike.Core.Models;
 using Hibike.Core.Services;
 
@@ -22,7 +21,7 @@ internal sealed class DownloadJob(Track track) : INotifyPropertyChanged
     public bool PauseRequested { get; internal set; }
 
     public bool CanPause => Stage is TransferStage.Queued or TransferStage.Resolving or TransferStage.Transferring;
-    public bool CanResume => Stage is TransferStage.Paused or TransferStage.Failed && Cancellation is null;
+    public bool CanResume => (Stage is TransferStage.Paused or TransferStage.Failed) && Cancellation is null;
     public bool CanCancel => Stage is TransferStage.Queued or TransferStage.Resolving or TransferStage.Transferring
         or TransferStage.Paused or TransferStage.Failed;
     public double Progress => TotalBytes is > 0 ? Math.Clamp((double)Bytes / TotalBytes.Value, 0, 1) : 0;
