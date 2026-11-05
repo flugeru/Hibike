@@ -116,7 +116,11 @@ public sealed partial class MusicController
             catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or UnauthorizedAccessException)
             { PlaybackDiagnostics.Write("Sessão", ex.Message); }
         }
-        catch (Exception ex) { Status = "Não foi possível ler a biblioteca: " + ex.Message; }
+        catch (Exception ex)
+        {
+            PlaybackDiagnostics.WriteFailure(DiagnosticSector.Storage, "Abrir biblioteca", ex);
+            Status = "Não foi possível ler a biblioteca: " + ex.Message;
+        }
         finally
         {
             // A timer tick must not overwrite the stored session while the library is loading.
@@ -147,7 +151,15 @@ public sealed partial class MusicController
             Status = tracks.Count == 0 ? "Nenhuma faixa encontrada. Tente outro nome." : $"{tracks.Count} faixas encontradas.";
         }
         catch (OperationCanceledException) { if (ReferenceEquals(_search, request)) Status = "Busca cancelada ou tempo esgotado. Tente novamente."; }
-        catch (Exception ex) { if (ReferenceEquals(_search, request)) { SearchError = Status = ex.Message; HasError = true; } }
+        catch (Exception ex)
+        {
+            if (ReferenceEquals(_search, request))
+            {
+                PlaybackDiagnostics.WriteFailure(DiagnosticSector.Catalog, "Busca de faixas", ex);
+                SearchError = Status = ex.Message;
+                HasError = true;
+            }
+        }
         finally
         {
             if (ReferenceEquals(_search, request)) { Searching = false; _search = null; Changed?.Invoke(); }

@@ -5,6 +5,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Avalonia.Headless;
+using Avalonia.Input.Platform;
 using Hibike.App;
 using Hibike.App.Views;
 using Hibike.Core.Models;
@@ -167,7 +168,7 @@ internal static partial class Program
                 Check(typeof(MainView).GetField("_overlay", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view) is null, "Settings still use modal menu");
                 Check(!view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.IsEffectivelyVisible && t.Text == "Região dos rankings · ZZ = mundo"), "Retired chart settings visible");
                 Check(!view.GetVisualDescendants().OfType<Button>().Any(b => b.IsEffectivelyVisible && b.Content as string == "Limpar feedback Não tenho interesse"), "Retired feedback reset visible");
-                Check(view.GetVisualDescendants().OfType<Button>().Any(b => b.IsEffectivelyVisible && Avalonia.Automation.AutomationProperties.GetName(b) == "Diagnóstico de reprodução"), "Playback diagnostics missing from settings");
+                Check(view.GetVisualDescendants().OfType<Button>().Any(b => b.IsEffectivelyVisible && Avalonia.Automation.AutomationProperties.GetName(b) == "Diagnósticos"), "Diagnostics missing from settings");
                 Check(view.GetVisualDescendants().OfType<Button>().Any(b => b.IsEffectivelyVisible && Avalonia.Automation.AutomationProperties.GetName(b) == "Laboratório experimental") == toolsEnabled, "Developer lab visibility incorrect");
                 foreach (var width in new[] { 360, 1260 })
                 {
@@ -175,6 +176,36 @@ internal static partial class Program
                     Capture(view, $"settings-page-{width}");
                     Check(view.GetVisualDescendants().OfType<Slider>().Any(s => s.IsEffectivelyVisible && Avalonia.Automation.AutomationProperties.GetName(s) == "Volume nas configurações"), "Settings playback controls missing");
                 }
+                PlaybackDiagnostics.Write(DiagnosticSector.Discord, "Teste", "Evento Discord para cópia.");
+                PlaybackDiagnostics.Write(DiagnosticSector.Google, "Teste", "Evento Google para cópia.");
+                var diagnosticsLink = view.GetVisualDescendants().OfType<Button>().Single(button => button.IsEffectivelyVisible
+                    && Avalonia.Automation.AutomationProperties.GetName(button) == "Diagnósticos");
+                diagnosticsLink.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                await Task.Delay(100);
+                var diagnosticsOverlay = (Border)typeof(MainView).GetField("_overlay", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
+                var sectorSelector = diagnosticsOverlay.GetVisualDescendants().OfType<ComboBox>().Single();
+                sectorSelector.SelectedItem = "Conta Discord";
+                var report = diagnosticsOverlay.GetVisualDescendants().OfType<SelectableTextBlock>().Single();
+                Check(report.Text?.Contains("Evento Discord para cópia.") == true && !report.Text.Contains("Evento Google"),
+                    "Diagnostics did not isolate the selected sector");
+                if (args.Contains("--headless") && window.Clipboard is { } clipboard)
+                {
+                    var copySector = diagnosticsOverlay.GetVisualDescendants().OfType<Button>().Single(button => Equals(button.Content, "Copiar setor"));
+                    copySector.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                    await Task.Delay(50);
+                    var copied = await clipboard.TryGetTextAsync();
+                    Check(copied?.Contains("Evento Discord para cópia.") == true && !copied.Contains("Evento Google"),
+                        "Copy sector included unrelated diagnostics");
+                    var copyAll = diagnosticsOverlay.GetVisualDescendants().OfType<Button>().Single(button => Equals(button.Content, "Copiar todos"));
+                    copyAll.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                    await Task.Delay(50);
+                    copied = await clipboard.TryGetTextAsync();
+                    Check(copied?.Contains("Evento Discord para cópia.") == true && copied.Contains("Evento Google para cópia."),
+                        "Copy all omitted a sector");
+                }
+                Capture(view, "diagnostics");
+                Check(AppServices.BackHandler!(), "Diagnostics cannot close");
+                await Task.Delay(200);
                 AppServices.BackHandler!();
                 Check(view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.IsEffectivelyVisible && t.Text == "Hibike"), "Leaving settings did not restore home");
                 Check(!view.GetVisualDescendants().OfType<Slider>().Any(s => s.IsEffectivelyVisible && Avalonia.Automation.AutomationProperties.GetName(s) == "Volume nas configurações"), "Settings leaked into home");

@@ -617,14 +617,35 @@ public sealed partial class MainView : UserControl
             if (!ReferenceEquals(_account, account)) return;
             _accountPlaylists = playlists; _accountLikes = likes;
             _accountExpired = false; _accountError = null; _profileAccount = null;
+            PlaybackDiagnostics.Write(DiagnosticSector.Google, "Biblioteca", "Playlists e curtidas atualizadas.");
         }
-        catch (AccountSessionExpiredException) { if (ReferenceEquals(_account, account)) { _accountExpired = true; _accountError = "Sessão Google expirada ou revogada. Entre novamente em Perfil · Minha conta."; _music.SetStatus(_accountError); } }
-        catch { if (ReferenceEquals(_account, account)) { _accountError = "Não foi possível atualizar conta. Tente conexão novamente em Perfil · Minha conta."; _music.SetStatus(_accountError); } }
+        catch (AccountSessionExpiredException)
+        {
+            if (!ReferenceEquals(_account, account)) return;
+            PlaybackDiagnostics.Write(DiagnosticSector.Google, "Biblioteca", "Sessão expirada ou revogada.");
+            _accountExpired = true;
+            _accountError = "Sessão Google expirada ou revogada. Entre novamente em Perfil · Minha conta.";
+            _music.SetStatus(_accountError);
+        }
+        catch (Exception error)
+        {
+            if (!ReferenceEquals(_account, account)) return;
+            PlaybackDiagnostics.WriteFailure(DiagnosticSector.Google, "Atualizar biblioteca", error);
+            _accountError = "Não foi possível atualizar conta. Tente conexão novamente em Perfil · Minha conta.";
+            _music.SetStatus(_accountError);
+        }
         finally { _accountLoading = false; Refresh(); }
     }
     private void DisconnectAccount()
     {
-        AppServices.ClearYouTubeAccount?.Invoke(); _accountExpired = false; _accountError = null;
+        try { AppServices.ClearYouTubeAccount?.Invoke(); }
+        catch (Exception error)
+        {
+            PlaybackDiagnostics.WriteFailure(DiagnosticSector.Google, "Remover sessão", error);
+            throw;
+        }
+        PlaybackDiagnostics.Write(DiagnosticSector.Google, "Sessão", "Conta desconectada.");
+        _accountExpired = false; _accountError = null;
         _account?.Dispose(); _account = null; _accountPlaylists = []; _accountLikes = []; Refresh();
     }
     private Control EmptyState(string icon, string title, string message, string? action = null, Func<Task>? execute = null)
@@ -1071,7 +1092,7 @@ public sealed partial class MainView : UserControl
         })));
         if (OperatingSystem.IsAndroid()) sections.Add(PreferenceSection("Integrações", PreferenceLink("info", "Discord", "Atividade de reprodução", ShowDiscordAccountAsync)));
         var cookies = System.IO.Path.Combine(_music.DataDirectory, "youtube-cookies.txt");
-        var support = new List<Control> { PreferenceLink("info", "Diagnóstico de reprodução", "Detalhes para investigar falhas", () => { ShowDiagnostics(); return Task.CompletedTask; }), PreferenceLink("info", "Privacidade", "Como Hibike trata seus dados", () => OpenLegalAsync("privacy.html")), PreferenceLink("info", "Termos", "Condições de uso", () => OpenLegalAsync("terms.html")) };
+        var support = new List<Control> { PreferenceLink("info", "Diagnósticos", "Relatórios por setor para copiar", () => { ShowDiagnostics(); return Task.CompletedTask; }), PreferenceLink("info", "Privacidade", "Como Hibike trata seus dados", () => OpenLegalAsync("privacy.html")), PreferenceLink("info", "Termos", "Condições de uso", () => OpenLegalAsync("terms.html")) };
         if (System.IO.File.Exists(cookies)) support.Add(PreferenceLink("close", "Apagar cookies antigos (não utilizados)", "Remove arquivo legado", () => { System.IO.File.Delete(cookies); ShowSettings(); return Task.CompletedTask; }));
         if (DeveloperFeatures.Enabled)
         {
@@ -1128,7 +1149,11 @@ public sealed partial class MainView : UserControl
                 _discordAccount = null;
                 CloseSheet();
             }
-            catch { status.Text = "Não foi possível remover o token salvo."; }
+            catch (Exception error)
+            {
+                PlaybackDiagnostics.WriteFailure(DiagnosticSector.Discord, "Remover token local", error);
+                status.Text = "Não foi possível remover o token salvo.";
+            }
             return Task.CompletedTask;
         });
         DiscordAccountPresence? observed = null;
@@ -1175,6 +1200,11 @@ public sealed partial class MainView : UserControl
         useSaved.Click += async (_, _) => await ConnectAsync(saved: true);
         actions.Children.Add(disconnect);
 
+        panel.Children.Add(PreferenceLink("info", "Diagnóstico do Discord", "", () =>
+        {
+            ShowDiagnostics(DiagnosticSector.Discord);
+            return Task.CompletedTask;
+        }));
         ShowSheet("Discord", panel);
         return Task.CompletedTask;
 
@@ -1185,7 +1215,14 @@ public sealed partial class MainView : UserControl
             status.Text = "Conectando…";
             try
             {
-                var value = saved ? storage?.Read() : token.Text?.Trim();
+                string? value;
+                try { value = saved ? storage?.Read() : token.Text?.Trim(); }
+                catch (Exception error)
+                {
+                    PlaybackDiagnostics.WriteFailure(DiagnosticSector.Discord, "Ler token local", error);
+                    status.Text = "Não foi possível ler o token salvo.";
+                    return;
+                }
                 token.Text = "";
                 if (string.IsNullOrWhiteSpace(value)) { status.Text = "Informe um token para conectar."; return; }
                 _discordAccount?.Dispose();
@@ -1201,8 +1238,9 @@ public sealed partial class MainView : UserControl
                         if (remember.IsChecked == true) local.Save(value);
                         else local.Clear();
                     }
-                    catch
+                    catch (Exception error)
                     {
+                        PlaybackDiagnostics.WriteFailure(DiagnosticSector.Discord, "Atualizar token local", error);
                         status.Text = "Discord conectado. Não foi possível atualizar o token salvo.";
                         return;
                     }
@@ -1273,6 +1311,11 @@ public sealed partial class MainView : UserControl
                 DisconnectAccount();
                 return ShowAccountAsync();
             }));
+        connection.Add(PreferenceLink("info", "Diagnóstico do Google", "", () =>
+        {
+            ShowDiagnostics(DiagnosticSector.Google);
+            return Task.CompletedTask;
+        }));
         sections.Insert(0, PreferenceSection("Google", connection.ToArray()));
         OpenPreferencesPage("account", "Minha conta", sections.ToArray());
         return Task.CompletedTask;
@@ -1301,7 +1344,7 @@ public sealed partial class MainView : UserControl
                     continuation = next;
                 });
             }
-        });
+        }, sector: DiagnosticSector.Google);
     }
     private CancellationTokenSource? _download;
     private void ShowExperimental()
@@ -1356,15 +1399,6 @@ public sealed partial class MainView : UserControl
         }
         catch (OperationCanceledException) { _music.SetStatus("Download cancelado ou tempo esgotado."); }
         finally { _download = null; }
-    }
-    private void ShowDiagnostics()
-    {
-        if (!DeveloperFeatures.Enabled) return;
-        var panel = new StackPanel { Spacing = UiTheme.SectionGap };
-        var text = PlaybackDiagnostics.Snapshot(); if (string.IsNullOrWhiteSpace(text)) text = "Nenhuma tentativa registrada. Tente reproduzir uma faixa primeiro.";
-        panel.Children.Add(UiTheme.Inner(new SelectableTextBlock { Text = text, TextWrapping = TextWrapping.Wrap, FontFamily = UiTheme.Inter, FontSize = UiTheme.Label, Foreground = UiTheme.Brush(Muted) }));
-        panel.Children.Add(ActionButton("Copiar diagnóstico", async () => { var clipboard = TopLevel.GetTopLevel(this)?.Clipboard; if (clipboard is not null) await clipboard.SetTextAsync(PlaybackDiagnostics.Snapshot()); }));
-        ShowSheet("Diagnóstico", panel);
     }
     private async void ShowAudioInfo()
     {
@@ -1446,14 +1480,14 @@ public sealed partial class MainView : UserControl
         badge.Padding = new Thickness(12, 0);
         return badge;
     }
-    private void ShowSheet(string title, Control content, bool preservePlayer = false)
+    private void ShowSheet(string title, Control content, bool preservePlayer = false, bool scrollContent = true)
     {
         if (!preservePlayer) ClosePlayer();
         CloseTopMenu();
         if (_overlay is not null) _root.Children.Remove(_overlay);
         var layout = new Grid { RowDefinitions = new("Auto,*,Auto"), RowSpacing = UiTheme.CardGap };
         var label = UiTheme.Text(title, UiTheme.DialogTitle, weight: FontWeight.SemiBold); label.TextWrapping = TextWrapping.Wrap; layout.Children.Add(label);
-        Put(layout, UiTheme.FadingScroll(content), 1, 0);
+        Put(layout, scrollContent ? UiTheme.FadingScroll(content) : content, 1, 0);
         Put(layout, ActionButton("Fechar", () => { CloseSheet(); return Task.CompletedTask; }), 2, 0);
         var sheet = UiTheme.Card(layout); sheet.MaxWidth = UiTheme.DialogMaxWidth; sheet.Margin = UiTheme.DialogMargin;
         sheet.HorizontalAlignment = HorizontalAlignment.Stretch; sheet.VerticalAlignment = VerticalAlignment.Center;
@@ -1502,7 +1536,12 @@ public sealed partial class MainView : UserControl
         button.Click += async (_, _) =>
         {
             try { await WithLoadingAsync("Carregando…", action); }
-            catch (Exception ex) { PlaybackDiagnostics.Write("Interface", ex.Message); _music.SetStatus(ex.Message); ShowDiagnostics(); }
+            catch (Exception ex)
+            {
+                PlaybackDiagnostics.WriteFailure(DiagnosticSector.App, "Interface", ex);
+                _music.SetStatus(ex.Message);
+                if (DeveloperFeatures.Enabled) ShowDiagnostics(DiagnosticSector.App);
+            }
         };
     }
     private Button IconButton(string icon, string label, Func<Task> action, string color = Accent)

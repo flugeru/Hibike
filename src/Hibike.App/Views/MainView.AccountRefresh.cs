@@ -26,9 +26,19 @@ public sealed partial class MainView
         {
             _account = await restore();
             _accountRestoreFailed = false;
-            if (_account is not null) await LoadAccountHomeAsync();
+            if (_account is not null)
+            {
+                PlaybackDiagnostics.Write(DiagnosticSector.Google, "Restaurar sessão", "Sessão local aberta.");
+                await LoadAccountHomeAsync();
+            }
         }
-        catch { _accountRestoreFailed = true; _accountError = "Não foi possível abrir sessão salva. Tente conexão novamente ou entre novamente."; _music.SetStatus(_accountError); }
+        catch (Exception error)
+        {
+            PlaybackDiagnostics.WriteFailure(DiagnosticSector.Google, "Restaurar sessão", error);
+            _accountRestoreFailed = true;
+            _accountError = "Não foi possível abrir sessão salva. Tente conexão novamente ou entre novamente.";
+            _music.SetStatus(_accountError);
+        }
     }
     private async Task RefreshHomeAsync()
     {

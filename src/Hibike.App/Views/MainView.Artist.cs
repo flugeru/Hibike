@@ -229,7 +229,7 @@ public sealed partial class MainView
         }, replace);
 
     private async Task ShowPagedCollectionAsync(string title, Track? artwork, string kind,
-        Func<int, CancellationToken, Task<(IReadOnlyList<Track> Tracks, bool HasMore, Action? Advance)>> load, bool replace = false)
+        Func<int, CancellationToken, Task<(IReadOnlyList<Track> Tracks, bool HasMore, Action? Advance)>> load, bool replace = false, DiagnosticSector sector = DiagnosticSector.Catalog)
     {
         var tracks = new List<Track>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -266,7 +266,7 @@ public sealed partial class MainView
             }
             catch (Exception e) when (e is not OutOfMemoryException)
             {
-                PlaybackDiagnostics.Write("Catálogo paginado", e.Message);
+                PlaybackDiagnostics.WriteFailure(sector, "Carregar página da coleção", e);
                 if (_page != "collection" || !ReferenceEquals(page, _collectionPage.Child)) return;
                 if (tracks.Count == 0)
                 {

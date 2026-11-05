@@ -123,7 +123,10 @@ public sealed class YouTubeAccountLibrary(HttpClient client, string accessToken)
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _credential ?? throw new InvalidOperationException("Conta desconectada."));
         using var response = await client.SendAsync(request, token);
         if (!response.IsSuccessStatusCode)
+        {
+            PlaybackDiagnostics.Write(DiagnosticSector.Google, "API YouTube", $"HTTP {(int)response.StatusCode}.");
             throw new InvalidOperationException($"Biblioteca YouTube: HTTP {(int)response.StatusCode}. Reconecte se sessão expirou; confira API, permissão e cota no Google Cloud.");
+        }
         return JsonDocument.Parse(await response.Content.ReadAsStringAsync(token));
     }
 
@@ -187,7 +190,7 @@ public sealed class YouTubeAccountLibrary(HttpClient client, string accessToken)
             if (endpoint != "account/account_menu") await ValidateSessionAsync(token);
             else throw new AccountSessionExpiredException();
         }
-        if (!response.IsSuccessStatusCode) throw new HttpRequestException($"Biblioteca YouTube Music: HTTP {(int)response.StatusCode}. Tente conexão novamente.");
+        if (!response.IsSuccessStatusCode) throw new HttpRequestException($"Biblioteca YouTube Music: HTTP {(int)response.StatusCode}. Tente conexão novamente.", null, response.StatusCode);
         return JsonDocument.Parse(await response.Content.ReadAsStringAsync(token));
     }
     private static IEnumerable<string> Columns(JsonElement item) => Nodes(item, "musicResponsiveListItemFlexColumnRenderer")

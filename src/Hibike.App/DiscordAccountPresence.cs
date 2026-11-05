@@ -34,7 +34,10 @@ internal sealed class DiscordAccountPresence : IDisposable
     public async Task ConnectAsync(string token)
     {
         if (string.IsNullOrWhiteSpace(token) || token.Any(char.IsWhiteSpace) || token.Length > 512)
+        {
+            PlaybackDiagnostics.Write(DiagnosticSector.Discord, "Conexão", "Formato do token inválido.");
             throw new ArgumentException("Token inválido.");
+        }
         try
         {
             _stop.CancelAfter(TimeSpan.FromSeconds(60));
@@ -60,6 +63,7 @@ internal sealed class DiscordAccountPresence : IDisposable
                 Status = _ready.Task.Exception!.GetBaseException().Message;
             else if (Status == "Conectando" || Status == "Desconectado")
                 Status = error is OperationCanceledException ? "Tempo esgotado aguardando READY do Discord." : "Falha de conexão TLS/WebSocket com Discord.";
+            PlaybackDiagnostics.Write(DiagnosticSector.Discord, "Conectar", Status);
             Dispose(); throw new InvalidOperationException(Status);
         }
     }
@@ -102,7 +106,13 @@ internal sealed class DiscordAccountPresence : IDisposable
             Changed?.Invoke();
         }
         catch (OperationCanceledException) { }
-        catch { Status = "Falha ao enviar atividade"; Changed?.Invoke(); }
+        catch (Exception error)
+        {
+            if (Status != "Falha ao enviar atividade")
+                PlaybackDiagnostics.WriteFailure(DiagnosticSector.Discord, "Enviar atividade", error);
+            Status = "Falha ao enviar atividade";
+            Changed?.Invoke();
+        }
         finally { _updating = false; }
     }
 
@@ -191,6 +201,7 @@ internal sealed class DiscordAccountPresence : IDisposable
                     {
                         Profile = ReadProfile(root);
                         Status = "Conectado";
+                        PlaybackDiagnostics.Write(DiagnosticSector.Discord, "Gateway", "Sessão autenticada.");
                         _ready.TrySetResult();
                         Changed?.Invoke();
                     }
@@ -199,7 +210,10 @@ internal sealed class DiscordAccountPresence : IDisposable
         catch (Exception error)
         {
             if (Volatile.Read(ref _disposed) == 0)
+            {
                 Status = error is InvalidOperationException ? error.Message : "Conexão Discord interrompida (rede, TLS ou timeout).";
+                PlaybackDiagnostics.Write(DiagnosticSector.Discord, "Gateway", Status);
+            }
             _ready.TrySetException(new InvalidOperationException(Status));
         }
         finally { Dispose(); await heartbeat; }
@@ -221,6 +235,7 @@ internal sealed class DiscordAccountPresence : IDisposable
         catch
         {
             Status = "Gateway sem confirmação de heartbeat ou envio interrompido.";
+            PlaybackDiagnostics.Write(DiagnosticSector.Discord, "Heartbeat", Status);
             _ready.TrySetException(new InvalidOperationException(Status));
             _stop.Cancel(); _socket.Abort();
         }

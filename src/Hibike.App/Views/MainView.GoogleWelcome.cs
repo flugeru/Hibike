@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Hibike.Core.Services;
 
 namespace Hibike.App.Views;
 
@@ -41,7 +42,13 @@ public sealed partial class MainView
                     var save = AppServices.SaveYouTubeAccount ?? throw new InvalidOperationException("Armazenamento da sessão indisponível.");
                     save(connected);
                 }
-                catch { connected.Dispose(); throw new InvalidOperationException("Não foi possível salvar sessão protegida. Tente novamente."); }
+                catch (Exception failure)
+                {
+                    PlaybackDiagnostics.WriteFailure(DiagnosticSector.Google, "Salvar sessão Google", failure);
+                    connected.Dispose();
+                    throw new InvalidOperationException("Não foi possível salvar sessão protegida. Tente novamente.");
+                }
+                PlaybackDiagnostics.Write(DiagnosticSector.Google, "Login", "Conta conectada e sessão local salva.");
                 _account?.Dispose(); _account = connected; _accountExpired = false; _accountRestoreFailed = false; _accountError = null;
                 if (!DismissGoogleWelcome()) return;
                 if (_page == "account") await ShowAccountAsync();
@@ -51,16 +58,19 @@ public sealed partial class MainView
             }
             catch (OperationCanceledException)
             {
+                PlaybackDiagnostics.Write(DiagnosticSector.Google, "Login", "Autorização cancelada ou prazo excedido.");
                 error.Text = "Login cancelado ou tempo de autorização esgotado. Tente novamente.";
                 error.IsVisible = true;
             }
             catch (InvalidOperationException failure)
             {
+                PlaybackDiagnostics.WriteFailure(DiagnosticSector.Google, "Login", failure);
                 error.Text = failure.Message;
                 error.IsVisible = true;
             }
-            catch (Exception)
+            catch (Exception failure)
             {
+                PlaybackDiagnostics.WriteFailure(DiagnosticSector.Google, "Login", failure);
                 error.Text = "Não foi possível conectar. Confira conexão e configuração Google do aplicativo e tente novamente. Você pode continuar sem conta.";
                 error.IsVisible = true;
             }

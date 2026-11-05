@@ -111,6 +111,34 @@ public class CatalogTests
         PlaybackDiagnostics.Write("test", "failed https://example.org/audio?token=secret");
         Assert.DoesNotContain("token=secret", PlaybackDiagnostics.Snapshot());
     }
+    [Fact]
+    public void DiagnosticSectorsHaveIndependentHistoryAndOmitCredentials()
+    {
+        var marker = Guid.NewGuid().ToString("N");
+        PlaybackDiagnostics.Write(DiagnosticSector.Google, marker,
+            "HTTP 401\nAuthorization: Bearer private-bearer\nCookie: SAPISID=private-cookie");
+        PlaybackDiagnostics.Write(DiagnosticSector.Discord, marker,
+            "Conta dev@example.org: abcdefghijklmnopqrstuv.123456.abcdefghijklmnopqrstuvwxyz");
+        PlaybackDiagnostics.WriteFailure(DiagnosticSector.Google, "Login",
+            new HttpRequestException("Provider body: private-provider-detail", null, System.Net.HttpStatusCode.Forbidden));
+        for (var i = 0; i < 100; i++)
+            PlaybackDiagnostics.Write(DiagnosticSector.Playback, "Player", $"Reprodução {i}.");
+
+        PlaybackDiagnostics.Write("Metadados locais", "Não abriu '/home/private-folder/My song.flac'.");
+        var google = PlaybackDiagnostics.Capture(DiagnosticSector.Google);
+        Assert.Contains(google, entry => entry.Stage == marker && entry.Message.Contains("HTTP 401"));
+        Assert.Contains(google, entry => entry.Stage == "Login" && entry.Message.Contains("HTTP 403"));
+        Assert.All(google, entry => Assert.Equal(DiagnosticSector.Google, entry.Sector));
+        Assert.Equal(80, PlaybackDiagnostics.Capture(DiagnosticSector.Playback).Count);
+        var copy = PlaybackDiagnostics.Snapshot();
+        Assert.DoesNotContain("private-bearer", copy);
+        Assert.DoesNotContain("private-cookie", copy);
+        Assert.DoesNotContain("private-provider-detail", copy);
+        Assert.DoesNotContain("dev@example.org", copy);
+        Assert.DoesNotContain("private-folder", copy);
+        Assert.DoesNotContain("abcdefghijklmnopqrstuv.123456.abcdefghijklmnopqrstuvwxyz", copy);
+    }
+
     [Fact] public async Task CachedResolutionAvoidsDuplicateExtraction()
     {
         var runner = new FakeRunner("{\"url\":\"https://example.org/audio\"}");
