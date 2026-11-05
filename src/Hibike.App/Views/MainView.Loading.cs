@@ -1,4 +1,3 @@
-using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -9,10 +8,7 @@ public sealed partial class MainView
 {
     private readonly Dictionary<object, string> _headerLoadingOperations = new();
     private readonly TextBlock _loadingLabel = Text("", UiTheme.Caption, Muted);
-    private readonly ProgressBar _loadingProgress = new()
-    {
-        Width = 32, Height = 4, Value = 50, VerticalAlignment = VerticalAlignment.Center
-    };
+    private readonly ContentControl _loadingRing = new() { Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Center };
     private Border _loadingBanner = null!;
     private Control _headerTitle = null!;
     private string? _pullLoadingHint;
@@ -24,7 +20,7 @@ public sealed partial class MainView
         Grid.SetRowSpan(title, 2);
 
         var row = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = UiTheme.CompactGap };
-        row.Children.Add(_loadingProgress);
+        row.Children.Add(_loadingRing);
         Put(row, _loadingLabel, 0, 1);
         _loadingLabel.VerticalAlignment = VerticalAlignment.Center;
         _loadingLabel.TextTrimming = TextTrimming.CharacterEllipsis;
@@ -35,7 +31,7 @@ public sealed partial class MainView
             IsVisible = false,
             IsHitTestVisible = false
         };
-        Put(header, _loadingBanner, 1, 0);
+        Put(header, _loadingBanner, 1, 1);
     }
 
     private async Task WithHeaderLoadingAsync(string message, Func<Task> operation, bool keepFeedbackVisible = false)
@@ -61,9 +57,11 @@ public sealed partial class MainView
         var visible = message is not null;
         var wasVisible = _loadingBanner.IsVisible;
         _loadingLabel.Text = message ?? "";
-        AutomationProperties.SetName(_loadingProgress, message ?? "");
-        _loadingProgress.IsVisible = loading is not null;
-        _loadingProgress.IsIndeterminate = loading is not null && !_music.ReduceMotion;
+        _loadingRing.IsVisible = loading is not null;
+        if (loading is null)
+            _loadingRing.Content = null;
+        else if (_loadingRing.Content is null || _lastHeaderReduceMotion != _music.ReduceMotion)
+            _loadingRing.Content = LoadingRing(14, Accent, animate: !_music.ReduceMotion);
         if (wasVisible != visible || _lastHeaderReduceMotion != _music.ReduceMotion)
             UiMotion.Move(_headerTitle, visible ? -10 : 0);
         _lastHeaderReduceMotion = _music.ReduceMotion;

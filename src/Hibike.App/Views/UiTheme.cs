@@ -18,7 +18,7 @@ internal static class UiTheme
         MobileGutter = 10, CompactGap = 8, SectionGap = 14, PageGap = 18, CardGap = 16, CardPadding = 20,
         TopBarTitle = 18, PageTitle = 28, SectionTitle = 18, DialogTitle = 22, Body = 15, Caption = 13, Label = 12,
         ButtonText = 14, TouchSize = 48, IconSize = 24, IconStroke = 1.8, RoundSize = 44,
-        ThumbnailSize = 52, MiniArtworkSize = 40, PlaySize = 72, TransportIconSize = 32,
+        ThumbnailSize = 52, PlaySize = 72, TransportIconSize = 32,
         ProgressHeight = 8, ProgressRadius = 4, MiniProgressHeight = 4, SeekHeight = 6,
         SeekThumbSize = 16, SeekThumbPressedSize = 20, PageMaxWidth = 1280, PlayerMaxWidth = 440,
         DialogMaxWidth = 560, CompactWidth = 390, DesktopWidth = 800, SidebarWidth = 104,

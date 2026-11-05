@@ -40,7 +40,8 @@ public sealed partial class MainView : UserControl
     private readonly Border _statusBox;
     private readonly Button _clearSearch;
     private readonly Border _mini;
-    private readonly ContentControl _nowArt = new();
+    private const double MiniCoverSize = 72;
+    private readonly ContentControl _nowArt = new() { HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };
     private readonly TextBlock _nowTitle = Text("", UiTheme.Body);
     private readonly TextBlock _nowArtist = Text("", UiTheme.Caption, Muted);
     private readonly Button _play;
@@ -72,18 +73,22 @@ public sealed partial class MainView : UserControl
         _sidebar = BuildSidebar(); _root.Children.Add(_sidebar); Grid.SetRowSpan(_sidebar, 3);
         _main = new Border { Padding = UiTheme.ContentPadding, HorizontalAlignment = HorizontalAlignment.Stretch }; Put(_root, _main, 0, 1);
         var content = new Grid { RowDefinitions = new("Auto,Auto,*"), RowSpacing = 4 }; _main.Child = content;
-        var header = new Grid { Name = "AppHeader", RowDefinitions = new("28,20"), ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = UiTheme.CompactGap };
+        var header = new Grid { Name = "AppHeader", RowDefinitions = new("28,20"), ColumnDefinitions = new("Auto,*,Auto") };
         var brandIcon = _brandIcon = new Image { Source = new Avalonia.Media.Imaging.Bitmap(Avalonia.Platform.AssetLoader.Open(new Uri("avares://Hibike.App/Assets/hibike-desktop.png"))), Width = 22, Height = 22, VerticalAlignment = VerticalAlignment.Center };
         var pageBrand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        pageBrand.Children.Add(brandIcon); pageBrand.Children.Add(_pageTitle); header.Children.Add(pageBrand);
-        var headerImport = IconButton("folder", "Abrir áudio local", OpenLocalAsync); Put(header, headerImport, 0, 1);
+        pageBrand.Children.Add(brandIcon); pageBrand.Children.Add(_pageTitle); Put(header, pageBrand, 0, 1);
+        _preferencesBack = CollectionIcon("back", "Voltar", () => { BackFromPreferences(); return Task.CompletedTask; });
+        _preferencesBack.IsVisible = false;
+        _preferencesBack.Margin = new Thickness(0, 0, UiTheme.CompactGap, 0);
+        Put(header, _preferencesBack, 0, 0);
+        Grid.SetRowSpan(_preferencesBack, 2);
         var androidMenu = _profileButton = IconButton("account-off", "Perfil e menu do aplicativo", () => { ToggleTopMenu(); return Task.CompletedTask; });
         androidMenu.MinHeight = androidMenu.MinWidth = UiTheme.TouchSize;
         androidMenu.Height = androidMenu.Width = androidMenu.MinHeight;
         androidMenu.Padding = UiTheme.Zero;
         if (!OperatingSystem.IsAndroid()) androidMenu.MinHeight = androidMenu.Height = 32;
-        Put(header, androidMenu, 0, 2); headerImport.IsVisible = false;
-        Grid.SetRowSpan(androidMenu, 2); Grid.SetRowSpan(headerImport, 2);
+        androidMenu.Margin = new Thickness(UiTheme.CompactGap, 0, 0, 0);
+        Put(header, androidMenu, 0, 2); Grid.SetRowSpan(androidMenu, 2);
         if (OperatingSystem.IsAndroid()) { brandIcon.IsVisible = true; _pageTitle.Text = "Hibike"; }
         pageBrand.VerticalAlignment = VerticalAlignment.Center; _pageTitle.VerticalAlignment = VerticalAlignment.Center;
         InitializeLoading(header, pageBrand);
@@ -122,8 +127,6 @@ public sealed partial class MainView : UserControl
             var compact = _androidLayout || Bounds.Width < UiTheme.DesktopWidth;
             _root.ColumnDefinitions[0].Width = new GridLength(compact ? 0 : UiTheme.SidebarWidth);
             _sidebar.IsVisible = !compact; _bottom.IsVisible = compact;
-            headerImport.IsVisible = false;
-            androidMenu.IsVisible = true;
             brandIcon.IsVisible = _page == "home" && compact && !ShowOfflineHome;
             _pageTitle.IsVisible = _page != "home" || compact || ShowOfflineHome;
             _main.IsVisible = !_showingPlayer;
@@ -226,23 +229,55 @@ public sealed partial class MainView : UserControl
     }
     private Border BuildMiniPlayer()
     {
-        var grid = new Grid { RowDefinitions = new("Auto,Auto,Auto"), RowSpacing = UiTheme.CompactGap };
-        var row = new Grid { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = UiTheme.ProgressRadius };
-        var open = ActionButton("", () => { ShowPlayer(); return Task.CompletedTask; }); Avalonia.Automation.AutomationProperties.SetName(open, "Abrir player"); open.Classes.Add("subtle"); open.Padding = UiTheme.Zero; open.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-        var metadata = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = UiTheme.CompactGap };
-        _nowArt.Content = new Artwork(null, UiTheme.MiniArtworkSize); metadata.Children.Add(_nowArt);
-        var info = new StackPanel { Spacing = UiTheme.ProgressRadius, VerticalAlignment = VerticalAlignment.Center };
-        _nowTitle.TextTrimming = _nowArtist.TextTrimming = TextTrimming.CharacterEllipsis; info.Children.Add(_nowTitle); info.Children.Add(_nowArtist); Put(metadata, info, 0, 1);
-        var next = IconButton("next", "Próxima faixa", _music.NextAsync); next.Classes.Add("subtle");
-        open.Content = metadata; row.Children.Add(open); Put(row, _play, 0, 1); Put(row, next, 0, 2);
-        grid.Children.Add(row); Put(grid, _progress, 1, 0);
+        const double contentInset = 12, progressInset = 8;
+        var grid = new Grid { RowDefinitions = new($"{MiniCoverSize},Auto"), ColumnDefinitions = new($"{MiniCoverSize},*,{UiTheme.TouchSize},{UiTheme.TouchSize}") };
+        var open = ActionButton("", () => { ShowPlayer(); return Task.CompletedTask; });
+        Avalonia.Automation.AutomationProperties.SetName(open, "Abrir player");
+        open.Classes.Add("subtle");
+        open.Padding = UiTheme.Zero;
+        open.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+        open.VerticalContentAlignment = VerticalAlignment.Stretch;
+        var metadata = new Grid { ColumnDefinitions = new($"{MiniCoverSize},*") };
+        _nowArt.Content = MiniCover(null);
+        metadata.Children.Add(_nowArt);
+        var info = new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(contentInset, 0, UiTheme.CompactGap, progressInset) };
+        _nowTitle.TextTrimming = _nowArtist.TextTrimming = TextTrimming.CharacterEllipsis;
+        info.Children.Add(_nowTitle);
+        info.Children.Add(_nowArtist);
+        Put(metadata, info, 0, 1);
+        open.Content = metadata;
+        grid.Children.Add(open);
+        Grid.SetColumnSpan(open, 2);
+        var next = IconButton("next", "Próxima faixa", _music.NextAsync);
+        next.Classes.Add("subtle");
+        _play.Margin = next.Margin = new Thickness(0, 0, 0, progressInset);
+        Put(grid, _play, 0, 2);
+        Put(grid, next, 0, 3);
+        _progress.VerticalAlignment = VerticalAlignment.Bottom;
+        _progress.Margin = new Thickness(contentInset, 0, contentInset, progressInset);
+        _progress.IsHitTestVisible = false;
+        Put(grid, _progress, 0, 1);
+        Grid.SetColumnSpan(_progress, 3);
         _miniRecoveryNotice.IsVisible = false;
         _miniRecoveryNotice.TextWrapping = TextWrapping.Wrap;
         _miniRecoveryNotice.MaxLines = 2;
-        Put(grid, _miniRecoveryNotice, 2, 0);
-        var card = UiTheme.Card(grid, UiTheme.ControlRadius); card.Margin = UiTheme.MiniMargin; card.ClipToBounds = true;
-        card.MaxWidth = UiTheme.PageMaxWidth - UiTheme.PageMargin.Left - UiTheme.PageMargin.Right; return card;
+        _miniRecoveryNotice.Margin = new Thickness(contentInset, 4, contentInset, progressInset);
+        Put(grid, _miniRecoveryNotice, 1, 0);
+        Grid.SetColumnSpan(_miniRecoveryNotice, 4);
+        var card = UiTheme.Card(grid, padding: 0);
+        card.Margin = UiTheme.MiniMargin;
+        card.ClipToBounds = true;
+        card.MaxWidth = UiTheme.PageMaxWidth - UiTheme.PageMargin.Left - UiTheme.PageMargin.Right;
+        return card;
     }
+
+    private static Artwork MiniCover(Track? track) => new(track, MiniCoverSize, highQuality: true)
+    {
+        BorderThickness = UiTheme.Zero,
+        CornerRadius = new CornerRadius(UiTheme.CardRadius - 1, 0, 0, UiTheme.CardRadius - 1)
+    };
+
     private async Task SearchAsync()
     {
         if (_page != "explore" || _mobileSearchPage is null)
@@ -371,12 +406,15 @@ public sealed partial class MainView : UserControl
         _homeScroll.IsVisible = showOnlineHome;
         if (_homeRefreshContainer is not null) _homeRefreshContainer.IsVisible = showOnlineHome;
         RefreshOfflineWorkspace();
-        if (_preferencesPage is not null) _preferencesPage.IsVisible = _page is "settings" or "account";
+        var preferencesOpen = _page is "settings" or "account";
+        _preferencesBack.IsVisible = preferencesOpen;
+        _profileButton!.IsVisible = !preferencesOpen;
+        if (_preferencesPage is not null) _preferencesPage.IsVisible = preferencesOpen;
         if (_page == "home" && !ShowOfflineHome) RefreshHome();
         RefreshWorkspace();
         var displayed = _music.Pending ?? _music.Current;
         UpdateRows(displayed);
-        if (!Equals(displayed, _shownTrack)) { _shownTrack = displayed; _nowArt.Content = new Artwork(displayed, UiTheme.MiniArtworkSize); }
+        if (!Equals(displayed, _shownTrack)) { _shownTrack = displayed; _nowArt.Content = MiniCover(displayed); }
         _nowTitle.Text = TrackTextFormatter.Title(displayed?.Title, displayed?.Artist);
         _nowArtist.Text = TrackTextFormatter.Artist(displayed?.Artist);
         if (displayed is not null) _updatePlayerTrack?.Invoke(displayed);
@@ -1081,25 +1119,25 @@ public sealed partial class MainView : UserControl
         if (state != "loading" && hadIcon && button.IsEffectivelyVisible) Animate(content);
         Avalonia.Automation.AutomationProperties.SetName(button, state == "loading" ? "Carregando áudio; cancelar" : "Reproduzir ou pausar");
     }
-    private static Control LoadingRing(double size, string color)
+    private static Control LoadingRing(double size, string color, bool? animate = null)
     {
             var ring = new Avalonia.Controls.Shapes.Ellipse
             {
                 Width = size, Height = size, HorizontalAlignment = HorizontalAlignment.Center, Stroke = UiTheme.Brush(color), StrokeThickness = 2,
-                StrokeDashArray = new Avalonia.Collections.AvaloniaList<double> { 22, 12 },
+                StrokeDashArray = new Avalonia.Collections.AvaloniaList<double> { size * .9, size * .8 },
                 RenderTransform = new RotateTransform(), RenderTransformOrigin = RelativePoint.Center
             };
             var animation = new Animation { Duration = TimeSpan.FromMilliseconds(800), IterationCount = IterationCount.Infinite };
             animation.Children.Add(new KeyFrame { Cue = new Cue(0), Setters = { new Avalonia.Styling.Setter(RotateTransform.AngleProperty, 0d) } });
             animation.Children.Add(new KeyFrame { Cue = new Cue(1), Setters = { new Avalonia.Styling.Setter(RotateTransform.AngleProperty, 360d) } });
-            if (!UiMotion.Reduced) ring.Styles.Add(new Avalonia.Styling.Style(s => s.OfType<Avalonia.Controls.Shapes.Ellipse>()) { Animations = { animation } });
+            if (animate ?? !UiMotion.Reduced) ring.Styles.Add(new Avalonia.Styling.Style(s => s.OfType<Avalonia.Controls.Shapes.Ellipse>()) { Animations = { animation } });
             return ring;
     }
     private void ShowSettings()
     {
         ClosePlayer(); CloseTopMenu(); CloseSheet();
         var sections = new List<Control>();
-        var sound = new StackPanel { Spacing = UiTheme.CompactGap, Margin = new Thickness(12, 4) };
+        var sound = new StackPanel { Spacing = UiTheme.CompactGap };
         var volume = new Slider { Minimum = 0, Maximum = 1, Value = _music.Volume, HorizontalAlignment = HorizontalAlignment.Stretch };
         var volumeLabel = Text($"Volume · {_music.Volume:P0}", UiTheme.Body);
         Avalonia.Automation.AutomationProperties.SetName(volume, "Volume nas configurações");
@@ -1115,7 +1153,7 @@ public sealed partial class MainView : UserControl
 
         }
         sections.Add(PreferenceSection("Reprodução", sound));
-        var reduceMotion = new CheckBox { Content = "Reduzir movimento", IsChecked = _music.ReduceMotion };
+        var reduceMotion = new CheckBox { Content = "Reduzir movimento", IsChecked = _music.ReduceMotion, VerticalContentAlignment = VerticalAlignment.Center, MinHeight = UiTheme.TouchSize };
         reduceMotion.IsCheckedChanged += (_, _) => _music.SetReduceMotion(reduceMotion.IsChecked == true);
         sections.Add(PreferenceSection("Aparência", reduceMotion));
         sections.Add(PreferenceSection("Conta e biblioteca",
@@ -1143,7 +1181,7 @@ public sealed partial class MainView : UserControl
             support.Add(PreferenceLink("settings", "Laboratório experimental", "Recursos de desenvolvimento", () => { ShowExperimental(); return Task.CompletedTask; }));
         }
         sections.Add(PreferenceSection("Ajuda e privacidade", support.ToArray()));
-        OpenPreferencesPage("settings", "Configurações", sections.ToArray());
+        OpenPreferencesPage("settings", sections.ToArray());
     }
     private YouTubeAccountLibrary? _account;
     private Task ShowDiscordAccountAsync()
@@ -1152,9 +1190,9 @@ public sealed partial class MainView : UserControl
         var hasSaved = false;
         var panel = new StackPanel { Spacing = 12 };
         var identity = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = UiTheme.PageGap };
-        var avatar = new ContentControl { Content = Icons.Make("account", Muted, 40), Width = 44, Height = 44 };
+        var avatar = new ContentControl { Content = Icons.Make("account", Muted, 40), Width = 44, Height = 44, VerticalAlignment = VerticalAlignment.Center };
         identity.Children.Add(avatar);
-        var identityText = new StackPanel { Spacing = 2 };
+        var identityText = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
         var profileName = CollectionText("Discord", UiTheme.Body, weight: FontWeight.SemiBold);
         var username = CollectionText("", UiTheme.Caption, Muted);
         var status = Text("", UiTheme.Caption, Muted);
@@ -1163,14 +1201,17 @@ public sealed partial class MainView : UserControl
         identityText.Children.Add(username);
         identityText.Children.Add(status);
         Put(identity, identityText, 0, 1);
+        var activityLabel = Text("Atividade enviada", UiTheme.Caption, Muted);
         var activity = Text("Sem faixa publicada", UiTheme.Body);
         activity.TextWrapping = TextWrapping.Wrap;
+        var activityDetails = new StackPanel { Spacing = 3, Margin = new Thickness(0, 6, 0, 0),
+            Children = { activityLabel, activity } };
         var profileLink = PreferenceLink("account", "Abrir perfil no Discord", "", async () =>
         {
             if (_discordAccount?.Profile is { } profile && TopLevel.GetTopLevel(this)?.Launcher is { } launcher)
                 await launcher.LaunchUriAsync(new Uri("https://discord.com/users/" + profile.Id));
         });
-        panel.Children.Add(PreferenceSection("Perfil e atividade", identity, activity, profileLink));
+        panel.Children.Add(PreferenceSection("Perfil e atividade", identity, activityDetails, profileLink));
 
         var note = Text("Integração não oficial. O Discord pode restringir contas que usam token pessoal.", UiTheme.Caption, Muted);
         note.TextWrapping = TextWrapping.Wrap;
@@ -1178,12 +1219,18 @@ public sealed partial class MainView : UserControl
         var token = UiTheme.Field("Token pessoal do Discord");
         token.PasswordChar = '●';
         panel.Children.Add(token);
-        var remember = new CheckBox { Content = "Lembrar neste aparelho", IsVisible = storage is not null };
+        var remember = new CheckBox { Content = "Lembrar neste aparelho", IsVisible = storage is not null, VerticalContentAlignment = VerticalAlignment.Center, MinHeight = UiTheme.TouchSize };
         panel.Children.Add(remember);
-        var actions = new WrapPanel { ItemSpacing = UiTheme.CompactGap, LineSpacing = UiTheme.CompactGap };
+        var actions = new Grid { ColumnDefinitions = new("*,*"), RowDefinitions = new("Auto,Auto"),
+            ColumnSpacing = UiTheme.CompactGap, RowSpacing = UiTheme.CompactGap };
         panel.Children.Add(actions);
-        var useSaved = CollectionAction("Usar token salvo", () => Task.CompletedTask);
-        var disconnect = CollectionAction("Desconectar e remover token", () =>
+        var connect = UiTheme.OutlinedButton("Conectar");
+        connect.Classes.Add("primary");
+        var useSaved = UiTheme.OutlinedButton("Usar token salvo");
+        useSaved.Content = new TextBlock { Text = "Usar token salvo", FontFamily = UiTheme.Inter, FontSize = UiTheme.ButtonText,
+            TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center };
+        Avalonia.Automation.AutomationProperties.SetName(useSaved, "Usar token salvo");
+        var disconnect = ActionButton("Desconectar e remover token", () =>
         {
             try
             {
@@ -1217,12 +1264,14 @@ public sealed partial class MainView : UserControl
             username.Text = profile is null ? "" : "@" + profile.Username;
             hasSaved = storage?.Exists() == true;
             useSaved.IsVisible = hasSaved;
+            Grid.SetColumnSpan(connect, hasSaved ? 1 : 2);
             disconnect.IsVisible = hasSaved || _discordAccount is not null;
             status.Text = _discordRecoveryStatus ?? _discordAccount?.Status ?? (hasSaved ? "Token salvo neste aparelho" : "Desconectado");
             profileLink.IsVisible = profile is not null;
-            activity.Text = _discordAccount?.PublishedTrack is { } current
-                ? "Atividade enviada · " + TrackTextFormatter.Title(current.Title, current.Artist) + " · " + TrackTextFormatter.Artist(current.Artist)
-                : "Sem faixa publicada";
+            var current = _discordAccount?.PublishedTrack;
+            activityLabel.IsVisible = current is not null;
+            activity.Text = current is null ? "Sem faixa publicada"
+                : TrackTextFormatter.Title(current.Title, current.Artist) + " · " + TrackTextFormatter.Artist(current.Artist);
         }
         panel.AttachedToVisualTree += (_, _) =>
         {
@@ -1231,10 +1280,12 @@ public sealed partial class MainView : UserControl
         };
         panel.DetachedFromVisualTree += (_, _) => DiscordConnectionChanged -= UpdatePresence;
 
-        actions.Children.Add(CollectionAction("Conectar", () => ConnectAsync(saved: false), prominent: true));
-        actions.Children.Add(useSaved);
-        useSaved.Click += async (_, _) => await ConnectAsync(saved: true);
-        actions.Children.Add(disconnect);
+        BindAction(connect, () => ConnectAsync(saved: false));
+        BindAction(useSaved, () => ConnectAsync(saved: true));
+        actions.Children.Add(connect);
+        Put(actions, useSaved, 0, 1);
+        Put(actions, disconnect, 1, 0);
+        Grid.SetColumnSpan(disconnect, 2);
 
         panel.Children.Add(PreferenceLink("info", "Diagnóstico do Discord", "", () =>
         {
@@ -1277,7 +1328,7 @@ public sealed partial class MainView : UserControl
     {
         if (_page != "account") _accountBackToSettings = _page == "settings";
         var sections = new List<Control>();
-        var identity = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = UiTheme.PageGap, Margin = new Thickness(12, 4) };
+        var identity = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = UiTheme.PageGap };
         identity.Children.Add(Icons.Make("account", Muted, 36));
         var name = _account?.DisplayName ?? (_account is null ? "Sem conta conectada" : "Conta Google");
         var labels = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
@@ -1291,7 +1342,6 @@ public sealed partial class MainView : UserControl
             var error = Text(_accountExpired ? "Entre novamente para atualizar sua biblioteca."
                 : "Não foi possível atualizar a conexão.", UiTheme.Caption, UiTheme.Error);
             error.TextWrapping = TextWrapping.Wrap;
-            error.Margin = new Thickness(12, 4);
             connection.Add(error);
         }
         if (_account is null || _accountExpired)
@@ -1334,7 +1384,7 @@ public sealed partial class MainView : UserControl
             return Task.CompletedTask;
         }));
         sections.Insert(0, PreferenceSection("Google", connection.ToArray()));
-        OpenPreferencesPage("account", "Minha conta", sections.ToArray());
+        OpenPreferencesPage("account", sections.ToArray());
         return Task.CompletedTask;
     }
     private Task ShowAccountTracksAsync(YouTubeAccountLibrary account, string? id, string title)

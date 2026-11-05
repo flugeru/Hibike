@@ -103,10 +103,13 @@ internal static partial class Program
                 var loadingBanner = (Border)typeof(MainView).GetField("_loadingBanner", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
                 var header = (Grid)loadingBanner.Parent!;
                 var refreshContainer = (RefreshContainer)typeof(MainView).GetField("_homeRefreshContainer", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
-                var progress = loadingBanner.GetVisualDescendants().OfType<ProgressBar>().Single();
+                var loadingRing = (ContentControl)typeof(MainView).GetField("_loadingRing", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
+                bool RingAnimating() => loadingRing.Content is Avalonia.Controls.Shapes.Ellipse { Styles.Count: > 0 };
                 var loadingLabel = loadingBanner.GetVisualDescendants().OfType<TextBlock>().Single();
                 Check(header.Name == "AppHeader" && Grid.GetRow(loadingBanner) == 1 && loadingBanner.ClipToBounds, "Loading indicator is not contained in the app header");
                 Check(refreshContainer.Visualizer?.Opacity == 0, "Default refresh spinner still visible");
+                var minimumWindowWidth = window.MinWidth;
+                window.MinWidth = 320;
                 window.Width = 320;
                 view.UpdateLayout();
                 var homeBounds = refreshContainer.Bounds;
@@ -114,25 +117,28 @@ internal static partial class Program
                 var pendingLoad = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 var loadingTask = (Task)loadingMethod.Invoke(view, ["Atualizando dados…", (Func<Task>)(() => pendingLoad.Task), false])!;
                 view.UpdateLayout();
-                Check(loadingBanner.IsVisible && !loadingBanner.IsHitTestVisible && progress.IsIndeterminate, "Animated loading missing or blocks navigation");
+                Check(loadingRing.Bounds.Width == 16 && loadingBanner.IsVisible && !loadingBanner.IsHitTestVisible && RingAnimating(), "Animated loading missing or blocks navigation");
                 Check(header.Bounds == headerBounds && refreshContainer.Bounds == homeBounds, "Loading displaced the header or home content");
-                Check(loadingLabel.TextTrimming == Avalonia.Media.TextTrimming.CharacterEllipsis && loadingLabel.Bounds.Right <= loadingBanner.Bounds.Width, "Loading text overflows the header");
+                Check(loadingLabel.TextTrimming == Avalonia.Media.TextTrimming.CharacterEllipsis && loadingLabel.DesiredSize.Width <= loadingLabel.Bounds.Width && loadingLabel.Bounds.Right <= loadingBanner.Bounds.Width, "Loading text overflows the header");
 
                 var restoreLoad = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 var restoreTask = (Task)loadingMethod.Invoke(view, ["Restaurando conta Google…", (Func<Task>)(() => restoreLoad.Task), false])!;
                 restoreLoad.SetResult(); await restoreTask;
                 Check(loadingBanner.IsVisible && loadingLabel.Text == "Atualizando dados…", "Overlapping loading cleared the active refresh");
+                await Task.Delay(200);
+                Capture(view, "circular-header-320");
                 pendingLoad.SetResult(); await loadingTask;
-                Check(!loadingBanner.IsVisible && !progress.IsIndeterminate, "Completed loading or animation stuck");
+                Check(!loadingBanner.IsVisible && !RingAnimating(), "Completed loading or animation stuck");
 
                 AppServices.Controller!.SetReduceMotion(true);
                 var reducedLoad = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 var reducedTask = (Task)loadingMethod.Invoke(view, ["Atualizando dados…", (Func<Task>)(() => reducedLoad.Task), false])!;
-                Check(loadingBanner.IsVisible && !progress.IsIndeterminate && progress.Value > 0, "Reduced motion did not use a static indicator");
+                Check(loadingBanner.IsVisible && !RingAnimating() && loadingRing.Content is Avalonia.Controls.Shapes.Ellipse, "Reduced motion did not use a static indicator");
                 reducedLoad.SetException(new IOException("Expected test error"));
                 try { await reducedTask; } catch (IOException) { }
                 Check(!loadingBanner.IsVisible, "Failed loading message stuck");
                 AppServices.Controller.SetReduceMotion(false);
+                window.MinWidth = minimumWindowWidth;
                 window.Width = 360;
                 var restoreAttempted = typeof(MainView).GetField("_accountRestoreAttempted", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
                 restoreAttempted.SetValue(view, false);
@@ -185,12 +191,37 @@ internal static partial class Program
                 Check(!view.GetVisualDescendants().OfType<Button>().Any(b => b.IsEffectivelyVisible && b.Content as string == "Limpar feedback Não tenho interesse"), "Retired feedback reset visible");
                 Check(view.GetVisualDescendants().OfType<Button>().Any(b => b.IsEffectivelyVisible && Avalonia.Automation.AutomationProperties.GetName(b) == "Diagnósticos"), "Diagnostics missing from settings");
                 Check(view.GetVisualDescendants().OfType<Button>().Any(b => b.IsEffectivelyVisible && Avalonia.Automation.AutomationProperties.GetName(b) == "Laboratório experimental") == toolsEnabled, "Developer lab visibility incorrect");
+                Check(header.IsEffectivelyVisible && header.GetVisualDescendants().OfType<Button>().Any(button => button.IsEffectivelyVisible
+                    && Avalonia.Automation.AutomationProperties.GetName(button) == "Voltar"), "Settings lost the top bar or its back button");
+                Check(view.GetVisualDescendants().OfType<TextBlock>().Count(label => label.IsEffectivelyVisible && label.Text == "Configurações") == 1,
+                    "Settings title duplicated or missing");
                 foreach (var width in new[] { 360, 1260 })
                 {
                     window.Width = width; await Task.Delay(80);
                     Capture(view, $"settings-page-{width}");
                     Check(view.GetVisualDescendants().OfType<Slider>().Any(s => s.IsEffectivelyVisible && Avalonia.Automation.AutomationProperties.GetName(s) == "Volume nas configurações"), "Settings playback controls missing");
                 }
+                window.MinWidth = 320;
+                window.Width = 320;
+                var tokenStorage = AppServices.DiscordTokenStorage;
+                AppServices.DiscordTokenStorage = (() => null, _ => { }, () => { }, () => true);
+                var showDiscord = typeof(MainView).GetMethod("ShowDiscordAccountAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+                await (Task)showDiscord.Invoke(view, null)!;
+                await Task.Delay(200);
+                var discordSheet = (Border)typeof(MainView).GetField("_overlay", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
+                var discordControls = discordSheet.GetVisualDescendants().OfType<Button>().ToArray();
+                var connectDiscord = discordControls.Single(button => Equals(button.Content, "Conectar"));
+                var savedDiscord = discordControls.Single(button => Avalonia.Automation.AutomationProperties.GetName(button) == "Usar token salvo");
+                var disconnectDiscord = discordControls.Single(button => Equals(button.Content, "Desconectar e remover token"));
+                Check(Math.Abs(connectDiscord.Bounds.Width - savedDiscord.Bounds.Width) < 2 && connectDiscord.Bounds.Y == savedDiscord.Bounds.Y
+                    && connectDiscord.Bounds.Height == savedDiscord.Bounds.Height && disconnectDiscord.Bounds.Width > connectDiscord.Bounds.Width * 2,
+                    "Discord connection actions do not share a balanced grid");
+                Capture(view, "discord-320");
+                Check(AppServices.BackHandler!(), "Discord sheet cannot close");
+                AppServices.DiscordTokenStorage = tokenStorage;
+                window.MinWidth = minimumWindowWidth;
+                window.Width = 1260;
+                await Task.Delay(200);
                 PlaybackDiagnostics.Write(DiagnosticSector.Discord, "Teste", "Evento Discord para cópia.");
                 PlaybackDiagnostics.Write(DiagnosticSector.Google, "Teste", "Evento Google para cópia.");
                 var diagnosticsLink = view.GetVisualDescendants().OfType<Button>().Single(button => button.IsEffectivelyVisible
@@ -241,7 +272,7 @@ internal static partial class Program
                 accountRestoreFailed.SetValue(view, true);
                 refreshContainer.RequestRefresh();
                 for (var attempt = 0; pullCalls == 0 && attempt < 50; attempt++) await Task.Delay(10);
-                Check(pullCalls == 1 && loadingBanner.IsVisible && progress.IsIndeterminate, "Pull did not start the animated header refresh");
+                Check(pullCalls == 1 && loadingBanner.IsVisible && RingAnimating(), "Pull did not start the animated header refresh");
                 Check(refreshContainer.Visualizer!.GetValue(RefreshVisualizer.RefreshVisualizerStateProperty) == RefreshVisualizerState.Idle, "Pull stayed active while waiting for the network");
                 refreshContainer.RequestRefresh();
                 await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
@@ -506,6 +537,20 @@ internal static partial class Program
                     Check(!clear.IsVisible, "Empty search has clear button");
                     await AppServices.Controller.PlayAsync(AppServices.Controller.Results[0]);
                     await Task.Delay(100); Capture(view, $"mini-{width}");
+                    if (width < 1000)
+                    {
+                        var mini = (Border)typeof(MainView).GetField("_mini", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
+                        var cover = (ContentControl)typeof(MainView).GetField("_nowArt", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
+                        var title = (TextBlock)typeof(MainView).GetField("_nowTitle", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
+                        var miniTimeline = mini.GetVisualDescendants().OfType<ProgressBar>().Single();
+                        var artOrigin = cover.TranslatePoint(default, mini)!.Value;
+                        var titleOrigin = title.TranslatePoint(default, mini)!.Value;
+                        var progressOrigin = miniTimeline.TranslatePoint(default, mini)!.Value;
+                        Check(artOrigin.X <= 1 && artOrigin.Y <= 1 && Math.Abs(cover.Bounds.Height - mini.Bounds.Height) <= 2
+                            && cover.Bounds.Width == cover.Bounds.Height, "Mini player cover does not fill its square");
+                        Check(Math.Abs(titleOrigin.X - progressOrigin.X) <= 1 && progressOrigin.X + miniTimeline.Bounds.Width < mini.Bounds.Width,
+                            "Mini player timeline is not aligned to the text and right inset");
+                    }
                     if (width >= 1000)
                     {
                         var dockPlay = (Button)typeof(MainView).GetField("_dockPlay", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
