@@ -14,6 +14,7 @@ public static class AppServices
     public static Func<Task<YouTubeAccountLibrary?>>? RestoreYouTubeAccount { get; set; }
     public static Action<YouTubeAccountLibrary>? SaveYouTubeAccount { get; set; }
     public static Action? ClearYouTubeAccount { get; set; }
+    public static (Func<string?> Read, Action<string> Save, Action Clear, Func<bool> Exists)? DiscordTokenStorage { get; set; }
     private static IMusicCatalog? _catalog;
     public static Action? OpenPlayerView { get; set; }
     public static Action<Action<long>>? RequestDisplayFrame { get; set; }

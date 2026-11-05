@@ -5,41 +5,81 @@ using Hibike.Core.Services;
 using Java.Security;
 using Javax.Crypto;
 using Javax.Crypto.Spec;
+using CryptographicOperations = System.Security.Cryptography.CryptographicOperations;
 using System.Text;
 
 namespace Hibike.Android;
 
 internal static class WebSessionStore
 {
-    private const string Alias = "Hibike.GoogleSession";
-    private static Java.Security.IKey Key()
+    private static Java.Security.IKey Key(string alias, bool create)
     {
-        using var store = KeyStore.GetInstance("AndroidKeyStore")!; store.Load(null);
-        if (store.ContainsAlias(Alias)) return store.GetKey(Alias, null)!;
+        using var store = KeyStore.GetInstance("AndroidKeyStore")!;
+        store.Load(null);
+        if (store.ContainsAlias(alias)) return store.GetKey(alias, null)!;
+        if (!create) throw new IOException("Chave de armazenamento indisponível.");
         using var generator = KeyGenerator.GetInstance(KeyProperties.KeyAlgorithmAes!, "AndroidKeyStore")!;
-        using var spec = new KeyGenParameterSpec.Builder(Alias, KeyStorePurpose.Encrypt | KeyStorePurpose.Decrypt)
+        using var spec = new KeyGenParameterSpec.Builder(alias, KeyStorePurpose.Encrypt | KeyStorePurpose.Decrypt)
             .SetBlockModes(KeyProperties.BlockModeGcm!).SetEncryptionPaddings(KeyProperties.EncryptionPaddingNone!).Build();
-        generator.Init(spec); return generator.GenerateKey()!;
+        generator.Init(spec);
+        return generator.GenerateKey()!;
     }
+
+    private static void Save(string path, string alias, string value)
+    {
+        using var cipher = Cipher.GetInstance("AES/GCM/NoPadding")!;
+        using var key = Key(alias, create: true);
+        cipher.Init(CipherMode.EncryptMode, key);
+        var bytes = Encoding.UTF8.GetBytes(value);
+        try
+        {
+            var encrypted = cipher.DoFinal(bytes)!;
+            File.WriteAllBytes(path + ".tmp", cipher.GetIV()!.Concat(encrypted).ToArray());
+            File.Move(path + ".tmp", path, true);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(bytes);
+            File.Delete(path + ".tmp");
+        }
+    }
+
+    private static string? Read(string path, string alias, int maxLength)
+    {
+        if (!File.Exists(path)) return null;
+        var data = File.ReadAllBytes(path);
+        if (data.Length < 28 || data.Length > maxLength) throw new IOException("Credencial salva inválida.");
+        using var cipher = Cipher.GetInstance("AES/GCM/NoPadding")!;
+        using var spec = new GCMParameterSpec(128, data[..12]);
+        using var key = Key(alias, create: false);
+        cipher.Init(CipherMode.DecryptMode, key, spec);
+        var bytes = cipher.DoFinal(data[12..])!;
+        try { return Encoding.UTF8.GetString(bytes); }
+        finally { CryptographicOperations.ZeroMemory(bytes); }
+    }
+
+    private static void Clear(string path)
+    {
+        File.Delete(path);
+        File.Delete(path + ".tmp");
+    }
+
     internal static void Configure(Context context)
     {
-        var path = Path.Combine(context.NoBackupFilesDir!.AbsolutePath, "google-session.bin");
-        AppServices.SaveYouTubeAccount = account =>
-        {
-            using var cipher = Cipher.GetInstance("AES/GCM/NoPadding")!;
-            cipher.Init(CipherMode.EncryptMode, Key());
-            var encrypted = cipher.DoFinal(Encoding.UTF8.GetBytes(account.ExportWebSession()))!;
-            File.WriteAllBytes(path + ".tmp", cipher.GetIV()!.Concat(encrypted).ToArray()); File.Move(path + ".tmp", path, true);
-        };
+        var directory = context.NoBackupFilesDir!.AbsolutePath;
+        var google = Path.Combine(directory, "google-session.bin");
+        const string googleAlias = "Hibike.GoogleSession";
+        AppServices.SaveYouTubeAccount = account => Save(google, googleAlias, account.ExportWebSession());
         AppServices.RestoreYouTubeAccount = () =>
         {
-            if (!File.Exists(path)) return Task.FromResult<YouTubeAccountLibrary?>(null);
-            var data = File.ReadAllBytes(path);
-            if (data.Length < 28 || data.Length > 100000) throw new IOException("Sessão salva inválida. Entre novamente.");
-            using var cipher = Cipher.GetInstance("AES/GCM/NoPadding")!;
-            using var spec = new GCMParameterSpec(128, data[..12]); cipher.Init(CipherMode.DecryptMode, Key(), spec);
-            return Task.FromResult<YouTubeAccountLibrary?>(YouTubeAccountLibrary.FromWebSession(WebAccountLogin.Client, Encoding.UTF8.GetString(cipher.DoFinal(data[12..])!)));
+            var session = Read(google, googleAlias, 100000);
+            return Task.FromResult<YouTubeAccountLibrary?>(session is null ? null : YouTubeAccountLibrary.FromWebSession(WebAccountLogin.Client, session));
         };
-        AppServices.ClearYouTubeAccount = () => { File.Delete(path); File.Delete(path + ".tmp"); };
+        AppServices.ClearYouTubeAccount = () => Clear(google);
+
+        var discord = Path.Combine(directory, "discord-token.bin");
+        const string discordAlias = "Hibike.DiscordToken";
+        AppServices.DiscordTokenStorage = (() => Read(discord, discordAlias, 2080),
+            token => Save(discord, discordAlias, token), () => Clear(discord), () => File.Exists(discord));
     }
 }

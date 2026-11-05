@@ -221,36 +221,48 @@ public sealed partial class MainView
             artist with { Thumbnail = collection.Image ?? artist.Thumbnail }, collection.Kind, replace);
     }
 
-    private async Task ShowPagedCollectionAsync(string title, string source, Track artwork, string kind, bool replace = false)
+    private Task ShowPagedCollectionAsync(string title, string source, Track artwork, string kind, bool replace = false) =>
+        ShowPagedCollectionAsync(title, artwork, kind, async (index, token) =>
+        {
+            var tracks = await _music.BrowsePageAsync(source, index, token);
+            return (tracks, tracks.Count >= 50, null);
+        }, replace);
+
+    private async Task ShowPagedCollectionAsync(string title, Track? artwork, string kind,
+        Func<int, CancellationToken, Task<(IReadOnlyList<Track> Tracks, bool HasMore, Action? Advance)>> load, bool replace = false)
     {
         var tracks = new List<Track>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         var pageIndex = 0;
         OpenCollection(title, [], kind, artwork, "Buscando conteúdo…", replace: replace);
         var page = _collectionPage.Child;
-        var more = ActionButton("Carregar mais", () => Task.CompletedTask);
-        more.Click += async (_, _) => await LoadAsync();
+        Button? more = null;
+        var loading = false;
         await LoadAsync();
 
         async Task LoadAsync()
         {
-            if (!more.IsEnabled) return;
-            more.IsEnabled = false;
+            if (loading || _page != "collection" || !ReferenceEquals(page, _collectionPage.Child)) return;
+            loading = true;
+            var trigger = more;
+            if (trigger is not null)
+            {
+                trigger.Content = "Carregando…";
+                trigger.IsEnabled = false;
+            }
             try
             {
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-                var batch = await _music.BrowsePageAsync(source, pageIndex, timeout.Token);
+                var (batch, hasMore, advance) = await load(pageIndex, timeout.Token);
                 if (_page != "collection" || !ReferenceEquals(page, _collectionPage.Child)) return;
-                tracks.AddRange(batch.Where(t => !t.IsArtist).Select(t => t.Artist == "YouTube" ? t with { Artist = artwork.Artist } : t));
+                var next = batch.Where(t => !t.IsArtist && seen.Add(t.Source))
+                    .Select(t => t.Artist == "YouTube" && artwork is not null ? t with { Artist = artwork.Artist } : t).ToArray();
+                tracks.AddRange(next);
                 pageIndex++;
-                if (more.Parent is Panel parent) parent.Children.Remove(more);
-                OpenCollection(title, tracks.DistinctBy(t => t.Source).ToArray(), kind, artwork, replace: true);
+                more = hasMore && tracks.Count > 0 ? CollectionAction("Carregar mais", LoadAsync) : null;
+                OpenCollection(title, tracks.ToArray(), kind, artwork, replace: true, footer: more);
                 page = _collectionPage.Child;
-                if (batch.Count >= 50)
-                {
-                    var actions = (WrapPanel)((Grid)page!).Children.Single(c => Grid.GetRow(c) == 1);
-                    more.Content = "Carregar mais";
-                    actions.Children.Add(more);
-                }
+                advance?.Invoke();
             }
             catch (Exception e) when (e is not OutOfMemoryException)
             {
@@ -261,9 +273,13 @@ public sealed partial class MainView
                     OpenCollection(title, [], kind, artwork, "Conteúdo indisponível", LoadAsync, replace: true);
                     page = _collectionPage.Child;
                 }
-                else more.Content = "Falha ao carregar · tentar novamente";
+                else if (trigger is not null) trigger.Content = "Tentar carregar mais";
             }
-            finally { more.IsEnabled = true; }
+            finally
+            {
+                loading = false;
+                if (trigger is not null) trigger.IsEnabled = true;
+            }
         }
     }
 
@@ -273,11 +289,12 @@ public sealed partial class MainView
         var page = _collectionPage.Child;
         var index = 0;
         var playlists = new List<Track>();
-        var rows = new System.Collections.ObjectModel.ObservableCollection<Track[]>();
+        var rows = new System.Collections.ObjectModel.ObservableCollection<object>();
         var columns = 1;
         var cardSize = _androidLayout ? MobileHomeCardSize : 196;
-        var cards = CollectionList<Track[]>(items =>
+        var cards = CollectionList<object>(entry =>
         {
+            if (entry is not Track[] items) return new Border();
             var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = UiTheme.PageGap,
                 Margin = new Thickness(0, 0, 0, UiTheme.PageGap) };
             foreach (var item in items)
@@ -290,10 +307,7 @@ public sealed partial class MainView
         cards.ItemsSource = rows;
         var scroll = UiTheme.FadingScroll(cards);
         var more = ActionButton("Carregar mais playlists", () => Task.CompletedTask);
-        more.IsVisible = false;
-        var content = new Grid { RowDefinitions = new("*,Auto"), RowSpacing = UiTheme.CompactGap };
-        content.Children.Add(scroll);
-        Put(content, more, 1, 0);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         more.Click += async (_, _) => await LoadAsync();
         scroll.SizeChanged += (_, e) =>
         {
@@ -304,8 +318,10 @@ public sealed partial class MainView
             if (count == columns && size == cardSize) return;
             cardSize = size;
             columns = count;
+            var hasMore = rows.Contains(more);
             rows.Clear();
             AppendRows(0);
+            if (hasMore) rows.Add(more);
         };
         void AppendRows(int first)
         {
@@ -321,16 +337,19 @@ public sealed partial class MainView
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
                 var batch = await _music.BrowsePageAsync(artist.Source + "/playlists", index, timeout.Token);
                 if (_page != "collection" || !ReferenceEquals(page, _collectionPage.Child)) return;
+                rows.Remove(more);
                 var first = playlists.Count / columns * columns;
                 if (first < playlists.Count) rows.RemoveAt(rows.Count - 1);
-                playlists.AddRange(batch);
+                var next = batch.Where(track => seen.Add(track.Id)).ToArray();
+                playlists.AddRange(next);
                 AppendRows(first);
                 index++;
-                more.IsVisible = batch.Count >= 50;
+                more.Content = "Carregar mais playlists";
+                if (batch.Count >= 50 && next.Length > 0) rows.Add(more);
                 if (index != 1) return;
                 var grid = (Grid)page!;
                 foreach (var child in grid.Children.Where(c => Grid.GetRow(c) == 2).ToArray()) grid.Children.Remove(child);
-                Put(grid, playlists.Count == 0 ? Text("Nenhuma playlist pública neste canal.", UiTheme.Body) : content, 2, 0);
+                Put(grid, playlists.Count == 0 ? Text("Nenhuma playlist pública neste canal.", UiTheme.Body) : scroll, 2, 0);
             }
             catch (Exception e) when (e is not OutOfMemoryException)
             {

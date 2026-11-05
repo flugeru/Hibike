@@ -19,7 +19,7 @@ public sealed partial class MainView
     private void RefreshCollectionPages()
     {
         var content = (Grid)_main.Child!;
-        content.Children[0].IsVisible = _page is not ("library" or "queue");
+        content.Children[0].IsVisible = _page is not ("library" or "queue" or "settings" or "account");
 
         if (_page == "library" && _mobileLibrary is null)
         {

@@ -24,6 +24,10 @@ internal sealed class DiscordAccountPresence : IDisposable
     private double _lastPosition;
     private DateTimeOffset _lastUpdate;
     public string Status { get; private set; } = "Desconectado";
+    internal sealed record DiscordProfile(string Id, string Name, string Username, string? Avatar);
+    public DiscordProfile? Profile { get; private set; }
+    public Track? PublishedTrack { get; private set; }
+    public event Action? Changed;
 
     public DiscordAccountPresence(MusicController music) { _music = music; }
 
@@ -70,7 +74,9 @@ internal sealed class DiscordAccountPresence : IDisposable
             if (track is null || !_music.Player.IsPlaying || _music.LoadingAudio)
             {
                 if (_activities.Length == 0) return;
+                await SendAsync(new { op = 3, d = Presence([]) });
                 _activities = []; _lastKey = null;
+                PublishedTrack = null;
             }
             else
             {
@@ -85,13 +91,18 @@ internal sealed class DiscordAccountPresence : IDisposable
                 if (_stop.IsCancellationRequested || _music.Current != track || !_music.Player.IsPlaying) return;
                 now = DateTimeOffset.UtcNow; position = _music.Player.Position;
                 var duration = _music.Player.Duration > 0 ? _music.Player.Duration : track.DurationSeconds;
-                _activities = [BuildActivity(track, position, duration, image, now)];
+                object[] activities = [BuildActivity(track, position, duration, image, now)];
+                await SendAsync(new { op = 3, d = Presence(activities) });
+                _activities = activities;
                 _lastKey = key; _lastPosition = position; _lastUpdate = now;
+                PublishedTrack = track;
             }
-            await SendAsync(new { op = 3, d = Presence() });
+            if (_stop.IsCancellationRequested) { PublishedTrack = null; return; }
+            Status = "Conectado";
+            Changed?.Invoke();
         }
         catch (OperationCanceledException) { }
-        catch { Status = "Falha ao atualizar presença; confira conexão."; }
+        catch { Status = "Falha ao enviar atividade"; Changed?.Invoke(); }
         finally { _updating = false; }
     }
 
@@ -143,7 +154,22 @@ internal sealed class DiscordAccountPresence : IDisposable
         { return null; }
     }
 
-    private object Presence() => new { since = (long?)null, activities = _activities, status = "online", afk = false };
+    private static object Presence(object[] activities) => new { since = (long?)null, activities, status = "online", afk = false };
+
+    internal static DiscordProfile? ReadProfile(JsonElement ready)
+    {
+        if (!ready.TryGetProperty("d", out var data) || !data.TryGetProperty("user", out var user)) return null;
+        string? Read(string key) => user.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString() : null;
+        var id = Read("id");
+        var username = Read("username");
+        if (string.IsNullOrEmpty(id) || id.Length > 20 || !id.All(char.IsAsciiDigit) || string.IsNullOrWhiteSpace(username)) return null;
+        var name = Read("global_name");
+        var hash = Read("avatar");
+        var avatar = hash is not null && System.Text.RegularExpressions.Regex.IsMatch(hash, "^(a_)?[a-fA-F0-9]{32}$")
+            ? $"https://cdn.discordapp.com/avatars/{id}/{hash}.png?size=128" : null;
+        return new(id, string.IsNullOrWhiteSpace(name) ? username : name, username, avatar);
+    }
 
     private async Task RunAsync(int interval)
     {
@@ -162,7 +188,12 @@ internal sealed class DiscordAccountPresence : IDisposable
                     if (op == 11) _heartbeatPending = false;
                     if (op == 1) await SendAsync(new { op = 1, d = _sequence });
                     if (root.TryGetProperty("t", out var type) && type.GetString() == "READY")
-                    { Status = "Conectado"; _ready.TrySetResult(); }
+                    {
+                        Profile = ReadProfile(root);
+                        Status = "Conectado";
+                        _ready.TrySetResult();
+                        Changed?.Invoke();
+                    }
                 }
         }
         catch (Exception error)
@@ -248,6 +279,8 @@ internal sealed class DiscordAccountPresence : IDisposable
         _music.Tick -= Snapshot;
         _http.DefaultRequestHeaders.Clear(); _http.Dispose();
         _stop.Cancel(); _socket.Abort(); _socket.Dispose();
+        PublishedTrack = null;
         if (Status is "Conectado" or "Conectando") Status = "Desconectado";
+        Changed?.Invoke();
     }
 }

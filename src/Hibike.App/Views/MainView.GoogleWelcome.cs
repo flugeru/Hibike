@@ -23,7 +23,7 @@ public sealed partial class MainView
             Width = 72, Height = 72, HorizontalAlignment = HorizontalAlignment.Center
         });
         var title = Text("Sua música no Hibike", UiTheme.DialogTitle); title.TextAlignment = TextAlignment.Center; title.TextWrapping = TextWrapping.Wrap; items.Children.Add(title);
-        var note = Text("Login web não oficial e opcional para consultar playlists e curtidas do YouTube Music. Cookies dão acesso à sessão sem escopo somente leitura. Sessão salva protegida neste dispositivo, fora dos backups do Hibike e sem logs; yt-dlp não recebe cookies. Google pode bloquear ou expirar sessão. Desconectar remove sessão salva.", UiTheme.Body, Muted);
+        var note = Text("Conecte suas playlists e curtidas do YouTube Music. A sessão é protegida e fica neste aparelho.", UiTheme.Body, Muted);
         note.TextWrapping = TextWrapping.Wrap; note.TextAlignment = TextAlignment.Center; items.Children.Add(note);
         var error = Text("", UiTheme.Caption, UiTheme.Error); error.TextWrapping = TextWrapping.Wrap; error.IsVisible = false;
         Button? signIn = null, skip = null;
@@ -44,7 +44,10 @@ public sealed partial class MainView
                 catch { connected.Dispose(); throw new InvalidOperationException("Não foi possível salvar sessão protegida. Tente novamente."); }
                 _account?.Dispose(); _account = connected; _accountExpired = false; _accountRestoreFailed = false; _accountError = null;
                 if (!DismissGoogleWelcome()) return;
-                _page = "home"; Refresh(); await LoadAccountHomeAsync();
+                if (_page == "account") await ShowAccountAsync();
+                else { _page = "home"; Refresh(); }
+                await LoadAccountHomeAsync();
+                if (_page == "account") await ShowAccountAsync();
             }
             catch (OperationCanceledException)
             {
@@ -65,8 +68,6 @@ public sealed partial class MainView
         });
         signIn.Classes.Add("primary"); items.Children.Add(signIn);
         skip = ActionButton("Continuar sem conta", () => { DismissGoogleWelcome(); return Task.CompletedTask; }); items.Children.Add(skip); items.Children.Add(error);
-        var session = Text("Conta permanece conectada após reiniciar. Se Google expirar acesso, use Perfil · Minha conta para entrar novamente.", UiTheme.Caption, Muted);
-        session.TextWrapping = TextWrapping.Wrap; items.Children.Add(session);
         var legal = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 8 };
         legal.Children.Add(ActionButton("Privacidade", () => OpenLegalAsync("privacy.html")));
         legal.Children.Add(ActionButton("Termos", () => OpenLegalAsync("terms.html"))); items.Children.Add(legal);

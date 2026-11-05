@@ -245,6 +245,19 @@ public sealed partial class MainView : UserControl
             Refresh();
             return;
         }
+        if (Uri.TryCreate(query, UriKind.Absolute, out var link) && link.Scheme is "http" or "https"
+            && (link.Host == "youtube.com" || link.Host.EndsWith(".youtube.com", StringComparison.OrdinalIgnoreCase))
+            && link.AbsolutePath.TrimEnd('/') == "/playlist")
+        {
+            var id = link.Query.TrimStart('?').Split('&').FirstOrDefault(part => part.StartsWith("list=", StringComparison.Ordinal))?[5..];
+            if (id is not null && System.Text.RegularExpressions.Regex.IsMatch(id, "^[A-Za-z0-9_-]{1,200}$"))
+            {
+                CancelExploreSearch();
+                await ShowPagedCollectionAsync("Playlist do YouTube", "https://www.youtube.com/playlist?list=" + id,
+                    new Track(id, "Playlist do YouTube", "YouTube", ""), "Playlist");
+                return;
+            }
+        }
         if (_mobileSearchAttempt == query && (_music.Searching || _artistLookup is not null)) return;
         _mobileSearchAttempt = query;
         await Task.WhenAll(SearchArtistResultsAsync(query), _music.SearchAsync(query));
@@ -945,7 +958,7 @@ public sealed partial class MainView : UserControl
         if (_songPopup is { IsOpen: true }) { _songPopup.IsOpen = false; return true; }
         if (_overlay is not null) { CloseSheet(); return true; }
         if (_showingPlayer) { ClosePlayer(); return true; }
-        if (_page is "settings" or "account") { _page = "home"; Refresh(); return true; }
+        if (_page is "settings" or "account") { BackFromPreferences(); return true; }
         if (_page == "library" && _mobileLibraryGroup is not null) { CloseMobileLibraryGroup(); return true; }
         if (_page == "queue" && _queueOpenedFromPlayer) { ReturnFromMobileQueue(); return true; }
         if (_page == "collection") { BackFromCollection(); return true; }
@@ -1021,7 +1034,7 @@ public sealed partial class MainView : UserControl
     {
         ClosePlayer(); CloseTopMenu(); CloseSheet();
         var sections = new List<Control>();
-        var sound = new StackPanel { Spacing = 12 };
+        var sound = new StackPanel { Spacing = UiTheme.CompactGap, Margin = new Thickness(12, 4) };
         var volume = new Slider { Minimum = 0, Maximum = 1, Value = _music.Volume, HorizontalAlignment = HorizontalAlignment.Stretch };
         var volumeLabel = Text($"Volume · {_music.Volume:P0}", UiTheme.Body);
         Avalonia.Automation.AutomationProperties.SetName(volume, "Volume nas configurações");
@@ -1029,18 +1042,18 @@ public sealed partial class MainView : UserControl
         sound.Children.Add(volumeLabel); sound.Children.Add(volume);
         if (AppServices.AudioEngines is { } engines)
         {
-            sound.Children.Add(Text("Motor de áudio · reinicie para aplicar", UiTheme.Caption, Muted));
+            sound.Children.Add(Text("Motor de áudio · requer reinício", UiTheme.Caption, Muted));
             var enginePicker = new ComboBox { ItemsSource = engines.Where(e => AppServices.AudioEngineAvailable?.Invoke(e) == true).ToArray(), SelectedItem = AppServices.SelectedAudioEngine, HorizontalAlignment = HorizontalAlignment.Stretch };
             Avalonia.Automation.AutomationProperties.SetName(enginePicker, "Motor de áudio");
             enginePicker.SelectionChanged += (_, _) => { if (enginePicker.SelectedItem is string engine) { try { AppServices.SaveAudioEngine?.Invoke(engine); } catch { _music.SetStatus("Não foi possível salvar motor de áudio."); } } };
             sound.Children.Add(enginePicker);
-            var codecs = Text("libmpv e VLC: arquivos locais e streaming. Reinicie após trocar o motor.", UiTheme.Caption, Muted); codecs.TextWrapping = TextWrapping.Wrap; sound.Children.Add(codecs);
+
         }
-        sections.Add(PreferenceSection("Reprodução", "Volume salvo automaticamente neste dispositivo.", sound));
+        sections.Add(PreferenceSection("Reprodução", sound));
         var reduceMotion = new CheckBox { Content = "Reduzir movimento", IsChecked = _music.ReduceMotion };
         reduceMotion.IsCheckedChanged += (_, _) => _music.SetReduceMotion(reduceMotion.IsChecked == true);
-        sections.Add(PreferenceSection("Aparência", "Reduz transições e animações decorativas.", reduceMotion));
-        sections.Add(PreferenceSection("Conta e biblioteca", "Sua conexão, músicas e recomendações.",
+        sections.Add(PreferenceSection("Aparência", reduceMotion));
+        sections.Add(PreferenceSection("Conta e biblioteca",
             PreferenceLink("account", "Minha conta", _account?.DisplayName ?? "Google e YouTube Music", ShowAccountAsync),
             PreferenceLink("heart", "Personalizar meu som", "Artistas e estilos favoritos", () => { ShowMusicOnboarding(edit: true); return Task.CompletedTask; }),
             PreferenceLink("queue", "Histórico de escuta", "Reproduções salvas neste dispositivo", () =>
@@ -1056,7 +1069,7 @@ public sealed partial class MainView : UserControl
             history.ItemsSource = _music.History.ToArray();
             ShowSheet("Histórico local", history); return Task.CompletedTask;
         })));
-        if (OperatingSystem.IsAndroid()) sections.Add(PreferenceSection("Integrações", "Serviços opcionais.", PreferenceLink("info", "Discord por token (não oficial)", "Leia riscos antes de conectar", ShowDiscordAccountAsync)));
+        if (OperatingSystem.IsAndroid()) sections.Add(PreferenceSection("Integrações", PreferenceLink("info", "Discord", "Atividade de reprodução", ShowDiscordAccountAsync)));
         var cookies = System.IO.Path.Combine(_music.DataDirectory, "youtube-cookies.txt");
         var support = new List<Control> { PreferenceLink("info", "Diagnóstico de reprodução", "Detalhes para investigar falhas", () => { ShowDiagnostics(); return Task.CompletedTask; }), PreferenceLink("info", "Privacidade", "Como Hibike trata seus dados", () => OpenLegalAsync("privacy.html")), PreferenceLink("info", "Termos", "Condições de uso", () => OpenLegalAsync("terms.html")) };
         if (System.IO.File.Exists(cookies)) support.Add(PreferenceLink("close", "Apagar cookies antigos (não utilizados)", "Remove arquivo legado", () => { System.IO.File.Delete(cookies); ShowSettings(); return Task.CompletedTask; }));
@@ -1064,70 +1077,231 @@ public sealed partial class MainView : UserControl
         {
             support.Add(PreferenceLink("settings", "Laboratório experimental", "Recursos de desenvolvimento", () => { ShowExperimental(); return Task.CompletedTask; }));
         }
-        sections.Add(PreferenceSection("Ajuda e privacidade", "Informações do aplicativo.", support.ToArray()));
-        OpenPreferencesPage("settings", "Configurações", "Ajuste Hibike do seu jeito.", sections.ToArray());
+        sections.Add(PreferenceSection("Ajuda e privacidade", support.ToArray()));
+        OpenPreferencesPage("settings", "Configurações", sections.ToArray());
     }
     private YouTubeAccountLibrary? _account;
     private DiscordAccountPresence? _discordAccount;
     private Task ShowDiscordAccountAsync()
     {
+        var storage = AppServices.DiscordTokenStorage;
+        var hasSaved = false;
         var panel = new StackPanel { Spacing = 12 };
-        var warning = Text("Token pessoal dá acesso à conta. Self-bot viola regras do Discord e pode causar suspensão. Token só nesta sessão, sem salvar. Capa pública e progresso dependem do Discord; capas locais não são enviadas. Android pode suspender conexão em segundo plano.", UiTheme.Caption, Muted);
-        warning.TextWrapping = TextWrapping.Wrap; panel.Children.Add(warning);
-        var status = Text(_discordAccount?.Status ?? "Desconectado", UiTheme.Caption);
-        status.TextWrapping = TextWrapping.Wrap; panel.Children.Add(status);
-        var token = UiTheme.Field("Token pessoal Discord"); token.PasswordChar = '●'; panel.Children.Add(token);
-        panel.Children.Add(ActionButton("Conectar", async () =>
+        var identity = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = UiTheme.PageGap };
+        var avatar = new ContentControl { Content = Icons.Make("account", Muted, 40), Width = 44, Height = 44 };
+        identity.Children.Add(avatar);
+        var identityText = new StackPanel { Spacing = 2 };
+        var profileName = CollectionText("Discord", UiTheme.Body, weight: FontWeight.SemiBold);
+        var username = CollectionText("", UiTheme.Caption, Muted);
+        var status = Text("", UiTheme.Caption, Muted);
+        status.TextWrapping = TextWrapping.Wrap;
+        identityText.Children.Add(profileName);
+        identityText.Children.Add(username);
+        identityText.Children.Add(status);
+        Put(identity, identityText, 0, 1);
+        var activity = Text("Sem faixa publicada", UiTheme.Body);
+        activity.TextWrapping = TextWrapping.Wrap;
+        var profileLink = PreferenceLink("account", "Abrir perfil no Discord", "", async () =>
         {
-            if (!token.IsEnabled) return;
-            token.IsEnabled = false; status.Text = "Conectando; aguardando confirmação do Discord…";
-            var value = token.Text ?? ""; token.Text = "";
-            _discordAccount?.Dispose(); _discordAccount = new DiscordAccountPresence(_music);
-            try { await _discordAccount.ConnectAsync(value); CloseSheet(); }
-            catch (Exception ex) { status.Text = ex.Message; }
-            finally { value = ""; token.IsEnabled = true; }
-        }));
-        panel.Children.Add(ActionButton("Desconectar", () => { _discordAccount?.Dispose(); _discordAccount = null; CloseSheet(); return Task.CompletedTask; }));
-        ShowSheet("Discord não oficial", panel); return Task.CompletedTask;
-    }
-    private async Task ShowAccountAsync()
-    {
-        if (_account is null)
+            if (_discordAccount?.Profile is { } profile && TopLevel.GetTopLevel(this)?.Launcher is { } launcher)
+                await launcher.LaunchUriAsync(new Uri("https://discord.com/users/" + profile.Id));
+        });
+        panel.Children.Add(PreferenceSection("Perfil e atividade", identity, activity, profileLink));
+
+        var note = Text("Integração não oficial. O Discord pode restringir contas que usam token pessoal.", UiTheme.Caption, Muted);
+        note.TextWrapping = TextWrapping.Wrap;
+        panel.Children.Add(note);
+        var token = UiTheme.Field("Token pessoal do Discord");
+        token.PasswordChar = '●';
+        panel.Children.Add(token);
+        var remember = new CheckBox { Content = "Lembrar neste aparelho", IsVisible = storage is not null };
+        panel.Children.Add(remember);
+        var actions = new WrapPanel { ItemSpacing = UiTheme.CompactGap, LineSpacing = UiTheme.CompactGap };
+        panel.Children.Add(actions);
+        var useSaved = CollectionAction("Usar token salvo", () => Task.CompletedTask);
+        var disconnect = CollectionAction("Desconectar e remover token", () =>
         {
-            var retry = new StackPanel { Spacing = 12 };
-            if (_accountRestoreFailed) retry.Children.Add(PreferenceLink("refresh", "Tentar conexão novamente", "Abrir sessão protegida salva", async () => { _accountRestoreAttempted = false; await RestoreAccountAsync(); await ShowAccountAsync(); }));
-            retry.Children.Add(PreferenceLink("account", "Entrar com Google", "Conectar playlists e músicas curtidas", () => { ShowGoogleWelcome(); return Task.CompletedTask; }));
-            OpenPreferencesPage("account", "Minha conta", "Use Hibike sem conta ou conecte sua biblioteca.", PreferenceSection("Sem conta conectada", _accountError ?? "Login opcional. Sua biblioteca local continua disponível.", retry)); return;
+            try
+            {
+                storage?.Clear();
+                _discordAccount?.Dispose();
+                _discordAccount = null;
+                CloseSheet();
+            }
+            catch { status.Text = "Não foi possível remover o token salvo."; }
+            return Task.CompletedTask;
+        });
+        DiscordAccountPresence? observed = null;
+        DiscordAccountPresence.DiscordProfile? rendered = null;
+        void UpdatePresence()
+        {
+            var profile = observed?.Profile;
+            if (!Equals(profile, rendered))
+            {
+                rendered = profile;
+                avatar.Content = profile?.Avatar is { } url
+                    ? new Artwork(new Track(profile.Id, profile.Name, "", "", Thumbnail: url), 44) { CornerRadius = new CornerRadius(22) }
+                    : Icons.Make("account", Muted, 40);
+            }
+            profileName.Text = profile?.Name ?? "Discord";
+            username.IsVisible = profile is not null;
+            username.Text = profile is null ? "" : "@" + profile.Username;
+            hasSaved = storage?.Exists() == true;
+            useSaved.IsVisible = hasSaved;
+            disconnect.IsVisible = hasSaved || observed is not null;
+            status.Text = observed?.Status ?? (hasSaved ? "Token salvo neste aparelho" : "Desconectado");
+            profileLink.IsVisible = profile is not null;
+            activity.Text = observed?.PublishedTrack is { } current
+                ? "Atividade enviada · " + TrackTextFormatter.Title(current.Title, current.Artist) + " · " + TrackTextFormatter.Artist(current.Artist)
+                : "Sem faixa publicada";
         }
-        var panel = new StackPanel { Spacing = UiTheme.CompactGap };
-        var supported = AppServices.ConnectYouTubeAccount is not null;
-        var note = Text(supported
-            ? _account.IsWebSession ? "Sessão web não oficial, salva protegida neste dispositivo e fora dos backups do Hibike. Navegador temporário é limpo após login. Cookies não têm escopo somente leitura; yt-dlp não recebe credenciais. Desconectar remove sessão salva. Google pode expirar ou revogar acesso."
-            : "API oficial: playlists e vídeos curtidos, somente leitura. Token só na memória; yt-dlp não recebe credenciais."
-            : "Login Android ainda indisponível: exige autorização nativa Google e configuração do pacote/assinatura. Não usamos fluxo Desktop no Android.", UiTheme.Caption, Muted);
-        note.TextWrapping = TextWrapping.Wrap; panel.Children.Add(note);
-        if (_accountError is { } error) { var message = Text(error, UiTheme.Caption, UiTheme.Error); message.TextWrapping = TextWrapping.Wrap; panel.Children.Add(message); }
-        panel.Children.Add(PreferenceLink("refresh", "Tentar conexão novamente", "Atualizar playlists e curtidas sem novo login", async () => { await LoadAccountHomeAsync(); await ShowAccountAsync(); }));
-        if (_accountExpired) panel.Children.Add(PreferenceLink("account", "Entrar novamente com Google", "Renovar sessão expirada ou revogada", () => { ShowGoogleWelcome(); return Task.CompletedTask; }));
-        var library = new StackPanel { Spacing = 8 };
-        var configPath = System.IO.Path.Combine(_music.DataDirectory, "google-oauth-desktop.json");
-        if (System.IO.File.Exists(configPath)) panel.Children.Add(ActionButton("Apagar configuração local e desconectar", async () =>
-        { System.IO.File.Delete(configPath); DisconnectAccount(); await ShowAccountAsync(); }));
+        void OnPresenceChanged() => Dispatcher.UIThread.Post(UpdatePresence);
+        void Observe(DiscordAccountPresence? connection)
+        {
+            if (observed is not null) observed.Changed -= OnPresenceChanged;
+            observed = connection;
+            if (observed is not null) observed.Changed += OnPresenceChanged;
+            UpdatePresence();
+        }
+        panel.AttachedToVisualTree += (_, _) => Observe(_discordAccount);
+        panel.DetachedFromVisualTree += (_, _) =>
+        {
+            if (observed is not null) observed.Changed -= OnPresenceChanged;
+            observed = null;
+        };
+
+        actions.Children.Add(CollectionAction("Conectar", () => ConnectAsync(saved: false), prominent: true));
+        actions.Children.Add(useSaved);
+        useSaved.Click += async (_, _) => await ConnectAsync(saved: true);
+        actions.Children.Add(disconnect);
+
+        ShowSheet("Discord", panel);
+        return Task.CompletedTask;
+
+        async Task ConnectAsync(bool saved)
+        {
+            if (!actions.IsEnabled) return;
+            actions.IsEnabled = token.IsEnabled = remember.IsEnabled = false;
+            status.Text = "Conectando…";
+            try
+            {
+                var value = saved ? storage?.Read() : token.Text?.Trim();
+                token.Text = "";
+                if (string.IsNullOrWhiteSpace(value)) { status.Text = "Informe um token para conectar."; return; }
+                _discordAccount?.Dispose();
+                var connection = new DiscordAccountPresence(_music);
+                _discordAccount = connection;
+                Observe(connection);
+                await connection.ConnectAsync(value);
+                if (!ReferenceEquals(_discordAccount, connection)) return;
+                if (!saved && storage is { } local)
+                {
+                    try
+                    {
+                        if (remember.IsChecked == true) local.Save(value);
+                        else local.Clear();
+                    }
+                    catch
+                    {
+                        status.Text = "Discord conectado. Não foi possível atualizar o token salvo.";
+                        return;
+                    }
+                }
+                UpdatePresence();
+            }
+            catch
+            {
+                status.Text = saved ? "Não foi possível conectar com o token salvo. Tente informar um novo token."
+                    : "Não foi possível conectar. Confira o token e tente novamente.";
+            }
+            finally { actions.IsEnabled = token.IsEnabled = remember.IsEnabled = true; }
+        }
+    }
+
+    private Task ShowAccountAsync()
+    {
+        if (_page != "account") _accountBackToSettings = _page == "settings";
+        var sections = new List<Control>();
+        var identity = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = UiTheme.PageGap, Margin = new Thickness(12, 4) };
+        identity.Children.Add(Icons.Make("account", Muted, 36));
+        var name = _account?.DisplayName ?? (_account is null ? "Sem conta conectada" : "Conta Google");
+        var labels = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
+        labels.Children.Add(CollectionText(name, UiTheme.SectionTitle, weight: FontWeight.SemiBold));
+        labels.Children.Add(CollectionText(_account is null ? "Playlists e curtidas do YouTube Music"
+            : _accountExpired ? "Sessão expirada" : "Conectada ao YouTube Music", UiTheme.Caption, Muted));
+        Put(identity, labels, 0, 1);
+        var connection = new List<Control> { identity };
+        if (_accountError is not null)
+        {
+            var error = Text(_accountExpired ? "Entre novamente para atualizar sua biblioteca."
+                : "Não foi possível atualizar a conexão.", UiTheme.Caption, UiTheme.Error);
+            error.TextWrapping = TextWrapping.Wrap;
+            error.Margin = new Thickness(12, 4);
+            connection.Add(error);
+        }
+        if (_account is null || _accountExpired)
+            connection.Add(PreferenceLink("account", _accountExpired ? "Entrar novamente com Google" : "Entrar com Google",
+                "", () => { ShowGoogleWelcome(); return Task.CompletedTask; }));
+        if (_accountRestoreFailed && _account is null && AppServices.RestoreYouTubeAccount is not null)
+            connection.Add(PreferenceLink("refresh", "Tentar conexão novamente", "", async () =>
+            {
+                _accountRestoreAttempted = false;
+                await RestoreAccountAsync();
+                if (_page == "account") await ShowAccountAsync();
+            }));
         if (_account is { } account)
         {
-            panel.Children.Add(PreferenceLink("close", "Desconectar conta", "Remover sessão salva deste dispositivo", async () => { DisconnectAccount(); await ShowAccountAsync(); }));
-            library.Children.Add(PreferenceLink("heart", "Vídeos curtidos", $"{_accountLikes.Count} músicas carregadas", () => ShowAccountTracksAsync(account, null, "Vídeos curtidos")));
-            foreach (var playlist in _accountPlaylists)
-                library.Children.Add(PreferenceLink("queue", playlist.Title, "Playlist YouTube Music", () => ShowAccountTracksAsync(account, playlist.Id, playlist.Title)));
+            connection.Add(PreferenceLink("refresh", "Atualizar biblioteca", "", async () =>
+            {
+                await LoadAccountHomeAsync();
+                if (_page == "account") await ShowAccountAsync();
+            }));
+            connection.Add(PreferenceLink("close", "Desconectar conta", "", () => { DisconnectAccount(); return ShowAccountAsync(); }));
+            var library = new List<Control>
+            {
+                PreferenceLink("heart", "Vídeos curtidos", TrackCount(_accountLikes.Count), () => ShowAccountTracksAsync(account, null, "Vídeos curtidos"))
+            };
+            library.AddRange(_accountPlaylists.Select(playlist => PreferenceLink("queue", playlist.Title,
+                "", () => ShowAccountTracksAsync(account, playlist.Id, playlist.Title))));
+            sections.Add(PreferenceSection("Biblioteca do YouTube Music", library.ToArray()));
         }
-        OpenPreferencesPage("account", "Minha conta", _account.DisplayName ?? "Conta Google conectada",
-            PreferenceSection("Conexão e segurança", "Sessão protegida neste dispositivo · atualização automática a cada 15 minutos com app aberto.", panel),
-            PreferenceSection("Sua biblioteca", "Playlists e curtidas da conta conectada.", library));
+        var configPath = System.IO.Path.Combine(_music.DataDirectory, "google-oauth-desktop.json");
+        if (System.IO.File.Exists(configPath))
+            connection.Add(PreferenceLink("close", "Apagar configuração local", "", () =>
+            {
+                System.IO.File.Delete(configPath);
+                DisconnectAccount();
+                return ShowAccountAsync();
+            }));
+        sections.Insert(0, PreferenceSection("Google", connection.ToArray()));
+        OpenPreferencesPage("account", "Minha conta", sections.ToArray());
+        return Task.CompletedTask;
     }
-    private async Task ShowAccountTracksAsync(YouTubeAccountLibrary account, string? id, string title)
+    private Task ShowAccountTracksAsync(YouTubeAccountLibrary account, string? id, string title)
     {
-        var tracks = await account.TracksAsync(id, CancellationToken.None);
-        OpenCollection(title, tracks);
+        string? continuation = null;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var playlist = _accountPlaylists.FirstOrDefault(item => item.Id == id);
+        var cover = playlist?.Thumbnail is { } image ? new Track(playlist.Id, title, "YouTube Music", "", Thumbnail: image) : null;
+        return ShowPagedCollectionAsync(title, cover, id is null ? "Curtidas" : "Playlist", async (_, token) =>
+        {
+            // The provider may return a page made entirely of unavailable tracks.
+            var next = continuation;
+            var requested = new HashSet<string>(StringComparer.Ordinal);
+            while (true)
+            {
+                var result = await account.TrackPageAsync(id, next, token);
+                next = result.Continuation;
+                if (next is not null && (seen.Contains(next) || !requested.Add(next)))
+                    throw new InvalidOperationException("Continuação repetida na biblioteca.");
+                if (result.Tracks.Count == 0 && next is not null) continue;
+                return (result.Tracks, next is not null, () =>
+                {
+                    seen.UnionWith(requested);
+                    continuation = next;
+                });
+            }
+        });
     }
     private CancellationTokenSource? _download;
     private void ShowExperimental()

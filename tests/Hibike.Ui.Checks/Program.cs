@@ -260,6 +260,17 @@ internal static partial class Program
                     Check(rejected, "Discord accepted malformed token");
                 }
                 presence.Dispose(); presence.Dispose();
+                using (var ready = System.Text.Json.JsonDocument.Parse("""
+                    {"d":{"user":{"id":"123456789012345678","username":"listener","global_name":"Listener","avatar":"00112233445566778899aabbccddeeff"}}}
+                    """))
+                {
+                    var discordProfile = presenceType.GetMethod("ReadProfile", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!
+                        .Invoke(null, [ready.RootElement])!;
+                    Check(Equals(discordProfile.GetType().GetProperty("Username")!.GetValue(discordProfile), "listener")
+                        && Equals(discordProfile.GetType().GetProperty("Avatar")!.GetValue(discordProfile),
+                            "https://cdn.discordapp.com/avatars/123456789012345678/00112233445566778899aabbccddeeff.png?size=128"),
+                        "Discord READY did not expose the authenticated profile");
+                }
                 var validateFrame = presenceType.GetMethod("ValidateFrame", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
                 validateFrame.Invoke(null, [System.Net.WebSockets.WebSocketMessageType.Text, 2_000_000L]);
                 foreach (var frame in new[] { (System.Net.WebSockets.WebSocketMessageType.Text, 16L * 1024 * 1024 + 1), (System.Net.WebSockets.WebSocketMessageType.Binary, 100L) })
@@ -636,7 +647,7 @@ internal static partial class Program
                 var artistScreen = detailHost.Child;
                 Check(typeof(MainView).GetField("_page", hidden)!.GetValue(view) as string == "collection", "Artist did not open dedicated page");
                 Check(typeof(MainView).GetField("_overlay", hidden)!.GetValue(view) is null, "Artist opened modal");
-                typeof(MainView).GetMethod("OpenCollection", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(view, ["Playlist de teste", new Track[] { nextA, nextB }, "Playlist", null, null, null, false, false]);
+                typeof(MainView).GetMethod("OpenCollection", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(view, ["Playlist de teste", new Track[] { nextA, nextB }, "Playlist", null, null, null, false, false, null]);
                 await Task.Delay(150); Capture(view, "collection-1260");
                 Check(view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "Playlist de teste" && t.IsEffectivelyVisible), "Collection page missing");
                 var queueCount = music.Queue.Count;
@@ -648,6 +659,31 @@ internal static partial class Program
                     "Nested collection did not return to the artist");
                 Check(AppServices.BackHandler!() && Equals(route.GetValue(view), previousRoute),
                     "Artist did not return to the originating screen");
+                var paged = typeof(MainView).GetMethod("ShowPagedCollectionAsync", hidden, null,
+                    [typeof(string), typeof(string), typeof(Track), typeof(string), typeof(bool)], null)!;
+                var playlistArt = new Track("paged-check", "Paged check", "Test artist", "");
+                await (Task)paged.Invoke(view, ["Paged check", "https://www.youtube.com/playlist?list=PagedCheck", playlistArt, "Playlist", false])!;
+                await Task.Delay(100);
+                ItemsControl PlaylistRows() => detailHost.GetVisualDescendants().OfType<ItemsControl>().Single();
+                var pageRows = PlaylistRows();
+                var loadMore = pageRows.Items.OfType<Button>().Single();
+                Check(pageRows.ItemCount == 51 && !pageRows.GetRealizedContainers().Contains(loadMore),
+                    "Load more appeared before the end of the playlist");
+                pageRows.ScrollIntoView(50);
+                await Task.Delay(100);
+                Check(pageRows.GetRealizedContainers().Contains(loadMore), "Load more did not appear at the end");
+                loadMore.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                await Task.Delay(100);
+                Check(ReferenceEquals(pageRows, PlaylistRows()) && Equals(loadMore.Content, "Tentar carregar mais") && loadMore.IsEnabled,
+                    "Failed page lost playlist rows or the retry button");
+                loadMore.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                await Task.Delay(100);
+                pageRows = PlaylistRows();
+                Check(pageRows.Items.OfType<Track>().Count() == 52 && !pageRows.Items.OfType<Button>().Any(),
+                    "Retry skipped the page, duplicated tracks or kept a button after the end");
+                Check(pageRows.GetVisualAncestors().OfType<ScrollViewer>().First().Offset.Y > 0,
+                    "Loading more reset the playlist to the top");
+                Check(AppServices.BackHandler!(), "Paged playlist cannot return to its origin");
                 music.SaveSession(); await music.FlushPendingSavesAsync();
                 var restored = new MusicController(new Catalog(), new Player(), new LibraryStore(directory), directory);
                 await restored.InitializeAsync();
@@ -676,6 +712,15 @@ internal static partial class Program
     {
         public Task<IReadOnlyList<Track>> SearchAsync(string query, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<Track>>(Enumerable.Range(0, 1000).Select(i => new Track(i.ToString(), i == 1 ? "Artist - Short title" : "Artist - Clair Obscur: Expedition 33 (Original Soundtrack) — A deliberately long title for overflow and responsive layout checks (Official Video)", "Artist - Topic", "test", 267.8)).ToArray());
+        private int _nextPageAttempts;
+
+        public Task<IReadOnlyList<Track>> BrowsePageAsync(string source, int page, CancellationToken token)
+        {
+            if (page == 1 && _nextPageAttempts++ == 0) throw new HttpRequestException("Simulated page failure");
+            var indices = page switch { 0 => Enumerable.Range(0, 50), 1 => Enumerable.Range(49, 3), _ => [] };
+            return Task.FromResult<IReadOnlyList<Track>>(indices.Select(index =>
+                new Track("paged-" + index, "Track " + index, "Test artist", "https://example.org/paged/" + index)).ToArray());
+        }
         public Task<AudioSource> ResolveAsync(Track track, CancellationToken cancellationToken) => Task.FromResult(new AudioSource("test", new Dictionary<string, string>(), BitrateKbps: 160, Codec: "opus", SampleRateHz: 48000, Channels: 2, Format: "251", Container: "webm"));
     }
     private sealed class RadioCatalog : IMusicCatalog

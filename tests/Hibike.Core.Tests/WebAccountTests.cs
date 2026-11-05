@@ -22,6 +22,22 @@ public class WebAccountTests
         using var restored = YouTubeAccountLibrary.FromWebSession(client, account.ExportWebSession());
         Assert.Equal(account.ExportWebSession(), restored.ExportWebSession());
     }
+    [Fact]
+    public async Task TrackPageFetchesOnlyTheRequestedContinuation()
+    {
+        var handler = new Handler();
+        using var http = new HttpClient(handler);
+        using var library = YouTubeAccountLibrary.FromWebSession(http, "SAPISID=test-secret; SID=other");
+        var first = await library.TrackPageAsync("PLtest", null, CancellationToken.None);
+        Assert.Single(first.Tracks);
+        Assert.Equal("next", first.Continuation);
+        Assert.Equal(1, handler.TrackPages);
+        var next = await library.TrackPageAsync("PLtest", first.Continuation, CancellationToken.None);
+        Assert.Empty(next.Tracks);
+        Assert.Null(next.Continuation);
+        Assert.Equal(2, handler.TrackPages);
+    }
+
     private sealed class StatusHandler(HttpStatusCode status) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
@@ -88,6 +104,7 @@ public class WebAccountTests
                 else
                 {
                     TrackPages++;
+                    Assert.Equal(TrackPages == 1 ? null : "next", json.RootElement.GetProperty("continuation").GetString());
                     body = TrackPages == 1
                         ? """{"musicResponsiveListItemRenderer":{"thumbnail":{"thumbnails":[{"url":"https://lh3.googleusercontent.com/music=w1000-h1000","width":1000},{"url":"https://lh3.googleusercontent.com/music=w60-h60","width":60}]},"flexColumns":[{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Música"}]}}},{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Artista"}]}}}],"playlistItemData":{"videoId":"abcdefghijk"}},"nextContinuationData":{"continuation":"next"}}"""
                         : "{}";

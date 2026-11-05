@@ -245,7 +245,7 @@ public sealed partial class MainView
     }
 
     private void OpenCollection(string title, IReadOnlyList<Track> tracks, string kind = "Playlist", Track? artwork = null, string? message = null, Func<Task>? retry = null,
-        bool replace = false, bool artistPage = false)
+        bool replace = false, bool artistPage = false, Button? footer = null)
     {
         ClosePlayer(); CloseTopMenu(); CloseSheet();
         var prior = _page == "collection" ? _collectionPage.Child : null;
@@ -289,7 +289,8 @@ public sealed partial class MainView
         if (!artistPage && artwork is { IsArtist: true } && !string.Equals(artwork.Title, title, StringComparison.OrdinalIgnoreCase))
             actions.Children.Add(ActionButton("Ver artista", () => ShowChannelAsync(artwork)));
         Put(grid, actions, 1, 0);
-        var list = new ItemsControl { ItemsSource = tracks, ItemsPanel = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel()), ItemTemplate = new FuncDataTemplate<Track>((track, _) => track is null ? new Border() : TrackRow(track, showMenu: true)) };
+        var list = CollectionList<object>(item => item is Track track ? TrackRow(track, showMenu: true) : new Border());
+        list.ItemsSource = footer is null ? tracks : tracks.Cast<object>().Append(footer).ToArray();
         Put(grid, tracks.Count > 0 ? UiTheme.FadingScroll(list)
             : EmptyState("library", message ?? "Nenhuma faixa disponível", "", retry is null ? null : "Tentar novamente", retry), 2, 0);
         _collectionPage.Child = grid; _page = "collection"; CloseSheet(); Refresh();

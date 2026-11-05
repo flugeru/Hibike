@@ -32,7 +32,7 @@ Older builds may allow importing a YouTube cookie file. Treat it as sensitive ac
 
 Desktop Discord Rich Presence can share the current title, artist, artwork and playback timing with your Discord client and Discord. Other people may see this activity according to your Discord settings. On supported desktop builds, setting `HIBIKE_DISCORD_RPC=0` disables this integration and its associated local-track artwork lookup.
 
-Some experimental Android builds offer an unofficial Discord integration using a personal token. If enabled, the token is held in memory and used to connect to Discord; activity information is sent to Discord. Personal tokens are sensitive credentials, and using this integration may violate Discord's terms. Do not publish or share tokens.
+Some experimental Android builds offer an unofficial Discord integration using a personal token. Hibike uses the token to connect to Discord and sends activity information to Discord. If you choose to remember the token, Hibike encrypts it on your Android device using Android Keystore and excludes the file from backups. Use the Discord connection screen to remove it. Personal tokens are sensitive credentials, and using this integration may violate Discord's terms. Do not publish or share tokens.
 
 System media controls and Android playback notifications expose track metadata and artwork to your operating system and may show them on the lock screen.
 

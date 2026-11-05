@@ -58,24 +58,47 @@ public sealed class YouTubeAccountLibrary(HttpClient client, string accessToken)
 
     public async Task<IReadOnlyList<Track>> TracksAsync(string? playlistId, CancellationToken token)
     {
+        var tracks = new List<Track>();
+        string? continuation = null;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        for (var page = 0; page < (_webSession ? 100 : 20); page++)
+        {
+            var result = await TrackPageAsync(playlistId, continuation, token);
+            tracks.AddRange(result.Tracks);
+            continuation = result.Continuation;
+            if (continuation is null) return tracks.DistinctBy(track => track.Id).ToArray();
+            if (!seen.Add(continuation)) throw new InvalidOperationException("Continuação repetida na biblioteca.");
+        }
+        if (_webSession) throw new InvalidOperationException("Biblioteca excedeu 100 páginas. Lista não foi carregada por completo.");
+        return tracks.DistinctBy(track => track.Id).ToArray();
+    }
+
+    public async Task<(IReadOnlyList<Track> Tracks, string? Continuation)> TrackPageAsync(
+        string? playlistId, string? continuation, CancellationToken token)
+    {
+        var tracks = new List<Track>();
         if (_webSession)
         {
-            if (playlistId is not null && !System.Text.RegularExpressions.Regex.IsMatch(playlistId, "^[A-Za-z0-9_-]{1,200}$")) throw new ArgumentException("Playlist inválida.");
-            var tracks = new List<Track>();
-            await foreach (var root in WebPagesAsync(playlistId is null ? "VLLM" : "VL" + playlistId, token))
-                foreach (var item in Nodes(root, "musicResponsiveListItemRenderer"))
-                {
-                    var id = Nodes(item, "videoId").Select(n => n.GetString()).FirstOrDefault();
-                    var columns = Columns(item).ToArray();
-                    if (id is null || !System.Text.RegularExpressions.Regex.IsMatch(id, "^[A-Za-z0-9_-]{11}$") || columns.Length == 0) continue;
-                    tracks.Add(new(id, columns[0], columns.ElementAtOrDefault(1) ?? "YouTube Music", "https://www.youtube.com/watch?v=" + id, Thumbnail: WebImage(item)));
-                }
-            return tracks.DistinctBy(t => t.Id).ToArray();
+            if (playlistId is not null && !System.Text.RegularExpressions.Regex.IsMatch(playlistId, "^[A-Za-z0-9_-]{1,200}$"))
+                throw new ArgumentException("Playlist inválida.");
+            using var json = await WebRequestAsync("browse", playlistId is null ? "VLLM" : "VL" + playlistId, continuation, token);
+            var root = json.RootElement;
+            if (Nodes(root, "error").Any()) throw new InvalidOperationException("Biblioteca indisponível. Reconecte sua conta.");
+            foreach (var item in Nodes(root, "musicResponsiveListItemRenderer"))
+            {
+                var id = Nodes(item, "videoId").Select(node => node.GetString()).FirstOrDefault();
+                var columns = Columns(item).ToArray();
+                if (id is null || !System.Text.RegularExpressions.Regex.IsMatch(id, "^[A-Za-z0-9_-]{11}$") || columns.Length == 0) continue;
+                tracks.Add(new(id, columns[0], columns.ElementAtOrDefault(1) ?? "YouTube Music",
+                    "https://www.youtube.com/watch?v=" + id, Thumbnail: WebImage(item)));
+            }
+            return (tracks, WebContinuation(root));
         }
-        var results = new List<Track>();
+
         var endpoint = playlistId is null ? "videos?part=snippet&myRating=like&maxResults=50"
             : "playlistItems?part=snippet&maxResults=50&playlistId=" + Uri.EscapeDataString(playlistId);
-        await foreach (var item in ItemsAsync(endpoint, token))
+        using var official = await ApiPageAsync(endpoint, continuation, token);
+        foreach (var item in official.RootElement.GetProperty("items").EnumerateArray())
         {
             var snippet = item.GetProperty("snippet");
             var id = playlistId is null ? item.GetProperty("id").GetString()
@@ -88,9 +111,20 @@ public sealed class YouTubeAccountLibrary(HttpClient client, string accessToken)
             if (snippet.TryGetProperty("thumbnails", out var thumbnails))
                 foreach (var size in new[] { "high", "medium", "default" })
                     if (thumbnails.TryGetProperty(size, out var thumb)) { image = thumb.GetProperty("url").GetString(); break; }
-            results.Add(new(id, title, artist ?? "YouTube", "https://www.youtube.com/watch?v=" + Uri.EscapeDataString(id), 0, image));
+            tracks.Add(new(id, title, artist ?? "YouTube", "https://www.youtube.com/watch?v=" + Uri.EscapeDataString(id), 0, image));
         }
-        return results.DistinctBy(t => t.Id).ToArray();
+        return (tracks, official.RootElement.TryGetProperty("nextPageToken", out var next) ? next.GetString() : null);
+    }
+
+    private async Task<JsonDocument> ApiPageAsync(string endpoint, string? page, CancellationToken token)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "https://www.googleapis.com/youtube/v3/" + endpoint
+            + (page is null ? "" : "&pageToken=" + Uri.EscapeDataString(page)));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _credential ?? throw new InvalidOperationException("Conta desconectada."));
+        using var response = await client.SendAsync(request, token);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Biblioteca YouTube: HTTP {(int)response.StatusCode}. Reconecte se sessão expirou; confira API, permissão e cota no Google Cloud.");
+        return JsonDocument.Parse(await response.Content.ReadAsStringAsync(token));
     }
 
     private async IAsyncEnumerable<JsonElement> ItemsAsync(string endpoint,
@@ -100,13 +134,7 @@ public sealed class YouTubeAccountLibrary(HttpClient client, string accessToken)
         // ponytail: cap at 1000 entries per view; add explicit load-more when needed.
         for (var count = 0; count < 20; count++)
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, "https://www.googleapis.com/youtube/v3/" + endpoint
-                + (page is null ? "" : "&pageToken=" + Uri.EscapeDataString(page)));
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _credential ?? throw new InvalidOperationException("Conta desconectada."));
-            using var response = await client.SendAsync(request, token);
-            if (!response.IsSuccessStatusCode)
-                throw new InvalidOperationException($"Biblioteca YouTube: HTTP {(int)response.StatusCode}. Reconecte se sessão expirou; confira API, permissão e cota no Google Cloud.");
-            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(token));
+            using var json = await ApiPageAsync(endpoint, page, token);
             foreach (var item in json.RootElement.GetProperty("items").EnumerateArray()) yield return item.Clone();
             page = json.RootElement.TryGetProperty("nextPageToken", out var next) ? next.GetString() : null;
             if (page is null) yield break;
@@ -123,14 +151,17 @@ public sealed class YouTubeAccountLibrary(HttpClient client, string accessToken)
             using var json = await WebRequestAsync("browse", browseId, continuation, token);
             if (Nodes(json.RootElement, "error").Any()) throw new InvalidOperationException("Biblioteca indisponível. Reconecte sua conta.");
             yield return json.RootElement.Clone();
-            continuation = Nodes(json.RootElement, "nextContinuationData").SelectMany(n => Nodes(n, "continuation"))
-                .Concat(Nodes(json.RootElement, "continuationCommand").SelectMany(n => Nodes(n, "token")))
-                .Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString()).FirstOrDefault();
+            continuation = WebContinuation(json.RootElement);
             if (continuation is null) yield break;
             if (!seen.Add(continuation)) throw new InvalidOperationException("Continuação repetida na biblioteca.");
         }
         throw new InvalidOperationException("Biblioteca excedeu 100 páginas. Lista não foi carregada por completo.");
     }
+    private static string? WebContinuation(JsonElement root) =>
+        Nodes(root, "nextContinuationData").SelectMany(node => Nodes(node, "continuation"))
+            .Concat(Nodes(root, "continuationCommand").SelectMany(node => Nodes(node, "token")))
+            .Where(node => node.ValueKind == JsonValueKind.String).Select(node => node.GetString()).FirstOrDefault();
+
     private async Task<JsonDocument> WebRequestAsync(string endpoint, string? browseId, string? continuation, CancellationToken token)
     {
         var cookies = _credential ?? throw new InvalidOperationException("Conta desconectada.");
