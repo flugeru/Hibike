@@ -266,7 +266,7 @@ public sealed partial class MainView
                     ? TimeSpan.FromSeconds(Math.Min(86400, Math.Max(0, total - update.Bytes) / update.BytesPerSecond))
                     : (TimeSpan?)null;
                 var eta = remaining is { } estimate
-                    ? $" · {estimate:hh\:mm\:ss} restantes" : "";
+                    ? $" · {estimate.ToString("c")} restantes" : "";
                 SetDownloadStatus($"Baixando {track.Title}\n{size}{speed}{eta}", percent);
             });
             path = await AudioDownload.SaveAsync(source, Path.Combine(_music.DataDirectory, "downloads"), progress, request.Token, track.Source);
