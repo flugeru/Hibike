@@ -27,6 +27,7 @@ internal sealed class DownloadJob(Track track) : INotifyPropertyChanged
         or TransferStage.Paused or TransferStage.Failed;
     public double Progress => TotalBytes is > 0 ? Math.Clamp((double)Bytes / TotalBytes.Value, 0, 1) : 0;
     public bool HasKnownLength => TotalBytes is > 0;
+    public bool IsIndeterminate => Stage == TransferStage.Transferring && !HasKnownLength;
     public string StatusText
     {
         get
@@ -76,7 +77,7 @@ internal sealed class DownloadJob(Track track) : INotifyPropertyChanged
     private void Notify()
     {
         foreach (var name in new[] { nameof(Stage), nameof(StatusText), nameof(Progress),
-            nameof(HasKnownLength), nameof(CanPause), nameof(CanResume), nameof(CanCancel) })
+            nameof(HasKnownLength), nameof(IsIndeterminate), nameof(CanPause), nameof(CanResume), nameof(CanCancel) })
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
         Changed?.Invoke();
     }
