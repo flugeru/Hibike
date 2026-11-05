@@ -13,7 +13,7 @@ public sealed partial class MainView
     private Grid _downloadsPage = null!;
     private Border _connectionCard = null!, _connectionBanner = null!, _downloadActivity = null!;
     private TextBlock _connectionTitle = null!, _connectionBody = null!, _downloadSummary = null!, _downloadEmpty = null!, _downloadStatus = null!;
-    private Button _connectionAction = null!, _connectionShortcut = null!, _playDownloads = null!, _downloadAction = null!;
+    private Button _connectionAction = null!, _connectionShortcut = null!, _playDownloads = null!, _downloadAction = null!, _downloadCancelAction = null!;
     private ProgressBar _downloadProgress = null!;
     private TextBox _downloadFilter = null!;
     private ItemsControl _downloadItems = null!;
@@ -25,6 +25,7 @@ public sealed partial class MainView
     private (bool Network, bool Offline)? _lastConnection;
     private CancellationTokenSource? _download;
     private Track? _retryDownload;
+    private bool _pauseRequested, _cancelRequested;
     private bool ShowOfflineHome => _page == "home" && (!_music.NetworkAvailable || _music.OfflineMode);
 
     private void InitializeOfflineWorkspace(Grid content, Panel status)
@@ -86,18 +87,40 @@ public sealed partial class MainView
         _downloadStatus = Text("", UiTheme.Caption, Muted);
         _downloadStatus.TextWrapping = TextWrapping.Wrap;
         _downloadProgress = new ProgressBar { Maximum = 1, Height = 4, IsVisible = false };
-        _downloadAction = ActionButton("Cancelar", () =>
+        _downloadAction = ActionButton("Pausar", () =>
         {
-            if (_download is { } active) active.Cancel();
-            else if (_retryDownload is { } retry) return DownloadTrackAsync(retry);
+            if (_download is { } active)
+            {
+                _pauseRequested = true;
+                active.Cancel();
+                return Task.CompletedTask;
+            }
+            return _retryDownload is { } retry ? DownloadTrackAsync(retry) : Task.CompletedTask;
+        });
+        _downloadCancelAction = ActionButton("Cancelar", () =>
+        {
+            if (_download is { } active)
+            {
+                _cancelRequested = true;
+                _pauseRequested = false;
+                active.Cancel();
+            }
+            else if (_retryDownload is { } retry)
+            {
+                AudioDownload.DiscardPartial(Path.Combine(_music.DataDirectory, "downloads"), retry.Source);
+                _retryDownload = null;
+                SetDownloadStatus("Transferência descartada.");
+            }
             return Task.CompletedTask;
         });
-        var activity = new Grid { ColumnDefinitions = new("*,Auto"), RowDefinitions = new("Auto,Auto"), ColumnSpacing = UiTheme.CompactGap };
+        var activity = new Grid { RowDefinitions = new("Auto,Auto,Auto"), RowSpacing = UiTheme.CompactGap };
         activity.Children.Add(_downloadStatus);
-        Put(activity, _downloadAction, 0, 1);
         Put(activity, _downloadProgress, 1, 0);
-        Grid.SetColumnSpan(_downloadProgress, 2);
-        _downloadActivity = UiTheme.Card(activity);
+        var transferActions = new WrapPanel { ItemSpacing = UiTheme.CompactGap, LineSpacing = UiTheme.CompactGap };
+        transferActions.Children.Add(_downloadAction);
+        transferActions.Children.Add(_downloadCancelAction);
+        Put(activity, transferActions, 2, 0);
+        _downloadActivity = UiTheme.Card(activity, padding: 12);
         _downloadActivity.IsVisible = false;
 
         _downloadItems = CollectionList<Track>(track => TrackRow(track, showMenu: true,
@@ -107,7 +130,7 @@ public sealed partial class MainView
             Children = { _connectionCard, _downloadActivity, _downloadSummary, actions, _downloadFilter, filters } };
         _downloadsPage = new Grid { IsVisible = false, RowDefinitions = new("Auto,*"), RowSpacing = UiTheme.CompactGap, ClipToBounds = true };
         var toolsScroll = UiTheme.FadingScroll(tools);
-        _downloadsPage.SizeChanged += (_, e) => toolsScroll.MaxHeight = Math.Max(64, e.NewSize.Height * .64);
+        _downloadsPage.SizeChanged += (_, e) => toolsScroll.MaxHeight = Math.Max(120, e.NewSize.Height * (_androidLayout ? .50 : .58));
         _downloadsPage.Children.Add(toolsScroll);
         Put(_downloadsPage, new Grid { Children = { UiTheme.FadingScroll(_downloadItems), _downloadEmpty } }, 1, 0);
         Put(content, _downloadsPage, 2, 0);
@@ -143,7 +166,7 @@ public sealed partial class MainView
             if (reconnected) Dispatcher.UIThread.Post(async () => await RefreshHomeAsync(), DispatcherPriority.Background);
         }
 
-        _downloadAction.IsEnabled = _download is not null || _music.CanUseOnline;
+        _downloadAction.IsEnabled = _download is not null || _retryDownload is not null && _music.CanUseOnline;
         var showBanner = !showDownloads && (!network && !offline || network && offline);
         if (showBanner && !_connectionBanner.IsVisible) UiMotion.Enter(_connectionBanner, -4);
         _connectionBanner.IsVisible = showBanner;
@@ -221,6 +244,7 @@ public sealed partial class MainView
 
         using var request = new CancellationTokenSource(TimeSpan.FromMinutes(30));
         _download = request;
+        _pauseRequested = _cancelRequested = false;
         _retryDownload = null;
         SetDownloadStatus("Preparando download de " + track.Title + "…");
         string? path = null;
@@ -233,9 +257,19 @@ public sealed partial class MainView
             {
                 if (_download != request || request.IsCancellationRequested) return;
                 var percent = update.TotalBytes is > 0 ? (double?)update.Bytes / update.TotalBytes : null;
-                SetDownloadStatus($"Baixando {track.Title} · {update.Bytes / 1048576d:0.0} MB", percent);
+                var size = update.TotalBytes is { } totalBytes
+                    ? $"{update.Bytes / 1048576d:0.0}/{totalBytes / 1048576d:0.0} MB"
+                    : $"{update.Bytes / 1048576d:0.0} MB";
+                var speed = update.BytesPerSecond >= 1024
+                    ? $" · {update.BytesPerSecond / 1024d:0} KB/s" : "";
+                var remaining = update.TotalBytes is { } total && update.BytesPerSecond > 1
+                    ? TimeSpan.FromSeconds(Math.Min(86400, Math.Max(0, total - update.Bytes) / update.BytesPerSecond))
+                    : (TimeSpan?)null;
+                var eta = remaining is { } estimate
+                    ? $" · {estimate:hh\:mm\:ss} restantes" : "";
+                SetDownloadStatus($"Baixando {track.Title}\n{size}{speed}{eta}", percent);
             });
-            path = await AudioDownload.SaveAsync(source, Path.Combine(_music.DataDirectory, "downloads"), progress, request.Token);
+            path = await AudioDownload.SaveAsync(source, Path.Combine(_music.DataDirectory, "downloads"), progress, request.Token, track.Source);
             SetDownloadStatus("Salvando no aparelho…", 1);
             var thumbnail = await ArtworkCache.SaveOfflineCoverAsync(track.Thumbnail ?? source.Artwork, path, request.Token);
             await _music.SaveOfflineTrackAsync(track with
@@ -247,9 +281,11 @@ public sealed partial class MainView
         }
         catch (OperationCanceledException)
         {
-            _retryDownload = track;
-            FinishDownload(!_music.CanUseOnline ? "Download interrompido. Tente quando estiver online."
-                : request.IsCancellationRequested ? "Download cancelado ou tempo esgotado." : "A faixa demorou para responder. Tente baixar de novo.");
+            _retryDownload = _cancelRequested ? null : track;
+            FinishDownload(_cancelRequested ? "Download cancelado."
+                : _pauseRequested ? "Download pausado. Toque em Retomar para continuar."
+                : !_music.CanUseOnline ? "Sem conexão. Retome quando estiver online."
+                : "Tempo esgotado. Toque em Retomar para tentar novamente.");
         }
         catch (Exception error)
         {
@@ -260,6 +296,13 @@ public sealed partial class MainView
         finally
         {
             _download = null;
+            if (_cancelRequested)
+            {
+                try { AudioDownload.DiscardPartial(Path.Combine(_music.DataDirectory, "downloads"), track.Source); }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                { PlaybackDiagnostics.WriteFailure(DiagnosticSector.Storage, "Descartar download", error); }
+            }
+            _pauseRequested = _cancelRequested = false;
             if (path is not null)
             {
                 try { File.Delete(path); File.Delete(Path.ChangeExtension(path, ".cover")); }
@@ -283,7 +326,8 @@ public sealed partial class MainView
         var active = _download is not null;
         _downloadAction.IsVisible = active || _retryDownload is not null;
         _downloadAction.IsEnabled = active || _music.CanUseOnline;
-        _downloadAction.Content = active ? "Cancelar" : "Tentar novamente";
+        _downloadAction.Content = active ? "Pausar" : "Retomar";
+        _downloadCancelAction.IsVisible = active || _retryDownload is not null;
         _downloadProgress.IsVisible = active;
         _downloadProgress.IsIndeterminate = active && progress is null && !_music.ReduceMotion;
         _downloadProgress.Value = progress ?? .5;
