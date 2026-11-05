@@ -16,10 +16,11 @@ public sealed partial class MusicController
     public MusicChart? RegionalChart { get; private set; }
     public MusicChart? GlobalChart { get; private set; }
     public MusicChart? TrendingChart { get; private set; }
-    public bool HomeLoading { get; private set; }
+    public bool HomeLoading => _recommendationsRefresh is not null;
     public string HomeMessage { get; private set; } = "";
     private DateTime _homeUpdated;
     private bool _discoveryCacheLoaded;
+    private TaskCompletionSource? _recommendationsRefresh;
     private sealed record DiscoveryCache(DateTime SavedUtc, string Region, Track[] Recommendations, Track[] Related, string Seed, MusicChart? Regional, MusicChart? Global, MusicChart? Trending = null);
     public async Task CompleteOnboardingAsync(IEnumerable<MusicArtist> artists, IEnumerable<string> genres)
     {
@@ -56,8 +57,14 @@ public sealed partial class MusicController
     public Task<IReadOnlyList<Track>> BrowsePageAsync(string source, int page, CancellationToken token) => _catalog.BrowsePageAsync(source, page, token);
     public async Task RefreshRecommendationsAsync(bool force = false)
     {
-        if (HomeLoading) return;
-        HomeLoading = true;
+        if (_recommendationsRefresh is { } pending)
+        {
+            await pending.Task;
+            return;
+        }
+
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _recommendationsRefresh = completion;
         try
         {
             // Keep legacy chart-seeded cache untouched; this cache contains only personalized candidates.
@@ -129,6 +136,11 @@ public sealed partial class MusicController
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { PlaybackDiagnostics.Write("Descoberta", e.Message); }
         }
         catch (Exception e) when (e is not OutOfMemoryException) { HomeMessage = "Descoberta indisponível. Sua biblioteca continua disponível."; PlaybackDiagnostics.Write("Descoberta", e.Message); }
-        finally { HomeLoading = false; Changed?.Invoke(); }
+        finally
+        {
+            _recommendationsRefresh = null;
+            completion.SetResult();
+            Changed?.Invoke();
+        }
     }
 }

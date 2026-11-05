@@ -1,6 +1,4 @@
-using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Input;
 using Avalonia.Threading;
 using Hibike.Core.Services;
 
@@ -43,18 +41,36 @@ public sealed partial class MainView
     private async Task RefreshHomeAsync()
     {
         if (_refreshingHome) return;
-        _refreshingHome = true; _music.SetStatus("Atualizando início…");
-        var loadingKey = new object(); _loadingOperations.Add(loadingKey, "Atualizando dados…"); RefreshLoading();
+        _refreshingHome = true;
         try
         {
-            AppServices.InvalidateCatalog();
-            if (_accountRestoreFailed) { _accountRestoreAttempted = false; await RestoreAccountAsync(); }
-            await Task.WhenAll(LoadAccountHomeAsync(), _music.RefreshRecommendationsAsync(true));
+            await WithHeaderLoadingAsync("Atualizando dados…", async () =>
+            {
+                AppServices.InvalidateCatalog();
+                var recommendations = _music.RefreshRecommendationsAsync(true);
+                await Task.WhenAll(RefreshAccountHomeAsync(), recommendations);
+            });
             _music.SetStatus(_accountError ?? "Início atualizado.");
         }
-        catch { _music.SetStatus("Não foi possível atualizar início. Tente conexão novamente."); }
-        finally { _refreshingHome = false; _loadingOperations.Remove(loadingKey); RefreshLoading(); }
+        catch (Exception error)
+        {
+            PlaybackDiagnostics.WriteFailure(DiagnosticSector.App, "Atualizar início", error);
+            _music.SetStatus("Não foi possível atualizar início. Tente conexão novamente.");
+        }
+        finally { _refreshingHome = false; }
     }
+
+    private async Task RefreshAccountHomeAsync()
+    {
+        if (_accountRestoreFailed)
+        {
+            _accountRestoreAttempted = false;
+            await RestoreAccountAsync();
+        }
+        else
+            await LoadAccountHomeAsync();
+    }
+
     private void InitializeAccountRefresh()
     {
         _accountRefreshTimer.Tick += async (_, _) =>
@@ -62,11 +78,14 @@ public sealed partial class MainView
             if (_account is not null && !_accountExpired && (OperatingSystem.IsAndroid() || TopLevel.GetTopLevel(this) is Window { IsActive: true })) await RefreshHomeAsync();
         };
         _homeRefreshContainer = new RefreshContainer { Content = _homeScroll, Visualizer = new RefreshVisualizer { Opacity = 0, IsHitTestVisible = false } };
-        _homeRefreshContainer.RefreshRequested += async (_, e) =>
+        _homeRefreshContainer.RefreshRequested += (_, _) =>
         {
-            var deferral = e.GetDeferral();
-            try { if (_page == "home" && !_showingPlayer) await RefreshHomeAsync(); }
-            finally { deferral.Complete(); }
+            // Let Avalonia settle the pull immediately. The header owns the network feedback.
+            Dispatcher.UIThread.Post(async () =>
+            {
+                if (_homeRefreshContainer.IsEffectivelyVisible && _page == "home" && !_showingPlayer)
+                    await RefreshHomeAsync();
+            }, DispatcherPriority.Background);
         };
     }
 }

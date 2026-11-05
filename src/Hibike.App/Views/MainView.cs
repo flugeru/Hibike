@@ -72,7 +72,7 @@ public sealed partial class MainView : UserControl
         _sidebar = BuildSidebar(); _root.Children.Add(_sidebar); Grid.SetRowSpan(_sidebar, 3);
         _main = new Border { Padding = UiTheme.ContentPadding, HorizontalAlignment = HorizontalAlignment.Stretch }; Put(_root, _main, 0, 1);
         var content = new Grid { RowDefinitions = new("Auto,Auto,*"), RowSpacing = 4 }; _main.Child = content;
-        var header = new Grid { Name = "AppHeader", RowDefinitions = new("Auto,Auto"), ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = UiTheme.CompactGap };
+        var header = new Grid { Name = "AppHeader", RowDefinitions = new("28,20"), ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = UiTheme.CompactGap };
         var brandIcon = _brandIcon = new Image { Source = new Avalonia.Media.Imaging.Bitmap(Avalonia.Platform.AssetLoader.Open(new Uri("avares://Hibike.App/Assets/hibike-desktop.png"))), Width = 22, Height = 22, VerticalAlignment = VerticalAlignment.Center };
         var pageBrand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         pageBrand.Children.Add(brandIcon); pageBrand.Children.Add(_pageTitle); header.Children.Add(pageBrand);
@@ -83,8 +83,10 @@ public sealed partial class MainView : UserControl
         androidMenu.Padding = UiTheme.Zero;
         if (!OperatingSystem.IsAndroid()) androidMenu.MinHeight = androidMenu.Height = 32;
         Put(header, androidMenu, 0, 2); headerImport.IsVisible = false;
+        Grid.SetRowSpan(androidMenu, 2); Grid.SetRowSpan(headerImport, 2);
         if (OperatingSystem.IsAndroid()) { brandIcon.IsVisible = true; _pageTitle.Text = "Hibike"; }
         pageBrand.VerticalAlignment = VerticalAlignment.Center; _pageTitle.VerticalAlignment = VerticalAlignment.Center;
+        InitializeLoading(header, pageBrand);
         content.Children.Add(header);
         AddSearchIcon(_search);
         TextInputOptions.SetContentType(_search, TextInputContentType.Search);
@@ -114,7 +116,6 @@ public sealed partial class MainView : UserControl
         }
         _bottom = new Border { Child = navGrid, BorderBrush = UiTheme.Brush(UiTheme.Outline), BorderThickness = UiTheme.TopBorder };
         Put(_root, _bottom, 2, 1); Content = _root;
-        InitializeLoading(header);
         SizeChanged += (_, _) =>
         {
             var compact = _androidLayout || Bounds.Width < UiTheme.DesktopWidth;
@@ -165,8 +166,8 @@ public sealed partial class MainView : UserControl
             _music.Changed += Refresh; _music.Tick += RefreshPlayback; _music.Tick += RefreshDock;
             _music.StartObserving(); Refresh();
             StartDiscordRecovery();
-            await WithLoadingAsync("Carregando biblioteca…", _music.InitializeAsync);
-            await WithLoadingAsync("Restaurando conta Google…", RestoreAccountAsync); _accountRefreshTimer.Start();
+            await _music.InitializeAsync();
+            await WithHeaderLoadingAsync("Restaurando conta Google…", RestoreAccountAsync); _accountRefreshTimer.Start();
             if (!_music.OnboardingCompleted) ShowGoogleWelcome(firstRun: true);
             if (_music.OnboardingCompleted) _ = _music.RefreshRecommendationsAsync();
         };
@@ -318,7 +319,7 @@ public sealed partial class MainView : UserControl
             _collectionPage.Child = null;
             _collectionTracks = [];
         }
-        RefreshLoading();
+        RefreshHeaderLoading();
         RefreshProfile();
         _statusBox.IsVisible = !IsCollectionPage && _music.HasError;
         _status.Text = _music.Status;
@@ -1522,7 +1523,7 @@ public sealed partial class MainView : UserControl
     {
         button.Click += async (_, _) =>
         {
-            try { await WithLoadingAsync("Carregando…", action); }
+            try { await action(); }
             catch (Exception ex)
             {
                 PlaybackDiagnostics.WriteFailure(DiagnosticSector.App, "Interface", ex);

@@ -99,26 +99,41 @@ internal static partial class Program
                 await Task.Delay(50);
                 await AppServices.Controller!.FlushPendingSavesAsync();
                 var restoreSession = typeof(MainView).GetMethod("RestoreAccountAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
-                var loadingMethod = typeof(MainView).GetMethod("WithLoadingAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+                var loadingMethod = typeof(MainView).GetMethod("WithHeaderLoadingAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
                 var loadingBanner = (Border)typeof(MainView).GetField("_loadingBanner", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
+                var header = (Grid)loadingBanner.Parent!;
+                var refreshContainer = (RefreshContainer)typeof(MainView).GetField("_homeRefreshContainer", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
+                var progress = loadingBanner.GetVisualDescendants().OfType<ProgressBar>().Single();
+                var loadingLabel = loadingBanner.GetVisualDescendants().OfType<TextBlock>().Single();
+                Check(header.Name == "AppHeader" && Grid.GetRow(loadingBanner) == 1 && loadingBanner.ClipToBounds, "Loading indicator is not contained in the app header");
+                Check(refreshContainer.Visualizer?.Opacity == 0, "Default refresh spinner still visible");
+                window.Width = 320;
+                view.UpdateLayout();
+                var homeBounds = refreshContainer.Bounds;
+                var headerBounds = header.Bounds;
                 var pendingLoad = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 var loadingTask = (Task)loadingMethod.Invoke(view, ["Atualizando dados…", (Func<Task>)(() => pendingLoad.Task)])!;
-                Check(loadingBanner.IsVisible && !loadingBanner.IsHitTestVisible, "Loading banner missing or blocks navigation");
-                Check(loadingBanner.Parent is Grid { Name: "AppHeader" } && Grid.GetRow(loadingBanner) == 1 && loadingBanner.ClipToBounds, "Loading indicator is not contained in the app header");
-                var refreshContainer = (RefreshContainer)typeof(MainView).GetField("_homeRefreshContainer", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
-                Check(refreshContainer.Visualizer?.Opacity == 0, "Default refresh spinner still visible");
+                view.UpdateLayout();
+                Check(loadingBanner.IsVisible && !loadingBanner.IsHitTestVisible && progress.IsIndeterminate, "Animated loading missing or blocks navigation");
+                Check(header.Bounds == headerBounds && refreshContainer.Bounds == homeBounds, "Loading displaced the header or home content");
+                Check(loadingLabel.TextTrimming == Avalonia.Media.TextTrimming.CharacterEllipsis && loadingLabel.Bounds.Right <= loadingBanner.Bounds.Width, "Loading text overflows the header");
+
+                var restoreLoad = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                var restoreTask = (Task)loadingMethod.Invoke(view, ["Restaurando conta Google…", (Func<Task>)(() => restoreLoad.Task)])!;
+                restoreLoad.SetResult(); await restoreTask;
+                Check(loadingBanner.IsVisible && loadingLabel.Text == "Atualizando dados…", "Overlapping loading cleared the active refresh");
                 pendingLoad.SetResult(); await loadingTask;
-                Check(!loadingBanner.IsVisible, "Completed loading message stuck");
-                foreach (var message in new[] { "Carregando…", "Carregando biblioteca…", "Preparando áudio…", "Buscando músicas…", "Carregando recomendações…", "Carregando rádio…", "Carregando conta Google…", "Restaurando conta Google…" })
-                {
-                    var pending = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                    var task = (Task)loadingMethod.Invoke(view, [message, (Func<Task>)(() => pending.Task)])!;
-                    Check(loadingBanner.IsVisible == (message == "Restaurando conta Google…"), "Unexpected banner visibility: " + message);
-                    pending.SetResult(); await task;
-                }
-                try { await (Task)loadingMethod.Invoke(view, ["Falha de carregamento", (Func<Task>)(() => Task.FromException(new IOException("Expected test error")))])!; }
-                catch (IOException) { }
-                Check(!loadingBanner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "Falha de carregamento"), "Failed loading message stuck");
+                Check(!loadingBanner.IsVisible && !progress.IsIndeterminate, "Completed loading or animation stuck");
+
+                AppServices.Controller!.SetReduceMotion(true);
+                var reducedLoad = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                var reducedTask = (Task)loadingMethod.Invoke(view, ["Atualizando dados…", (Func<Task>)(() => reducedLoad.Task)])!;
+                Check(loadingBanner.IsVisible && !progress.IsIndeterminate && progress.Value > 0, "Reduced motion did not use a static indicator");
+                reducedLoad.SetException(new IOException("Expected test error"));
+                try { await reducedTask; } catch (IOException) { }
+                Check(!loadingBanner.IsVisible, "Failed loading message stuck");
+                AppServices.Controller.SetReduceMotion(false);
+                window.Width = 360;
                 var restoreAttempted = typeof(MainView).GetField("_accountRestoreAttempted", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
                 restoreAttempted.SetValue(view, false);
                 AppServices.RestoreYouTubeAccount = null;
@@ -128,7 +143,6 @@ internal static partial class Program
                 AppServices.RestoreYouTubeAccount = () => { restoreCalls++; return Task.FromResult<YouTubeAccountLibrary?>(null); };
                 await (Task)restoreSession.Invoke(view, null)!;
                 Check(restoreCalls == 1, "Restore did not retry after platform storage became ready");
-                var header = view.GetVisualDescendants().OfType<Grid>().Single(g => g.Name == "AppHeader");
                 Check(header.Bounds.Height <= 48, "App header exceeds compact height");
                 Check(header.GetVisualDescendants().OfType<Image>().Any(i => i.Width == 22 && i.Height == 22), "Compact header logo missing");
                 var profileButton = header.Children.OfType<Button>().Single(b => b.IsVisible);
@@ -219,9 +233,27 @@ internal static partial class Program
                 var homeNavigation = view.GetVisualDescendants().OfType<Button>().First(b => b.Tag is ValueTuple<string, string, string, bool> tag && tag.Item1 == "home" && b.IsEffectivelyVisible);
                 homeNavigation.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
                 Check(!view.GetVisualDescendants().OfType<Slider>().Any(s => s.IsEffectivelyVisible && Avalonia.Automation.AutomationProperties.GetName(s) == "Volume nas configurações"), "Home navigation left settings visible");
-                var refreshMethod = typeof(MainView).GetMethod("RefreshHomeAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
-                await (Task)refreshMethod.Invoke(view, null)!;
-                Check(!(bool)typeof(MainView).GetField("_refreshingHome", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!, "Home refresh remained busy");
+                var refreshingHome = typeof(MainView).GetField("_refreshingHome", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+                var accountRestoreFailed = typeof(MainView).GetField("_accountRestoreFailed", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+                var pendingAccount = new TaskCompletionSource<YouTubeAccountLibrary?>(TaskCreationOptions.RunContinuationsAsynchronously);
+                var pullCalls = 0;
+                AppServices.RestoreYouTubeAccount = () => { pullCalls++; return pendingAccount.Task; };
+                accountRestoreFailed.SetValue(view, true);
+                refreshContainer.RequestRefresh();
+                for (var attempt = 0; pullCalls == 0 && attempt < 50; attempt++) await Task.Delay(10);
+                Check(pullCalls == 1 && loadingBanner.IsVisible && progress.IsIndeterminate, "Pull did not start the animated header refresh");
+                Check(refreshContainer.Visualizer!.GetValue(RefreshVisualizer.RefreshVisualizerStateProperty) == RefreshVisualizerState.Idle, "Pull stayed active while waiting for the network");
+                refreshContainer.RequestRefresh();
+                await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+                Check(pullCalls == 1 && (bool)refreshingHome.GetValue(view)!, "Repeated pull did not share the pending refresh");
+                pendingAccount.SetException(new HttpRequestException("Expected offline error"));
+                for (var attempt = 0; (bool)refreshingHome.GetValue(view)! && attempt < 50; attempt++) await Task.Delay(10);
+                Check(!(bool)refreshingHome.GetValue(view)! && !loadingBanner.IsVisible, "Failed pull remained busy");
+
+                AppServices.RestoreYouTubeAccount = () => { pullCalls++; return Task.FromResult<YouTubeAccountLibrary?>(null); };
+                refreshContainer.RequestRefresh();
+                for (var attempt = 0; (pullCalls == 1 || (bool)refreshingHome.GetValue(view)!) && attempt < 50; attempt++) await Task.Delay(10);
+                Check(pullCalls == 2 && !(bool)refreshingHome.GetValue(view)! && !loadingBanner.IsVisible, "Pull did not recover after the failure");
                 window.Width = initialWidth;
                 var sameRadioSong = typeof(MusicController).GetMethod("SameRadioSong", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
                 var seedSong = new Track("seed-song", "Yellow Forest - Numbers the Hours", "Lorien Testard", "seed-song", 260);
