@@ -34,7 +34,7 @@ internal sealed class Artwork : Border
                 Background = Brushes.Transparent; BorderThickness = new Thickness(0); CornerRadius = new(8);
                 panel.Children[0].IsVisible = false;
             }
-            if (cached) picture.Transitions = null;
+            if (cached || UiMotion.Reduced) picture.Transitions = null;
             _bitmap = bitmap; picture.Source = bitmap; picture.Opacity = 1;
         }
         if (track is not null && (!string.IsNullOrWhiteSpace(track.Thumbnail) || track.IsArtist))

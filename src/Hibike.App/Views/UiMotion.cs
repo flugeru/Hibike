@@ -4,17 +4,24 @@ using Avalonia.Animation;
 using Avalonia.Animation.Easings;
 using Avalonia.Media.Transformation;
 using Avalonia.Threading;
-using Avalonia.Rendering.Composition;
 
 namespace Hibike.App.Views;
 
 internal static class UiMotion
 {
+    public static bool Reduced => AppServices.Controller?.ReduceMotion == true;
+
     private static readonly TimeSpan Duration = TimeSpan.FromMilliseconds(180);
 
     public static void Enter(Control control, double offset)
     {
         control.Transitions = null;
+        if (Reduced)
+        {
+            control.Opacity = 1;
+            control.RenderTransform = null;
+            return;
+        }
         control.Opacity = 0;
         control.RenderTransform = Translation(offset);
         Configure(control);
@@ -22,12 +29,18 @@ internal static class UiMotion
         {
             if (!control.IsHitTestVisible) return;
             control.Opacity = 1;
-            control.RenderTransform = Translation(0);
+            control.RenderTransform = Reduced ? null : Translation(0);
         }, DispatcherPriority.Render);
     }
 
     public static Task ExitAsync(Control control, double offset)
     {
+        if (Reduced)
+        {
+            control.Transitions = null;
+            control.Opacity = 0;
+            return Task.CompletedTask;
+        }
         Configure(control);
         control.Opacity = 0;
         control.RenderTransform = Translation(offset);
@@ -70,25 +83,15 @@ internal static class UiMotion
             start = scroll.Offset.X;
             var max = Math.Max(0, scroll.Extent.Width - scroll.Viewport.Width);
             target = Math.Clamp((timer.IsEnabled ? target : start) + direction * Math.Max(180, scroll.Viewport.Width * .8), 0, max);
+            if (Reduced)
+            {
+                timer.Stop();
+                scroll.Offset = new Vector(target, scroll.Offset.Y);
+                return;
+            }
             if (target == start) { timer.Stop(); return; }
             started = System.Diagnostics.Stopwatch.GetTimestamp();
             timer.Start();
-        };
-    }
-
-    public static void Reflow(Control control)
-    {
-        control.AttachedToVisualTree += (_, _) =>
-        {
-            var visual = ElementComposition.GetElementVisual(control);
-            if (visual is null) return;
-            var animation = visual.Compositor.CreateVector3KeyFrameAnimation();
-            animation.Duration = TimeSpan.FromMilliseconds(220);
-            animation.Target = "Offset";
-            animation.InsertExpressionKeyFrame(1f, "this.FinalValue");
-            var animations = visual.Compositor.CreateImplicitAnimationCollection();
-            animations["Offset"] = animation;
-            visual.ImplicitAnimations = animations;
         };
     }
 }

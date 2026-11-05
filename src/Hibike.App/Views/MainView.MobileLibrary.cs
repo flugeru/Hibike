@@ -3,6 +3,8 @@ using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Hibike.Core.Models;
 using Hibike.Core.Services;
 
@@ -18,6 +20,7 @@ public sealed partial class MainView
 
     private static readonly string[] LibraryTabLabels = ["Músicas", "Playlists", "Álbuns", "Artistas"];
     private LibraryTab _mobileLibraryTab;
+    private LibraryTab _mobileLibraryRenderedTab;
     private LibrarySource _mobileLibrarySource;
     private LibraryOrder _mobileLibraryOrder;
     private LibraryGroup? _mobileLibraryGroup;
@@ -72,7 +75,7 @@ public sealed partial class MainView
 
         _mobileLibraryTools = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 8 };
         AddSearchIcon(_mobileLibrarySearch);
-        _mobileLibrarySearch.TextChanged += (_, _) => { _mobileLibraryScroll.Offset = default; RefreshMobileLibrary(); };
+        _mobileLibrarySearch.TextChanged += (_, _) => RefreshMobileLibrary();
         _mobileLibraryTools.Children.Add(_mobileLibrarySearch);
         Put(_mobileLibraryTools, CollectionIcon("sort", "Ordenar e filtrar biblioteca", () =>
         {
@@ -140,6 +143,8 @@ public sealed partial class MainView
         }
         _mobileLibraryAdd.IsVisible = detail is null || detail.Playlist is not null;
 
+        var sameCollection = _mobileLibraryRenderedTab == _mobileLibraryTab && ReferenceEquals(_mobileLibraryRenderedGroup, detail);
+        _mobileLibraryRenderedTab = _mobileLibraryTab;
         if (!ReferenceEquals(_mobileLibraryRenderedGroup, detail))
         {
             _mobileLibraryRenderedGroup = detail;
@@ -164,7 +169,8 @@ public sealed partial class MainView
             if (!_mobileLibraryShownTracks.SequenceEqual(tracks))
             {
                 _mobileLibraryShownTracks = tracks;
-                _mobileLibraryTracks.ItemsSource = tracks;
+                UpdateLibraryItems(_mobileLibraryTracks, tracks, sameCollection,
+                    track => track.Source);
             }
             count = tracks.Length;
             _mobileLibrarySummary.Text = TrackCount(count);
@@ -177,7 +183,8 @@ public sealed partial class MainView
             if (_mobileLibraryGroupKey != key)
             {
                 _mobileLibraryGroupKey = key;
-                _mobileLibraryGroups.ItemsSource = groups.Chunk(LibraryColumns).ToArray();
+                UpdateLibraryItems(_mobileLibraryGroups, groups.Chunk(LibraryColumns).ToArray(), sameCollection,
+                    row => GroupIdentity(row[0]), (row, key) => row.Any(group => Equals(GroupIdentity(group), key)));
             }
             var unit = _mobileLibraryTab switch
             {
@@ -211,6 +218,51 @@ public sealed partial class MainView
                 canCreate ? (playlists ? "Nova playlist" : "Importar músicas") : null,
                 canCreate ? RunMobileLibraryHeaderActionAsync : null);
         }
+    }
+
+    private object GroupIdentity(LibraryGroup group)
+    {
+        if (group.Playlist is { } playlist) return playlist;
+        if (group.OnlinePlaylist is { } online) return online.Id;
+        var track = group.Tracks.FirstOrDefault();
+        return (track?.Artist, _mobileLibraryTab == LibraryTab.Albums ? track?.Album : null);
+    }
+
+    private void UpdateLibraryItems<T>(ItemsControl items, T[] next, bool sameCollection,
+        Func<T, object> identity, Func<T, object, bool>? matches = null)
+    {
+        if (!sameCollection || !ReferenceEquals(_mobileLibraryScroll.Content, items)
+            || _mobileLibraryScroll.Offset.Y <= 0 || next.Length == 0)
+        {
+            items.ItemsSource = next;
+            return;
+        }
+
+        var anchor = items.GetRealizedContainers()
+            .Select(row => (Row: row, Position: row.TranslatePoint(default, _mobileLibraryScroll)))
+            .Where(entry => entry.Position is { } position && position.Y + entry.Row.Bounds.Height > 0)
+            .OrderBy(entry => entry.Position!.Value.Y).FirstOrDefault();
+        var oldIndex = anchor.Row is null ? -1 : items.IndexFromContainer(anchor.Row);
+        var oldItem = oldIndex >= 0 ? items.Items[oldIndex] : null;
+        items.ItemsSource = next;
+        if (oldItem is not T old || anchor.Position is not { } previous) return;
+
+        var key = identity(old);
+        var index = Array.FindIndex(next, item => matches?.Invoke(item, key) ?? Equals(identity(item), key));
+        if (index < 0) index = Math.Min(oldIndex, next.Length - 1);
+        bool StillCurrent() => _page == "library" && ReferenceEquals(_mobileLibraryScroll.Content, items)
+            && ReferenceEquals(items.ItemsSource, next);
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!StillCurrent()) return;
+            items.ScrollIntoView(index);
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (!StillCurrent() || items.ContainerFromIndex(index)?.TranslatePoint(default, _mobileLibraryScroll) is not { } current) return;
+                var offset = _mobileLibraryScroll.Offset;
+                _mobileLibraryScroll.Offset = new Vector(offset.X, offset.Y + current.Y - previous.Y);
+            }, DispatcherPriority.Loaded);
+        }, DispatcherPriority.Loaded);
     }
 
     private IEnumerable<Track> FilterMobileLibraryTracks() => _music.Favorites.Where(track => _mobileLibrarySource switch
@@ -332,7 +384,6 @@ public sealed partial class MainView
         {
             _mobileLibrarySource = (LibrarySource)Math.Max(0, source.SelectedIndex);
             _mobileLibraryOrder = (LibraryOrder)Math.Max(0, order.SelectedIndex);
-            _mobileLibraryScroll.Offset = default;
             CloseSheet();
             RefreshMobileLibrary();
             return Task.CompletedTask;

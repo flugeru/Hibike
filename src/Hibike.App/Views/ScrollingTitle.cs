@@ -26,6 +26,7 @@ internal sealed class ScrollingTitle : Canvas
         DetachedFromVisualTree += (_, _) => { _timer.Stop(); _offset.X = 0; };
         _timer.Tick += (_, _) =>
         {
+            if (UiMotion.Reduced) { _timer.Stop(); _offset.X = 0; return; }
             if (_pause > 0) { _pause--; return; }
             _position = Math.Clamp(_position + _direction * UiTheme.MarqueeStep, 0, _distance);
             _offset.X = -_position;
@@ -38,6 +39,6 @@ internal sealed class ScrollingTitle : Canvas
         _timer.Stop(); _text.Measure(Size.Infinity); _text.Width = _text.DesiredSize.Width;
         _distance = Math.Max(0, _text.DesiredSize.Width - Bounds.Width);
         _position = 0; _offset.X = 0; _direction = 1; _pause = UiTheme.MarqueePauseFrames;
-        if (_distance > 0 && TopLevel.GetTopLevel(this) is not null) _timer.Start();
+        if (!UiMotion.Reduced && _distance > 0 && TopLevel.GetTopLevel(this) is not null) _timer.Start();
     }
 }

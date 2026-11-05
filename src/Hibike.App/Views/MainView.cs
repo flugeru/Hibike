@@ -24,7 +24,11 @@ public sealed partial class MainView : UserControl
     private readonly Grid _root = new() { ColumnDefinitions = new($"{UiTheme.SidebarWidth},*"), RowDefinitions = new("*,Auto,Auto") };
     private readonly Border _sidebar;
     private readonly Border _main;
-    private readonly StackPanel _home = new() { Spacing = UiTheme.SectionGap };
+    private readonly System.Collections.ObjectModel.ObservableCollection<Control> _homeSections = [];
+    private readonly ItemsControl _home = new()
+    {
+        ItemsPanel = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel { CacheLength = .25 })
+    };
     private ScrollViewer _homeScroll = null!;
     private IReadOnlyList<AccountPlaylist> _accountPlaylists = [];
     private IReadOnlyList<Track> _accountLikes = [];
@@ -88,6 +92,7 @@ public sealed partial class MainView : UserControl
         _clearSearch.Classes.Add("subtle"); _clearSearch.IsVisible = false;
         _search.InnerRightContent = _clearSearch;
         _search.KeyDown += async (_, e) => { if (e.Key == Key.Enter) { e.Handled = true; await SearchAsync(); } };
+        _home.ItemsSource = _homeSections;
         _homeScroll = UiTheme.FadingScroll(_home);
         InitializeAccountRefresh();
         Put(content, _homeRefreshContainer!, 2, 0);
@@ -125,7 +130,6 @@ public sealed partial class MainView : UserControl
                 : compact ? new Thickness(12, 0, 12, 4) : new Thickness(32, 4, 32, 12);
             _homeScroll.Margin = _androidLayout ? new Thickness(-UiTheme.MobileGutter, 0) : UiTheme.Zero;
             if (_androidLayout) _mini.Margin = UiTheme.MobileMiniMargin;
-            _home.Spacing = compact ? 8 : UiTheme.SectionGap;
             if (_page == "home") RefreshHome();
             RefreshWorkspace();
             RefreshCollectionPages();
@@ -344,6 +348,7 @@ public sealed partial class MainView : UserControl
     }
     private double MobileHomeCardSize => Math.Clamp(Math.Floor((Bounds.Width - 2 * UiTheme.MobileGutter - UiTheme.CompactGap) / 2), 120, 212);
 
+    private sealed class HomeShelfPosition { public double X; }
     private sealed record HomeCard(Track Track, Func<Control> Create);
     private static HomeCard Card(Track track, Func<Control> create) => new(track, create);
     private void RefreshHome()
@@ -357,7 +362,7 @@ public sealed partial class MainView : UserControl
             + ":" + (_androidLayout ? MobileHomeCardSize : 0) + ":" + _music.HomeLoading + ":" + _music.HomeMessage + ":" + _music.RegionalChart?.RetrievedUtc + ":" + _music.GlobalChart?.RetrievedUtc + ":" + _music.TrendingChart?.RetrievedUtc;
         if (fingerprint == _homeFingerprint) return;
         _homeFingerprint = fingerprint;
-        var previous = _home.Children.ToArray();
+        var previous = _homeSections.ToArray();
         var next = new List<Control>();
         if (_accountError is { } accountError)
         {
@@ -424,14 +429,20 @@ public sealed partial class MainView : UserControl
         if (_androidLayout)
             foreach (var control in next.Where(control => control.Tag is not ValueTuple<string, string>))
                 control.Margin = new Thickness(UiTheme.MobileGutter, control.Margin.Top, UiTheme.MobileGutter, control.Margin.Bottom);
-        foreach (var removed in previous.Where(c => !next.Contains(c))) _home.Children.Remove(removed);
+        var spacing = _androidLayout || Bounds.Width < UiTheme.DesktopWidth ? 8 : UiTheme.SectionGap;
+        for (var i = 0; i < next.Count; i++)
+        {
+            var margin = next[i].Margin;
+            next[i].Margin = new Thickness(margin.Left, margin.Top, margin.Right, i + 1 < next.Count ? spacing : 0);
+        }
+        foreach (var removed in previous.Where(c => !next.Contains(c))) _homeSections.Remove(removed);
         for (var i = 0; i < next.Count; i++)
         {
             var item = next[i];
-            var index = _home.Children.IndexOf(item);
+            var index = _homeSections.IndexOf(item);
             if (index == i) continue;
-            if (index >= 0) _home.Children.Move(index, i);
-            else { UiMotion.Reflow(item); _home.Children.Insert(i, item); Animate(item); }
+            if (index >= 0) _homeSections.Move(index, i);
+            else _homeSections.Insert(i, item);
         }
 
         void Shelf(string title, string subtitle, IEnumerable<HomeCard> cards, Func<Task>? headerAction = null)
@@ -497,11 +508,25 @@ public sealed partial class MainView : UserControl
                 })
             };
             scroll.Content = row; section.Children.Add(scroll);
-            if (old?.Children.LastOrDefault() is ScrollViewer oldScroll)
+            var position = (old?.Children.LastOrDefault() as ScrollViewer)?.Tag as HomeShelfPosition ?? new HomeShelfPosition();
+            scroll.Tag = position;
+            var ready = false;
+            scroll.AttachedToVisualTree += (_, _) =>
             {
-                var offset = oldScroll.Offset;
-                scroll.AttachedToVisualTree += (_, _) => Dispatcher.UIThread.Post(() => scroll.Offset = offset, DispatcherPriority.Loaded);
-            }
+                ready = false;
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (TopLevel.GetTopLevel(scroll) is null) return;
+                    scroll.Offset = new Vector(position.X, 0);
+                    ready = true;
+                }, DispatcherPriority.Loaded);
+            };
+            scroll.DetachedFromVisualTree += (_, _) => ready = false;
+            scroll.ScrollChanged += (_, e) =>
+            {
+                if (ready && e.OffsetDelta.X != 0 && scroll.Viewport.Width > 0 && scroll.Extent.Width > scroll.Viewport.Width)
+                    position.X = scroll.Offset.X;
+            };
             next.Add(section);
         }
     }
@@ -968,7 +993,7 @@ public sealed partial class MainView : UserControl
             var animation = new Animation { Duration = TimeSpan.FromMilliseconds(800), IterationCount = IterationCount.Infinite };
             animation.Children.Add(new KeyFrame { Cue = new Cue(0), Setters = { new Avalonia.Styling.Setter(RotateTransform.AngleProperty, 0d) } });
             animation.Children.Add(new KeyFrame { Cue = new Cue(1), Setters = { new Avalonia.Styling.Setter(RotateTransform.AngleProperty, 360d) } });
-            ring.Styles.Add(new Avalonia.Styling.Style(s => s.OfType<Avalonia.Controls.Shapes.Ellipse>()) { Animations = { animation } });
+            if (!UiMotion.Reduced) ring.Styles.Add(new Avalonia.Styling.Style(s => s.OfType<Avalonia.Controls.Shapes.Ellipse>()) { Animations = { animation } });
             return ring;
     }
     private void ShowSettings()
@@ -991,6 +1016,9 @@ public sealed partial class MainView : UserControl
             var codecs = Text("libmpv e VLC: arquivos locais e streaming. Reinicie após trocar o motor.", UiTheme.Caption, Muted); codecs.TextWrapping = TextWrapping.Wrap; sound.Children.Add(codecs);
         }
         sections.Add(PreferenceSection("Reprodução", "Volume salvo automaticamente neste dispositivo.", sound));
+        var reduceMotion = new CheckBox { Content = "Reduzir movimento", IsChecked = _music.ReduceMotion };
+        reduceMotion.IsCheckedChanged += (_, _) => _music.SetReduceMotion(reduceMotion.IsChecked == true);
+        sections.Add(PreferenceSection("Aparência", "Reduz transições e animações decorativas.", reduceMotion));
         sections.Add(PreferenceSection("Conta e biblioteca", "Sua conexão, músicas e recomendações.",
             PreferenceLink("account", "Minha conta", _account?.DisplayName ?? "Google e YouTube Music", ShowAccountAsync),
             PreferenceLink("heart", "Personalizar meu som", "Artistas e estilos favoritos", () => { ShowMusicOnboarding(edit: true); return Task.CompletedTask; }),

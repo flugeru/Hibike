@@ -40,7 +40,7 @@ internal sealed class Equalizer : Border
     public void SetState(bool selected, bool playing)
     {
         IsVisible = selected;
-        _playing = selected && playing;
+        _playing = selected && playing && !UiMotion.Reduced;
         if (_playing && TopLevel.GetTopLevel(this) is not null) _timer.Start(); else _timer.Stop();
     }
 }

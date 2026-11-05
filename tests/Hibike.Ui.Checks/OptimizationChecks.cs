@@ -23,17 +23,17 @@ internal static partial class Program
         Check(root.GetProperty("homeFingerprintMissUnchangedShelves").GetProperty("medianAllocatedBytes").GetInt64() < 2_000_000,
             "Unchanged shelves allocated a new set of cover controls");
 
-        var home = (StackPanel)Field("_home")!;
+        var home = (ItemsControl)Field("_home")!;
         var homeScroll = (ScrollViewer)Field("_homeScroll")!;
-        var shelves = home.Children.OfType<StackPanel>().Where(c => c.Tag is ValueTuple<string, string>).ToArray();
+        var shelves = home.Items.OfType<StackPanel>().Where(c => c.Tag is ValueTuple<string, string>).ToArray();
         foreach (var width in new[] { 360, 390, 430 })
         {
             window.Width = width; await Task.Delay(200);
             // Each shelf must still be reachable vertically and at both horizontal ends.
-            shelves = home.Children.OfType<StackPanel>().Where(c => c.Tag is ValueTuple<string, string>).ToArray();
+            shelves = home.Items.OfType<StackPanel>().Where(c => c.Tag is ValueTuple<string, string>).ToArray();
             foreach (var shelf in shelves)
             {
-                homeScroll.Offset = new Vector(0, shelf.Bounds.Y); await Task.Delay(70);
+                home.ScrollIntoView(home.Items.IndexOf(shelf)); await Task.Delay(70);
                 var scroll = shelf.Children.OfType<ScrollViewer>().Single();
                 var items = (ItemsControl)scroll.Content!;
                 foreach (var end in new[] { false, true })
@@ -55,16 +55,56 @@ internal static partial class Program
             }
             Capture(view, "optimized-home-" + width);
         }
+        window.Height = 500;
         homeScroll.Offset = default;
+        await Task.Delay(100);
+        var firstShelf = shelves[0];
+        var firstCarousel = firstShelf.Children.OfType<ScrollViewer>().Single();
+        firstCarousel.Offset = new Vector(180, 0);
+        await Task.Delay(100);
+        var savedOffset = firstCarousel.Offset.X;
+        Check(savedOffset > 0, "First shelf could not scroll horizontally");
+        homeScroll.Offset = new Vector(0, homeScroll.Extent.Height);
+        await Task.Delay(100);
+        var realized = home.GetRealizedContainers().Select(home.IndexFromContainer).ToArray();
+        Check(!realized.Contains(home.Items.IndexOf(firstShelf)),
+            $"First shelf still realized at offset {homeScroll.Offset}, extent {homeScroll.Extent}, viewport {homeScroll.Viewport}, realized [{string.Join(",", realized)}]");
+        homeScroll.Offset = default;
+        await Task.Delay(100);
+        Check(Math.Abs(firstCarousel.Offset.X - savedOffset) < 1, "Virtualized shelf lost its horizontal position");
+
+        window.Height = 844;
+        typeof(MainView).GetField("_page", hidden)!.SetValue(view, "library");
+        typeof(MainView).GetMethod("Refresh", hidden)!.Invoke(view, null);
+        await Task.Delay(100);
+        var library = (ItemsControl)Field("_mobileLibraryTracks")!;
+        var libraryScroll = (ScrollViewer)Field("_mobileLibraryScroll")!;
+        libraryScroll.Offset = new Vector(0, 15 * 64 + 15);
+        await Task.Delay(100);
+        var top = library.GetRealizedContainers()
+            .Select(row => (Row: row, Y: row.TranslatePoint(default, libraryScroll)?.Y ?? double.MinValue))
+            .Where(entry => entry.Y + entry.Row.Bounds.Height > 0).OrderBy(entry => entry.Y).First();
+        var anchor = (Track)library.Items[library.IndexFromContainer(top.Row)]!;
+        var order = typeof(MainView).GetField("_mobileLibraryOrder", hidden)!;
+        order.SetValue(view, Enum.Parse(order.FieldType, "Title"));
+        typeof(MainView).GetMethod("RefreshMobileLibrary", hidden)!.Invoke(view, null);
+        await Task.Delay(150);
+        var anchorIndex = library.Items.IndexOf(anchor);
+        Check(library.ContainerFromIndex(anchorIndex)?.TranslatePoint(default, libraryScroll) is { } anchored
+            && Math.Abs(anchored.Y - top.Y) < 2, "Library ordering moved the visible track anchor");
 
         var music = AppServices.Controller!;
         var personal = (MusicController.Personalization)typeof(MusicController).GetField("_personal", hidden)!.GetValue(music)!;
         personal.Listening["snapshot-check"] = new() { Seconds = 42, Plays = 1 };
+        music.SetReduceMotion(true);
         music.SaveSession(); personal.Listening["snapshot-check"].Seconds = 999;
         await music.FlushPendingSavesAsync();
         using (var saved = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(music.DataDirectory, "personalization.json"))))
+        {
+            Check(saved.RootElement.GetProperty("ReduceMotion").GetBoolean(), "Reduced motion preference was not persisted");
             Check(saved.RootElement.GetProperty("Listening").GetProperty("snapshot-check").GetProperty("Seconds").GetDouble() == 42,
                 "Background writer read mutable stats after snapshot capture");
+        }
 
         var artworkType = typeof(MainView).Assembly.GetType("Hibike.App.Views.Artwork")!;
         var bitmapField = artworkType.GetField("_bitmap", hidden)!;

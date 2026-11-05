@@ -312,6 +312,7 @@ internal static partial class Program
                 Check(!view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "Continuar ouvindo" && t.IsEffectivelyVisible), "Empty history shelf visible");
                 AppServices.Controller!.History.Add(new("home-check", "Faixa recente", "Artista", "test"));
                 AppServices.Controller.SetStatus("Home check");
+                await Task.Delay(100);
                 Check(view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "Continuar ouvindo"), "Home listening history shelf missing");
                 foreach (var homeWidth in new[] { 360, 1260 })
                 {
@@ -343,10 +344,10 @@ internal static partial class Program
                         var artworkType = typeof(MainView).Assembly.GetType("Hibike.App.Views.Artwork")!;
                         var sample = new Track("aspect", "Aspect", "Test", "aspect", Thumbnail: new Uri(Path.Combine(AppContext.BaseDirectory, "home-1260.png")).AbsoluteUri);
                         var art = (Border)Activator.CreateInstance(artworkType, [sample, 160d, false, Avalonia.Media.Stretch.Uniform, true, false])!;
-                        var homePanel = (StackPanel)typeof(MainView).GetField("_home", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
-                        homePanel.Children.Add(art); await Task.Delay(300);
+                        var homeSections = (System.Collections.ObjectModel.ObservableCollection<Control>)typeof(MainView).GetField("_homeSections", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
+                        homeSections.Insert(0, art); await Task.Delay(300);
                         Check(Math.Abs(art.Height - 160d * 820 / 1260) < 2 && art.BorderThickness == default, "Natural artwork kept square frame");
-                        homePanel.Children.Remove(art);
+                        homeSections.Remove(art);
                     }
                     var card = view.GetVisualDescendants().OfType<Button>().First(b => Avalonia.Automation.AutomationProperties.GetName(b) == "Faixa recente — Artista");
                     Check(!view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.IsEffectivelyVisible && t.Text is "Em alta no Brasil" or "Em alta no mundo" or "Bombando agora" or "Tendências para você"), "Retired chart shelf visible");

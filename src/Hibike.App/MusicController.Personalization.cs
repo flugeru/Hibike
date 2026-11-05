@@ -70,6 +70,7 @@ public sealed partial class MusicController
         public List<Track> Pins { get; set; } = [];
         public List<LocalPlaylist> Playlists { get; set; } = [];
         public bool Autoplay { get; set; } = true;
+        public bool ReduceMotion { get; set; }
         public string Discovery { get; set; } = "Tudo";
         public bool OnboardingCompleted { get; set; }
         public List<MusicArtist> Artists { get; set; } = [];
@@ -86,6 +87,15 @@ public sealed partial class MusicController
     public IReadOnlyList<LocalPlaylist> Playlists => _personal.Playlists;
     public IReadOnlyList<Track> Pins => _personal.Pins;
     public IReadOnlyDictionary<string, ListeningStat> Listening => _personal.Listening;
+    public bool ReduceMotion => _personal.ReduceMotion;
+
+    public void SetReduceMotion(bool enabled)
+    {
+        if (_personal.ReduceMotion == enabled) return;
+        _personal.ReduceMotion = enabled;
+        PersistPersonalization();
+    }
+
     public bool Autoplay => _personal.Autoplay;
     public string DiscoveryMode => _personal.Discovery;
     public bool RadioLoading { get; private set; }

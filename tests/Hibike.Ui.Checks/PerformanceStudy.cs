@@ -47,18 +47,18 @@ internal static partial class Program
             ["runtime"] = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
             ["referenceBaselineCommit"] = "818b8200cc465fe938a3087f9c2dce3b9843ecf7"
         };
-        var home = (StackPanel)Field("_home")!;
+        var home = (ItemsControl)Field("_home")!;
         var artworks = home.GetVisualDescendants().OfType<Control>().Where(c => c.GetType().Name == "Artwork").ToArray();
         var viewport = new Rect(0, 0, view.Bounds.Width, view.Bounds.Height);
         var intersecting = artworks.Count(c => c.TranslatePoint(default, view) is { } origin
             && new Rect(origin, c.Bounds.Size).Intersects(viewport));
         results["homeArtworksAttached"] = artworks.Length;
         results["homeArtworksIntersectingWindowUpperBound"] = intersecting;
-        results["homeShelves"] = home.Children.OfType<StackPanel>().Count(c => c.Tag is ValueTuple<string, string>);
+        results["homeShelves"] = home.Items.OfType<StackPanel>().Count(c => c.Tag is ValueTuple<string, string>);
         results["homeFingerprintHit"] = Measure(() => Call("RefreshHome"));
-        var shelves = home.Children.OfType<StackPanel>().Where(c => c.Tag is ValueTuple<string, string>).ToArray();
+        var shelves = home.Items.OfType<StackPanel>().Where(c => c.Tag is ValueTuple<string, string>).ToArray();
         results["homeFingerprintMissUnchangedShelves"] = Measure(() => { Set("_homeFingerprint", null); Call("RefreshHome"); });
-        results["shelfInstancesRetained"] = shelves.Count(home.Children.Contains);
+        results["shelfInstancesRetained"] = shelves.Count(home.Items.Contains);
         results["idleRefreshPlayback"] = Measure(() => Call("RefreshPlayback"), 50);
         results["hiddenDesktopDockVisible"] = ((Control)Field("_desktopDock")!).IsVisible;
         results["hiddenDesktopDockRefresh"] = Measure(() => Call("RefreshDock"), 50);
