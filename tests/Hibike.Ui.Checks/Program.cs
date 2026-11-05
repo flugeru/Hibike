@@ -557,7 +557,7 @@ internal static partial class Program
                     window.Width = width;
                     var libraryNav = view.GetVisualDescendants().OfType<Button>().First(b => b.IsEffectivelyVisible && b.Tag is ValueTuple<string, string, string, bool> tag && tag.Item1 == "library");
                     libraryNav.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)); await Task.Delay(150);
-                    var filter = view.GetVisualDescendants().OfType<TextBox>().Single(t => t.PlaceholderText == "Buscar na biblioteca");
+                    var filter = view.GetVisualDescendants().OfType<TextBox>().Single(t => Avalonia.Automation.AutomationProperties.GetName(t) == "Buscar na biblioteca");
                     filter.Text = "Local favorite"; await Task.Delay(100);
                     var filtered = view.GetVisualDescendants().OfType<ItemsControl>().Single(c => c.IsEffectivelyVisible);
                     Check(filtered.ItemsSource!.Cast<Track>().Single().Id == "local-filter", "Library filter did not isolate local favorite");

@@ -54,11 +54,12 @@ public sealed partial class MainView
         _mobileSearchLocal = ScopeButton("Sua biblioteca");
         scopes.Children.Add(_mobileSearchOnline);
         scopes.Children.Add(_mobileSearchLocal);
-        var types = new StackPanel { Orientation = Orientation.Horizontal, Spacing = UiTheme.CompactGap };
+        var types = new StackPanel { Orientation = Orientation.Horizontal, Spacing = UiTheme.ProgressRadius };
         filterBar.Children.Add(UiTheme.FadingScroll(types, horizontal: true));
         foreach (var kind in new[] { "Tudo", "Músicas", "Artistas", "Álbuns", "Playlists" })
         {
             var button = ActionButton(kind, () => { SelectSearchKind(kind); return Task.CompletedTask; });
+            button.Padding = new Thickness(8, 0);
             button.Tag = kind; button.Classes.Add("pill"); _searchKindButtons.Add(button); types.Children.Add(button);
         }
         Put(page, filterBar, 1, 0);

@@ -25,7 +25,7 @@ public sealed partial class MainView
     private LibraryOrder _mobileLibraryOrder;
     private LibraryGroup? _mobileLibraryGroup;
     private readonly List<Button> _mobileLibraryTabs = [];
-    private readonly TextBox _mobileLibrarySearch = UiTheme.Field("Buscar na biblioteca");
+    private readonly TextBox _mobileLibrarySearch = UiTheme.Field("Buscar");
     private TextBlock _mobileLibraryTitle = null!, _mobileLibrarySummary = null!;
     private Button _mobileLibraryBack = null!, _mobileLibraryAdd = null!, _mobileLibraryPlay = null!;
     private bool _mobileLibraryListMode;
@@ -78,6 +78,7 @@ public sealed partial class MainView
 
         _mobileLibraryTools = new Grid { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = 8 };
         AddSearchIcon(_mobileLibrarySearch);
+        AutomationProperties.SetName(_mobileLibrarySearch, "Buscar na biblioteca");
         _mobileLibrarySearch.TextChanged += (_, _) => RefreshMobileLibrary();
         _mobileLibraryTools.Children.Add(_mobileLibrarySearch);
         var clearSearch = CollectionIcon("close", "Limpar busca da biblioteca", () =>
