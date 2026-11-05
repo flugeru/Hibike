@@ -31,7 +31,8 @@ public sealed partial class MainView
     private bool _mobileLibraryListMode;
     private Button _mobileLibraryViewMode = null!;
     private TextBlock _mobileLibraryFilterSummary = null!;
-    private Grid _mobileLibraryTabRail = null!, _mobileLibraryTools = null!;
+    private StackPanel _mobileLibraryTabRail = null!;
+    private Grid _mobileLibraryTools = null!;
     private ContentControl _mobileLibraryHero = null!, _mobileLibraryEmpty = null!;
     private ItemsControl _mobileLibraryTracks = null!, _mobileLibraryGroups = null!;
     private ScrollViewer _mobileLibraryScroll = null!;
@@ -53,7 +54,10 @@ public sealed partial class MainView
         Put(header, _mobileLibraryAdd, 0, 2);
         page.Children.Add(header);
 
-        _mobileLibraryTabRail = new Grid { ColumnDefinitions = new("*,*,*,*"), ColumnSpacing = UiTheme.CompactGap };
+        // A fixed four-column tab rail overflows narrow Android screens. Let chips keep
+        // their minimum 48dp touch targets and scroll horizontally instead.
+        _mobileLibraryTabRail = new StackPanel { Orientation = Orientation.Horizontal,
+            Spacing = UiTheme.CompactGap };
         for (var index = 0; index < LibraryTabLabels.Length; index++)
         {
             var tab = (LibraryTab)index;
@@ -72,9 +76,9 @@ public sealed partial class MainView
             button.Padding = UiTheme.Zero;
             AutomationProperties.SetName(button, label);
             _mobileLibraryTabs.Add(button);
-            Put(_mobileLibraryTabRail, button, 0, index);
+            _mobileLibraryTabRail.Children.Add(button);
         }
-        Put(page, _mobileLibraryTabRail, 1, 0);
+        Put(page, UiTheme.FadingScroll(_mobileLibraryTabRail, horizontal: true), 1, 0);
 
         _mobileLibraryTools = new Grid { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = 8 };
         AddSearchIcon(_mobileLibrarySearch);
@@ -131,8 +135,6 @@ public sealed partial class MainView
         page.SizeChanged += (_, e) =>
         {
             if (_page != "library" || e.PreviousSize.Width == e.NewSize.Width) return;
-            _mobileLibraryTabRail.Width = Math.Min(e.NewSize.Width, 560);
-            _mobileLibraryTabRail.HorizontalAlignment = HorizontalAlignment.Left;
             RefreshMobileLibrary();
         };
         return page;
@@ -340,11 +342,13 @@ public sealed partial class MainView
             .OrderBy(group => group.Title, StringComparer.CurrentCultureIgnoreCase);
     }
 
-    private int LibraryColumns => _mobileLibraryListMode ? 1 : _androidLayout ? 2
-        : Math.Clamp((int)((_mobileLibrary?.Bounds.Width ?? 0) / 180), 2, 6);
+    // One column at very narrow widths; additional columns only when cards stay readable.
+    private int LibraryColumns => _mobileLibraryListMode ? 1
+        : Math.Clamp((int)Math.Floor(((_mobileLibrary?.Bounds.Width ?? 360) + UiTheme.SectionGap)
+            / (_androidLayout ? 156d : 188d)), 1, 6);
 
     private double MobileLibraryCardSize => _mobileLibrary is { Bounds.Width: > 0 } page
-        ? Math.Clamp(Math.Floor((page.Bounds.Width - (LibraryColumns - 1) * UiTheme.SectionGap) / LibraryColumns), 100, 240)
+        ? Math.Min(240, Math.Max(1, Math.Floor((page.Bounds.Width - (LibraryColumns - 1) * UiTheme.SectionGap) / LibraryColumns)))
         : 160;
 
     private Control BuildMobileLibraryGroupRow(LibraryGroup[] groups)
@@ -379,7 +383,11 @@ public sealed partial class MainView
         var labels = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
         var kind = group.Playlist is not null ? "Playlist" : _mobileLibraryTab == LibraryTab.Albums ? "Álbum" : "Artista";
         labels.Children.Add(CollectionText(kind, UiTheme.Caption, Muted));
-        labels.Children.Add(CollectionText(group.Playlist is not null ? "Sua coleção" : "Faixas na sua biblioteca · " + group.Subtitle, UiTheme.Body, Muted));
+        var subtitle = CollectionText(group.Playlist is not null ? "Sua coleção" : "Faixas na sua biblioteca · " + group.Subtitle, UiTheme.Body, Muted);
+        subtitle.TextWrapping = TextWrapping.Wrap;
+        subtitle.MaxLines = 2;
+        subtitle.TextTrimming = TextTrimming.CharacterEllipsis;
+        labels.Children.Add(subtitle);
         if (group.Playlist is null && group.Tracks.FirstOrDefault() is { } track)
             labels.Children.Add(CollectionAction(_mobileLibraryTab == LibraryTab.Artists ? "Ver perfil online" : "Ver artista",
                 () => OpenTrackArtistAsync(track)));
