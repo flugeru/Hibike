@@ -1,8 +1,10 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Hibike.App.Downloads;
 using Hibike.Core.Models;
 using Hibike.Core.Services;
 
@@ -12,20 +14,17 @@ public sealed partial class MainView
 {
     private Grid _downloadsPage = null!;
     private Border _connectionCard = null!, _connectionBanner = null!, _downloadActivity = null!;
-    private TextBlock _connectionTitle = null!, _connectionBody = null!, _downloadSummary = null!, _downloadEmpty = null!, _downloadStatus = null!;
-    private Button _connectionAction = null!, _connectionShortcut = null!, _playDownloads = null!, _downloadAction = null!, _downloadCancelAction = null!;
-    private ProgressBar _downloadProgress = null!;
+    private TextBlock _connectionTitle = null!, _connectionBody = null!, _downloadSummary = null!, _downloadEmpty = null!, _downloadQueueSummary = null!;
+    private Button _connectionAction = null!, _connectionShortcut = null!, _playDownloads = null!, _clearFinishedDownloads = null!;
     private TextBox _downloadFilter = null!;
-    private ItemsControl _downloadItems = null!;
+    private ItemsControl _downloadItems = null!, _downloadQueueItems = null!;
     private Track[] _shownDownloads = [];
     private string _downloadOrigin = "";
     private IReadOnlyList<Track>? _lastOfflineTracks;
     private string? _lastDownloadQuery;
     private string? _lastDownloadOrigin;
     private (bool Network, bool Offline)? _lastConnection;
-    private CancellationTokenSource? _download;
-    private Track? _retryDownload;
-    private bool _pauseRequested, _cancelRequested;
+    private DownloadQueue _downloadQueue = null!;
     private bool ShowOfflineHome => _page == "home" && (!_music.NetworkAvailable || _music.OfflineMode);
 
     private void InitializeOfflineWorkspace(Grid content, Panel status)
@@ -84,43 +83,25 @@ public sealed partial class MainView
             filters.Children.Add(filter);
         }
 
-        _downloadStatus = Text("", UiTheme.Caption, Muted);
-        _downloadStatus.TextWrapping = TextWrapping.Wrap;
-        _downloadProgress = new ProgressBar { Maximum = 1, Height = 4, IsVisible = false };
-        _downloadAction = ActionButton("Pausar", () =>
+        _downloadQueue = new DownloadQueue(Path.Combine(_music.DataDirectory, "downloads"),
+            _music.ResolveDownloadAsync, RegisterDownloadedTrackAsync, maxConcurrency: 2);
+        _downloadQueueSummary = Text("", UiTheme.Caption, Muted);
+        _downloadQueueSummary.TextWrapping = TextWrapping.Wrap;
+        _downloadQueueItems = CollectionList<DownloadJob>(BuildDownloadQueueRow);
+        _downloadQueueItems.ItemsSource = _downloadQueue.Jobs;
+        _clearFinishedDownloads = ActionButton("Limpar concluídos", () =>
         {
-            if (_download is { } active)
-            {
-                _pauseRequested = true;
-                active.Cancel();
-                return Task.CompletedTask;
-            }
-            return _retryDownload is { } retry ? DownloadTrackAsync(retry) : Task.CompletedTask;
-        });
-        _downloadCancelAction = ActionButton("Cancelar", () =>
-        {
-            if (_download is { } active)
-            {
-                _cancelRequested = true;
-                _pauseRequested = false;
-                active.Cancel();
-            }
-            else if (_retryDownload is { } retry)
-            {
-                AudioDownload.DiscardPartial(Path.Combine(_music.DataDirectory, "downloads"), retry.Source);
-                _retryDownload = null;
-                SetDownloadStatus("Transferência descartada.");
-            }
+            _downloadQueue.ClearFinished();
             return Task.CompletedTask;
         });
-        var activity = new Grid { RowDefinitions = new("Auto,Auto,Auto"), RowSpacing = UiTheme.CompactGap };
-        activity.Children.Add(_downloadStatus);
-        Put(activity, _downloadProgress, 1, 0);
-        var transferActions = new WrapPanel { ItemSpacing = UiTheme.CompactGap, LineSpacing = UiTheme.CompactGap };
-        transferActions.Children.Add(_downloadAction);
-        transferActions.Children.Add(_downloadCancelAction);
-        Put(activity, transferActions, 2, 0);
+        _clearFinishedDownloads.HorizontalAlignment = HorizontalAlignment.Left;
+        var queueHeader = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.CompactGap };
+        queueHeader.Children.Add(_downloadQueueSummary);
+        Put(queueHeader, _clearFinishedDownloads, 0, 1);
+        var activity = new StackPanel { Spacing = UiTheme.CompactGap,
+            Children = { queueHeader, _downloadQueueItems } };
         _downloadActivity = UiTheme.Card(activity, padding: 12);
+        _downloadQueue.Changed += RefreshDownloadQueue;
         _downloadActivity.IsVisible = false;
 
         _downloadItems = CollectionList<Track>(track => TrackRow(track, showMenu: true,
@@ -152,7 +133,7 @@ public sealed partial class MainView
             if (!network || offline)
             {
                 if (hadConnection) CancelExploreSearch();
-                _download?.Cancel();
+                _downloadQueue.PauseAll();
                 _accountNetworkRequest?.Cancel();
             }
             _connectionTitle.Text = offline ? "Modo offline" : network ? "Músicas neste aparelho" : "Sem conexão";
@@ -166,7 +147,6 @@ public sealed partial class MainView
             if (reconnected) Dispatcher.UIThread.Post(async () => await RefreshHomeAsync(), DispatcherPriority.Background);
         }
 
-        _downloadAction.IsEnabled = _download is not null || _retryDownload is not null && _music.CanUseOnline;
         var showBanner = !showDownloads && (!network && !offline || network && offline);
         if (showBanner && !_connectionBanner.IsVisible) UiMotion.Enter(_connectionBanner, -4);
         _connectionBanner.IsVisible = showBanner;
@@ -228,109 +208,81 @@ public sealed partial class MainView
 
     private Task DownloadCurrentAsync() => _music.Current is { } track ? DownloadTrackAsync(track) : Task.CompletedTask;
 
-    private async Task DownloadTrackAsync(Track track)
+    private Task DownloadTrackAsync(Track track)
     {
         CloseSheet();
         ClosePlayer();
         _page = "downloads";
         Refresh();
-        if (_download is not null) return;
-        if (!_music.CanUseOnline || track.IsLocal || track.IsArtist) return;
+        if (!_music.CanUseOnline || track.IsLocal || track.IsArtist) return Task.CompletedTask;
         if (_music.OfflineTracks.Any(local => local.DownloadedFrom == track.Source && File.Exists(local.Source)))
         {
-            SetDownloadStatus("Esta faixa já está no aparelho.");
-            return;
+            _downloadQueueSummary.Text = "Esta faixa já está no aparelho.";
+            return Task.CompletedTask;
         }
-
-        using var request = new CancellationTokenSource(TimeSpan.FromMinutes(30));
-        _download = request;
-        _pauseRequested = _cancelRequested = false;
-        _retryDownload = null;
-        SetDownloadStatus("Preparando download de " + track.Title + "…");
-        string? path = null;
-        try
-        {
-            using var resolve = CancellationTokenSource.CreateLinkedTokenSource(request.Token);
-            resolve.CancelAfter(TimeSpan.FromSeconds(35));
-            var source = await _music.ResolveDownloadAsync(track, resolve.Token);
-            var progress = new Progress<AudioDownloadProgress>(update =>
-            {
-                if (_download != request || request.IsCancellationRequested) return;
-                var percent = update.TotalBytes is > 0 ? (double?)update.Bytes / update.TotalBytes : null;
-                var size = update.TotalBytes is { } totalBytes
-                    ? $"{update.Bytes / 1048576d:0.0}/{totalBytes / 1048576d:0.0} MB"
-                    : $"{update.Bytes / 1048576d:0.0} MB";
-                var speed = update.BytesPerSecond >= 1024
-                    ? $" · {update.BytesPerSecond / 1024d:0} KB/s" : "";
-                var remaining = update.TotalBytes is { } total && update.BytesPerSecond > 1
-                    ? TimeSpan.FromSeconds(Math.Min(86400, Math.Max(0, total - update.Bytes) / update.BytesPerSecond))
-                    : (TimeSpan?)null;
-                var eta = remaining is { } estimate
-                    ? $" · {estimate.ToString("c")} restantes" : "";
-                SetDownloadStatus($"Baixando {track.Title}\n{size}{speed}{eta}", percent);
-            });
-            path = await AudioDownload.SaveAsync(source, Path.Combine(_music.DataDirectory, "downloads"), progress, request.Token, track.Source);
-            SetDownloadStatus("Salvando no aparelho…", 1);
-            var thumbnail = await ArtworkCache.SaveOfflineCoverAsync(track.Thumbnail ?? source.Artwork, path, request.Token);
-            await _music.SaveOfflineTrackAsync(track with
-            {
-                Id = Guid.NewGuid().ToString("N"), Source = path, IsLocal = true, DownloadedFrom = track.Source, Thumbnail = thumbnail
-            });
-            path = null;
-            FinishDownload("Download concluído.");
-        }
-        catch (OperationCanceledException)
-        {
-            _retryDownload = _cancelRequested ? null : track;
-            FinishDownload(_cancelRequested ? "Download cancelado."
-                : _pauseRequested ? "Download pausado. Toque em Retomar para continuar."
-                : !_music.CanUseOnline ? "Sem conexão. Retome quando estiver online."
-                : "Tempo esgotado. Toque em Retomar para tentar novamente.");
-        }
-        catch (Exception error)
-        {
-            _retryDownload = track;
-            PlaybackDiagnostics.WriteFailure(DiagnosticSector.Storage, "Baixar faixa", error);
-            FinishDownload("Não foi possível baixar esta faixa. Tente novamente.");
-        }
-        finally
-        {
-            _download = null;
-            if (_cancelRequested)
-            {
-                try { AudioDownload.DiscardPartial(Path.Combine(_music.DataDirectory, "downloads"), track.Source); }
-                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-                { PlaybackDiagnostics.WriteFailure(DiagnosticSector.Storage, "Descartar download", error); }
-            }
-            _pauseRequested = _cancelRequested = false;
-            if (path is not null)
-            {
-                try { File.Delete(path); File.Delete(Path.ChangeExtension(path, ".cover")); }
-                catch (IOException error) { PlaybackDiagnostics.WriteFailure(DiagnosticSector.Storage, "Limpar download", error); }
-                catch (UnauthorizedAccessException error) { PlaybackDiagnostics.WriteFailure(DiagnosticSector.Storage, "Limpar download", error); }
-            }
-        }
-
-        void FinishDownload(string message)
-        {
-            _download = null;
-            SetDownloadStatus(message);
-        }
+        _downloadQueue.Enqueue(track);
+        RefreshDownloadQueue();
+        return Task.CompletedTask;
     }
 
-    private void SetDownloadStatus(string status, double? progress = null)
+    private async Task RegisterDownloadedTrackAsync(Track track, AudioSource source, string path, CancellationToken token)
     {
-        var opening = !_downloadActivity.IsVisible;
-        _downloadActivity.IsVisible = true;
-        _downloadStatus.Text = status;
-        var active = _download is not null;
-        _downloadAction.IsVisible = active || _retryDownload is not null;
-        _downloadAction.IsEnabled = active || _music.CanUseOnline;
-        _downloadAction.Content = active ? "Pausar" : "Retomar";
-        _downloadCancelAction.IsVisible = active || _retryDownload is not null;
-        _downloadProgress.IsVisible = active;
-        _downloadProgress.IsIndeterminate = active && progress is null && !_music.ReduceMotion;
-        _downloadProgress.Value = progress ?? .5;
-        if (opening) UiMotion.Enter(_downloadActivity, 4);
+        var thumbnail = await ArtworkCache.SaveOfflineCoverAsync(track.Thumbnail ?? source.Artwork, path, token);
+        token.ThrowIfCancellationRequested();
+        await _music.SaveOfflineTrackAsync(track with
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Source = path, IsLocal = true, DownloadedFrom = track.Source, Thumbnail = thumbnail
+        });
+    }
+
+    private void RefreshDownloadQueue()
+    {
+        if (_downloadQueue is null) return;
+        var jobs = _downloadQueue.Jobs;
+        var active = jobs.Count(job => job.Stage is TransferStage.Resolving or TransferStage.Transferring or TransferStage.Finalizing);
+        var pending = jobs.Count(job => job.Stage == TransferStage.Queued);
+        var paused = jobs.Count(job => job.Stage == TransferStage.Paused);
+        var failed = jobs.Count(job => job.Stage == TransferStage.Failed);
+        _downloadQueueSummary.Text = $"{active} ativos · {pending} na fila · {paused} pausados · {failed} com erro";
+        _downloadActivity.IsVisible = jobs.Count > 0;
+        _clearFinishedDownloads.IsVisible = jobs.Any(job => job.Stage is TransferStage.Completed or TransferStage.Cancelled);
+    }
+
+    private Control BuildDownloadQueueRow(DownloadJob job)
+    {
+        var header = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = UiTheme.CompactGap };
+        header.Children.Add(new Artwork(job.Track, UiTheme.TouchSize));
+        var labels = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+        var title = Text(TrackTextFormatter.Title(job.Track.Title, job.Track.Artist), UiTheme.Body);
+        title.TextTrimming = TextTrimming.CharacterEllipsis;
+        title.MaxLines = 1;
+        labels.Children.Add(title);
+        var artist = Text(TrackTextFormatter.Artist(job.Track.Artist), UiTheme.Caption, Muted);
+        artist.TextTrimming = TextTrimming.CharacterEllipsis;
+        artist.MaxLines = 1;
+        labels.Children.Add(artist);
+        Put(header, labels, 0, 1);
+
+        var status = Text("", UiTheme.Caption, Muted);
+        status.TextWrapping = TextWrapping.Wrap;
+        status.MaxLines = 3;
+        status.Bind(TextBlock.TextProperty, new Binding(nameof(DownloadJob.StatusText)) { Source = job });
+        var progress = new ProgressBar { Maximum = 1, Height = UiTheme.ProgressHeight };
+        progress.Bind(ProgressBar.ValueProperty, new Binding(nameof(DownloadJob.Progress)) { Source = job });
+        progress.Bind(ProgressBar.IsIndeterminateProperty, new Binding(nameof(DownloadJob.IsIndeterminate)) { Source = job });
+        var actions = new WrapPanel { ItemSpacing = UiTheme.CompactGap, LineSpacing = UiTheme.CompactGap };
+        var pause = ActionButton("Pausar", () => { _downloadQueue.Pause(job); return Task.CompletedTask; });
+        pause.Bind(Visual.IsVisibleProperty, new Binding(nameof(DownloadJob.CanPause)) { Source = job });
+        var resume = ActionButton("Retomar / Repetir", () => { _downloadQueue.Resume(job); return Task.CompletedTask; });
+        resume.Bind(Visual.IsVisibleProperty, new Binding(nameof(DownloadJob.CanResume)) { Source = job });
+        var cancel = ActionButton("Cancelar", () => { _downloadQueue.Cancel(job); return Task.CompletedTask; });
+        cancel.Bind(Visual.IsVisibleProperty, new Binding(nameof(DownloadJob.CanCancel)) { Source = job });
+        actions.Children.Add(pause);
+        actions.Children.Add(resume);
+        actions.Children.Add(cancel);
+        var content = new StackPanel { Spacing = UiTheme.CompactGap,
+            Children = { header, status, progress, actions } };
+        return UiTheme.Inner(content);
     }
 }
