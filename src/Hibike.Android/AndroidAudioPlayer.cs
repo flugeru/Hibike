@@ -57,6 +57,7 @@ public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPr
         }
         catch { Main(service.CancelPreparation); throw; }
     }
+    public Task StopAsync() => MainAsync(() => { PlaybackService.Instance?.StopAudio(); PlaybackSource = null; });
     public void Pause() => Main(() => PlaybackService.Instance?.PauseAudio());
     public void Resume() => Main(() => PlaybackService.Instance?.ResumeAudio());
     public void Seek(double seconds) => Main(() => PlaybackService.Instance?.Seek(seconds));

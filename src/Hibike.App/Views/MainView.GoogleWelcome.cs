@@ -31,6 +31,12 @@ public sealed partial class MainView
         signIn = ActionButton("Entrar com Google", async () =>
         {
             if (_googleWelcomeBusy) return;
+            if (!_music.CanUseOnline)
+            {
+                error.Text = "Volte ao modo online para entrar com Google.";
+                error.IsVisible = true;
+                return;
+            }
             _googleWelcomeBusy = true; signIn!.IsEnabled = skip!.IsEnabled = false; error.IsVisible = false;
             signIn.Content = "Aguardando Google…";
             try

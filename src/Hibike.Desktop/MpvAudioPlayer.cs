@@ -104,6 +104,16 @@ public sealed class MpvAudioPlayer : IAudioPlayer
         try { for (var i = 0; i < strings.Length; i++) Marshal.WriteIntPtr(array, i * IntPtr.Size, strings[i]); Marshal.WriteIntPtr(array, strings.Length * IntPtr.Size, IntPtr.Zero); Check(mpv_command(_handle, array)); }
         finally { Marshal.FreeHGlobal(array); foreach (var s in strings) Marshal.FreeCoTaskMem(s); }
     }
+    public Task StopAsync() => Task.Run(() =>
+    {
+        lock (_gate)
+        {
+            if (_handle != IntPtr.Zero) Command("stop");
+            _loaded = IsPlaying = false;
+            _position = _duration = 0;
+            PlaybackSource = null;
+        }
+    });
     public void Pause() { lock (_gate) { if (_handle != IntPtr.Zero) Set("pause", "yes"); IsPlaying = false; } }
     public void Resume() { lock (_gate) { if (_handle != IntPtr.Zero) Set("pause", "no"); } }
     public void Seek(double seconds) { if (double.IsFinite(seconds)) lock (_gate) { if (_handle != IntPtr.Zero) Command("seek", Math.Max(0, seconds).ToString(System.Globalization.CultureInfo.InvariantCulture), "absolute"); } }

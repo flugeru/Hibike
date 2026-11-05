@@ -139,6 +139,15 @@ public sealed class VlcAudioPlayer : IAudioPlayer
         _player.Volume = (int)(_volume * 100);
         if (cancellationToken.IsCancellationRequested) { _player.Stop(); cancellationToken.ThrowIfCancellationRequested(); }
     }).WaitAsync(cancellationToken);
+    public Task StopAsync() => QueueCommand(() =>
+    {
+        _player?.Stop();
+        _isPlaying = false;
+        PlaybackSource = null;
+        Interlocked.Exchange(ref _position, 0);
+        Interlocked.Exchange(ref _duration, 0);
+        return Task.CompletedTask;
+    });
     public void Pause() => Send(() => _player?.SetPause(true));
     public void Resume() => Send(() => _player?.SetPause(false));
     public void Seek(double seconds) { if (double.IsFinite(seconds)) Send(() => { if (_player is not null) _player.Time = (long)(Math.Clamp(seconds, 0, Duration) * 1000); }); }

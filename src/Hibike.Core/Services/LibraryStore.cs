@@ -2,10 +2,10 @@ using System.Text.Json;
 using Hibike.Core.Models;
 namespace Hibike.Core.Services;
 
-public sealed class LibraryStore(string directory)
+public sealed class LibraryStore(string directory, string fileName = "favorites.json")
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private readonly string _path = Path.Combine(directory, "favorites.json");
+    private readonly string _path = Path.Combine(directory, fileName);
     public async Task<List<Track>> LoadAsync()
     {
         await _gate.WaitAsync();

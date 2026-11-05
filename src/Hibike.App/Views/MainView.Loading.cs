@@ -15,6 +15,8 @@ public sealed partial class MainView
     };
     private Border _loadingBanner = null!;
     private Control _headerTitle = null!;
+    private string? _pullLoadingHint;
+    private bool _lastHeaderReduceMotion;
 
     private void InitializeLoading(Grid header, Control title)
     {
@@ -36,14 +38,17 @@ public sealed partial class MainView
         Put(header, _loadingBanner, 1, 0);
     }
 
-    private async Task WithHeaderLoadingAsync(string message, Func<Task> operation)
+    private async Task WithHeaderLoadingAsync(string message, Func<Task> operation, bool keepFeedbackVisible = false)
     {
         var key = new object();
         _headerLoadingOperations.Add(key, message);
         RefreshHeaderLoading();
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
         try { await operation(); }
         finally
         {
+            var remaining = TimeSpan.FromMilliseconds(280) - System.Diagnostics.Stopwatch.GetElapsedTime(started);
+            if (keepFeedbackVisible && remaining > TimeSpan.Zero && _music.CanUseOnline) await Task.Delay(remaining);
             _headerLoadingOperations.Remove(key);
             RefreshHeaderLoading();
         }
@@ -51,12 +56,18 @@ public sealed partial class MainView
 
     private void RefreshHeaderLoading()
     {
-        var message = _headerLoadingOperations.Values.LastOrDefault();
+        var loading = _music.CanUseOnline ? _headerLoadingOperations.Values.LastOrDefault() : null;
+        var message = loading ?? (_music.CanUseOnline ? _pullLoadingHint : null);
         var visible = message is not null;
+        var wasVisible = _loadingBanner.IsVisible;
         _loadingLabel.Text = message ?? "";
         AutomationProperties.SetName(_loadingProgress, message ?? "");
-        _loadingProgress.IsIndeterminate = visible && !_music.ReduceMotion;
-        Grid.SetRowSpan(_headerTitle, visible ? 1 : 2);
+        _loadingProgress.IsVisible = loading is not null;
+        _loadingProgress.IsIndeterminate = loading is not null && !_music.ReduceMotion;
+        if (wasVisible != visible || _lastHeaderReduceMotion != _music.ReduceMotion)
+            UiMotion.Move(_headerTitle, visible ? -10 : 0);
+        _lastHeaderReduceMotion = _music.ReduceMotion;
         _loadingBanner.IsVisible = visible;
+        if (visible && !wasVisible) UiMotion.Enter(_loadingBanner, 2, decorative: true);
     }
 }

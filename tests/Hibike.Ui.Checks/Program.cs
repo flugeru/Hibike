@@ -112,14 +112,14 @@ internal static partial class Program
                 var homeBounds = refreshContainer.Bounds;
                 var headerBounds = header.Bounds;
                 var pendingLoad = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                var loadingTask = (Task)loadingMethod.Invoke(view, ["Atualizando dados…", (Func<Task>)(() => pendingLoad.Task)])!;
+                var loadingTask = (Task)loadingMethod.Invoke(view, ["Atualizando dados…", (Func<Task>)(() => pendingLoad.Task), false])!;
                 view.UpdateLayout();
                 Check(loadingBanner.IsVisible && !loadingBanner.IsHitTestVisible && progress.IsIndeterminate, "Animated loading missing or blocks navigation");
                 Check(header.Bounds == headerBounds && refreshContainer.Bounds == homeBounds, "Loading displaced the header or home content");
                 Check(loadingLabel.TextTrimming == Avalonia.Media.TextTrimming.CharacterEllipsis && loadingLabel.Bounds.Right <= loadingBanner.Bounds.Width, "Loading text overflows the header");
 
                 var restoreLoad = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                var restoreTask = (Task)loadingMethod.Invoke(view, ["Restaurando conta Google…", (Func<Task>)(() => restoreLoad.Task)])!;
+                var restoreTask = (Task)loadingMethod.Invoke(view, ["Restaurando conta Google…", (Func<Task>)(() => restoreLoad.Task), false])!;
                 restoreLoad.SetResult(); await restoreTask;
                 Check(loadingBanner.IsVisible && loadingLabel.Text == "Atualizando dados…", "Overlapping loading cleared the active refresh");
                 pendingLoad.SetResult(); await loadingTask;
@@ -127,7 +127,7 @@ internal static partial class Program
 
                 AppServices.Controller!.SetReduceMotion(true);
                 var reducedLoad = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                var reducedTask = (Task)loadingMethod.Invoke(view, ["Atualizando dados…", (Func<Task>)(() => reducedLoad.Task)])!;
+                var reducedTask = (Task)loadingMethod.Invoke(view, ["Atualizando dados…", (Func<Task>)(() => reducedLoad.Task), false])!;
                 Check(loadingBanner.IsVisible && !progress.IsIndeterminate && progress.Value > 0, "Reduced motion did not use a static indicator");
                 reducedLoad.SetException(new IOException("Expected test error"));
                 try { await reducedTask; } catch (IOException) { }
@@ -254,6 +254,7 @@ internal static partial class Program
                 refreshContainer.RequestRefresh();
                 for (var attempt = 0; (pullCalls == 1 || (bool)refreshingHome.GetValue(view)!) && attempt < 50; attempt++) await Task.Delay(10);
                 Check(pullCalls == 2 && !(bool)refreshingHome.GetValue(view)! && !loadingBanner.IsVisible, "Pull did not recover after the failure");
+                await CheckOfflineWorkspaceAsync(view, directory);
                 window.Width = initialWidth;
                 var sameRadioSong = typeof(MusicController).GetMethod("SameRadioSong", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
                 var seedSong = new Track("seed-song", "Yellow Forest - Numbers the Hours", "Lorien Testard", "seed-song", 260);

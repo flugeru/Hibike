@@ -70,6 +70,7 @@ public sealed partial class MusicController
     public MusicController(IMusicCatalog catalog, IAudioPlayer player, LibraryStore store, string directory)
     {
         _catalog = catalog; Player = player; _store = store; DataDirectory = directory;
+        _offlineStore = new LibraryStore(directory, OfflineFileName);
         LoadVolume();
         _session = new PlaybackSessionStore(directory);
         _stateWriter = new(WriteState, ReportSaveError);
@@ -98,6 +99,7 @@ public sealed partial class MusicController
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _timer.Tick += (_, _) =>
         {
+            ObserveConnectivity();
             RecordListening();
             if (SleepAt is { } sleep && DateTime.UtcNow >= sleep)
             { SleepAt = null; PausePlayback(); SetStatus("Sleep timer: reprodução pausada."); }
@@ -111,6 +113,7 @@ public sealed partial class MusicController
             ObservePlaybackRecovery(DateTime.UtcNow);
             Tick?.Invoke();
         };
+        NetworkAvailable = AppServices.HasNetwork;
         _timer.Start();
     }
     public async Task InitializeAsync()
@@ -134,6 +137,7 @@ public sealed partial class MusicController
             }
             catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or UnauthorizedAccessException)
             { PlaybackDiagnostics.Write("Sessão", ex.Message); }
+            await InitializeOfflineTracksAsync();
         }
         catch (Exception ex)
         {
@@ -154,6 +158,7 @@ public sealed partial class MusicController
     }
     public async Task SearchAsync(string query)
     {
+        if (!CanUseOnline) return;
         if (string.IsNullOrWhiteSpace(query)) { SetStatus("Digite uma música, artista ou link para buscar."); return; }
         _search?.Cancel();
         var request = new CancellationTokenSource(TimeSpan.FromSeconds(90));
@@ -163,7 +168,7 @@ public sealed partial class MusicController
         try
         {
             var tracks = await _catalog.SearchAsync(query, request.Token);
-            if (!ReferenceEquals(_search, request)) return;
+            if (!ReferenceEquals(_search, request) || !CanUseOnline) return;
             Results.Clear(); foreach (var track in tracks) Results.Add(track);
             ResultsQuery = query;
             if (_catalog is CachedMusicCatalog cached) _ = cached.WarmAsync(tracks.Take(2));
@@ -208,6 +213,25 @@ public sealed partial class MusicController
     private async Task PlayCoreAsync(Track track, int? queueIndex, PlaybackRecovery? recovery)
     {
         if (track.IsArtist) { SetStatus("Abra o artista para escolher uma faixa."); return; }
+        if (track.IsLocal && track.Source == _removingOfflinePath) return;
+        if (!CanUseOnline && !track.IsLocal)
+        {
+            if (FindOfflineCopy(track) is { } local)
+            {
+                var existing = Queue.IndexOf(local);
+                if (existing >= 0) queueIndex = existing;
+                else if (queueIndex is { } index && index >= 0 && index < Queue.Count && Queue[index].Source == track.Source)
+                    Queue[index] = local;
+                else queueIndex = null;
+                track = local;
+                if (recovery is not null) recovery = recovery with { Track = local, QueueIndex = queueIndex, Source = null };
+            }
+            else if (OfflineMode)
+            {
+                SetStatus("Esta faixa ainda não está disponível offline.");
+                return;
+            }
+        }
         var continuing = recovery is not null && !_restored && Current?.Source == track.Source;
         _playGeneration++;
         _wantsPlayback = true;
@@ -225,7 +249,7 @@ public sealed partial class MusicController
         if (Current is not null && Current.Source != track.Source) RecordSkip();
         _play?.Cancel();
         var request = new CancellationTokenSource();
-        var requestedSource = recovery?.Source ?? _requestedPlaybackSource;
+        var requestedSource = track.IsLocal ? null : recovery?.Source ?? _requestedPlaybackSource;
         _play = request;
         HasError = false; Pending = track; LoadingAudio = true; SetStatus("Obtendo áudio…");
         var stage = "YT-DLP";
@@ -235,7 +259,7 @@ public sealed partial class MusicController
             PlaybackDiagnostics.Write("Reprodução", "Aguardando tentativa anterior.");
             await _playGate.WaitAsync(request.Token); entered = true;
             PlaybackDiagnostics.Write("Reprodução", "Tentativa liberada; preparando áudio.");
-            if (!track.IsLocal && !AppServices.HasNetwork)
+            if (!track.IsLocal && !CanUseOnline)
             {
                 Player.Pause();
                 ScheduleRecovery(recovery ?? new(track, queueIndex, requestedSource, 0));
@@ -356,6 +380,20 @@ public sealed partial class MusicController
     public async Task NextAsync()
     {
         if (_advancing) return;
+        if (!CanUseOnline)
+        {
+            var available = Upcoming.Where(CanPlayOffline).ToArray();
+            if (available.Length == 0 && RepeatQueue) available = Queue.Where(CanPlayOffline).ToArray();
+            if (available.Length > 0)
+            {
+                var track = available[Shuffle ? Random.Shared.Next(available.Length) : 0];
+                _advancing = true;
+                try { await PlayAsync(track, Queue.IndexOf(track)); }
+                finally { _advancing = false; }
+            }
+            else if (_playbackRecovery is null) { PausePlayback(); SetStatus("Fim das faixas disponíveis offline na fila."); }
+            return;
+        }
         _advancing = true;
         _playbackRecovery = null;
         var session = _queueSession; var current = Current;
@@ -379,7 +417,12 @@ public sealed partial class MusicController
     public async Task PreviousAsync()
     {
         if (Player.Position > 3) { Player.Seek(0); return; }
-        if (_queueIndex > 0) await PlayAsync(Queue[_queueIndex - 1], _queueIndex - 1);
+        for (var index = _queueIndex - 1; index >= 0; index--)
+        {
+            if (!CanUseOnline && !CanPlayOffline(Queue[index])) continue;
+            await PlayAsync(Queue[index], index);
+            return;
+        }
     }
     public async Task ToggleFavoriteAsync(Track track)
     {
@@ -453,6 +496,7 @@ public sealed partial class MusicController
     }
     private Task FillRadioAsync(bool refresh = false)
     {
+        if (!CanUseOnline) return Task.CompletedTask;
         if (_radioTask is { IsCompleted: false }) return _radioTask;
         if (!_radio || Current is null || !refresh && (Upcoming.Any() || DateTime.UtcNow < _radioRetryAt)) return Task.CompletedTask;
         var request = new CancellationTokenSource(TimeSpan.FromSeconds(25));
@@ -574,7 +618,7 @@ public sealed partial class MusicController
             .Where(System.Text.Rune.IsLetterOrDigit).Select(r => System.Text.Rune.ToLowerInvariant(r).ToString()));
         return Normalize(TrackTextFormatter.Artist(track.Artist)) + "\n" + Normalize(TrackTextFormatter.Title(track.Title, track.Artist));
     }
-    private void WarmNext() { if (_catalog is CachedMusicCatalog cached && _queueIndex + 1 < Queue.Count) _ = cached.WarmAsync([Queue[_queueIndex + 1]]); }
+    private void WarmNext() { if (CanUseOnline && _catalog is CachedMusicCatalog cached && _queueIndex + 1 < Queue.Count) _ = cached.WarmAsync([Queue[_queueIndex + 1]]); }
     public void SaveSession()
     {
         if (!_initialized || _notifyingSaveError) return;

@@ -84,9 +84,25 @@ public sealed partial class MainView
         DiscordConnectionChanged?.Invoke();
     }
 
+    private void UpdateDiscordOfflineMode()
+    {
+        if (!_discordRecoveryActive) return;
+        if (_music.OfflineMode)
+        {
+            _discordRetryTimer.Stop();
+            _discordRecoveryStatus = "Discord pausado no modo offline.";
+            ReplaceDiscordConnection(null);
+        }
+        else
+        {
+            _discordRecoveryStatus = null;
+            _ = RestoreDiscordAsync();
+        }
+    }
+
     private async Task RestoreDiscordAsync()
     {
-        if (!_discordRecoveryActive || !_discordRetryAllowed || _discordConnecting
+        if (_music.OfflineMode || !_discordRecoveryActive || !_discordRetryAllowed || _discordConnecting
             || _discordAccount is { IsClosed: false } || AppServices.DiscordTokenStorage is not { } storage
             || !storage.Exists()) return;
 
@@ -112,6 +128,12 @@ public sealed partial class MainView
     private async Task ConnectDiscordAsync(string token, bool saved, bool remember)
     {
         if (_discordConnecting) return;
+        if (_music.OfflineMode)
+        {
+            _discordRecoveryStatus = "Volte ao modo online para conectar ao Discord.";
+            DiscordConnectionChanged?.Invoke();
+            return;
+        }
         if (saved && !AppServices.HasNetwork)
         {
             _discordRetryAllowed = true;

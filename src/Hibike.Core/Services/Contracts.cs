@@ -24,6 +24,7 @@ public interface IAudioPlayer : IDisposable
     event EventHandler<string>? Failed;
     Task PlayAsync(AudioSource source, CancellationToken cancellationToken);
     void Pause();
+    Task StopAsync() { Pause(); return Task.CompletedTask; }
     void Resume();
     void Seek(double seconds);
 }

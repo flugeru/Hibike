@@ -300,7 +300,8 @@ public sealed partial class MainView
         }, DispatcherPriority.Loaded);
     }
 
-    private IEnumerable<Track> FilterMobileLibraryTracks() => _music.Favorites.Where(track => _mobileLibrarySource switch
+    private IEnumerable<Track> FilterMobileLibraryTracks() => !_music.CanUseOnline
+        ? _music.OfflineTracks : _music.Favorites.Where(track => _mobileLibrarySource switch
     {
         LibrarySource.Local => track.IsLocal,
         LibrarySource.Online => !track.IsLocal,
@@ -322,7 +323,7 @@ public sealed partial class MainView
             var local = _music.Playlists.Where(playlist => _mobileLibrarySource != LibrarySource.Online && MatchesLibraryQuery(playlist.Name, query))
                 .Select(playlist => new LibraryGroup(playlist.Name, (playlist.Pinned ? "Fixada · " : "") + TrackCount(playlist.Tracks.Count),
                     playlist.Tracks.FirstOrDefault(track => track.Thumbnail is not null), playlist.Tracks, playlist));
-            var online = _accountPlaylists.Where(playlist => _mobileLibrarySource != LibrarySource.Local && MatchesLibraryQuery(playlist.Title, query))
+            var online = (_music.CanUseOnline ? _accountPlaylists : []).Where(playlist => _mobileLibrarySource != LibrarySource.Local && MatchesLibraryQuery(playlist.Title, query))
                 .Select(playlist => new LibraryGroup(playlist.Title, "YouTube",
                     new Track(playlist.Id, playlist.Title, "YouTube", playlist.Id, Thumbnail: playlist.Thumbnail), [], OnlinePlaylist: playlist));
             return local.Concat(online).OrderByDescending(group => group.Playlist?.Pinned == true)

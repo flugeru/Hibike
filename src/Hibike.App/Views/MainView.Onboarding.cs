@@ -167,6 +167,7 @@ public sealed partial class MainView
     private async Task ShowArtistAsync(MusicArtist artist, bool replace = false)
     {
         var artwork = new Track(artist.Id, artist.Name, artist.Name, "https://music.youtube.com/channel/" + artist.Id, Thumbnail: artist.Image);
+        if (!_music.CanUseOnline) { await OpenTrackArtistAsync(artwork, replace); return; }
         OpenCollection(artist.Name, [], "Artista", artwork, "Carregando perfil…", replace: replace, artistPage: true);
         var page = _collectionPage.Child;
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(25));

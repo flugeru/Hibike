@@ -13,7 +13,7 @@ internal static class UiMotion
 
     private static readonly TimeSpan Duration = TimeSpan.FromMilliseconds(180);
 
-    public static void Enter(Control control, double offset)
+    public static void Enter(Control control, double offset, bool decorative = false)
     {
         control.Transitions = null;
         if (Reduced)
@@ -25,9 +25,10 @@ internal static class UiMotion
         control.Opacity = 0;
         control.RenderTransform = Translation(offset);
         Configure(control);
+        var transitions = control.Transitions;
         Dispatcher.UIThread.Post(() =>
         {
-            if (!control.IsHitTestVisible) return;
+            if (control.Transitions != transitions || !control.IsVisible || (!decorative && !control.IsHitTestVisible)) return;
             control.Opacity = 1;
             control.RenderTransform = Reduced ? null : Translation(0);
         }, DispatcherPriority.Render);
@@ -45,6 +46,34 @@ internal static class UiMotion
         control.Opacity = 0;
         control.RenderTransform = Translation(offset);
         return Task.Delay(Duration);
+    }
+
+    public static void Move(Control control, double offset)
+    {
+        if (Reduced)
+        {
+            control.Transitions = null;
+            control.RenderTransform = offset == 0 ? null : Translation(offset);
+            return;
+        }
+        if (control.Transitions is null)
+        {
+            control.RenderTransform ??= Translation(0);
+            control.Transitions = new Transitions
+            {
+                new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Duration = Duration, Easing = new CubicEaseOut() }
+            };
+        }
+        control.RenderTransform = Translation(offset);
+    }
+
+    public static void AttachPressFeedback(Button button)
+    {
+        button.PropertyChanged += (_, change) =>
+        {
+            if (change.Property != Button.IsPressedProperty) return;
+            Move(button, button.IsPressed && !Reduced ? 1 : 0);
+        };
     }
 
     private static void Configure(Control control) => control.Transitions = new Transitions

@@ -1,3 +1,4 @@
+using System.Net.NetworkInformation;
 using Hibike.Core.Services;
 namespace Hibike.App;
 public static class AppServices
@@ -18,7 +19,24 @@ public static class AppServices
     private static IMusicCatalog? _catalog;
     public static Action? OpenPlayerView { get; set; }
     public static Func<bool>? IsNetworkAvailable { get; set; }
-    internal static bool HasNetwork => IsNetworkAvailable?.Invoke() != false;
+    private static long _networkSampleAt = long.MinValue;
+    private static bool _desktopNetworkAvailable = true;
+    internal static bool HasNetwork
+    {
+        get
+        {
+            if (IsNetworkAvailable is { } platform) return platform();
+            var now = Environment.TickCount64;
+            if (now >= _networkSampleAt)
+            {
+                _networkSampleAt = now + 2000;
+                try { _desktopNetworkAvailable = NetworkInterface.GetIsNetworkAvailable(); }
+                catch (NetworkInformationException) { }
+                catch (PlatformNotSupportedException) { }
+            }
+            return _desktopNetworkAvailable;
+        }
+    }
     public static Action<Action<long>>? RequestDisplayFrame { get; set; }
     public static void InvalidateCatalog() => (_catalog as CachedMusicCatalog)?.Clear();
     public static Func<bool>? BackHandler { get; set; }

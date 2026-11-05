@@ -111,7 +111,7 @@ public sealed partial class MainView
             var version = ++filterVersion;
             if (_page != "explore") return;
             if (_mobileSearchAttempt != _search.Text?.Trim()) CancelExploreSearch();
-            if (_searchScope == "Sua biblioteca") await Task.Delay(120);
+            if (_searchScope == "Sua biblioteca" || !_music.CanUseOnline) await Task.Delay(120);
             if (version == filterVersion && _page == "explore") RefreshMobileSearch();
         };
         return page;
@@ -120,7 +120,7 @@ public sealed partial class MainView
         {
             var button = ActionButton(name, () =>
             {
-                if (_searchScope == name) return Task.CompletedTask;
+                if (_searchScope == name || name == "Online" && !_music.CanUseOnline) return Task.CompletedTask;
                 if (name == "Sua biblioteca") CancelExploreSearch();
                 _searchScope = name;
                 _mobileSearchScroll.Offset = default;
@@ -185,7 +185,8 @@ public sealed partial class MainView
     private void RefreshMobileSearch()
     {
         var query = _search.Text?.Trim() ?? "";
-        var local = _searchScope == "Sua biblioteca";
+        var local = _searchScope == "Sua biblioteca" || !_music.CanUseOnline;
+        _mobileSearchOnline.IsEnabled = _music.CanUseOnline;
         var busy = !local && _mobileSearchAttempt == query && (_music.Searching || _artistLookup is not null);
         var hasResult = !local && query.Length > 0 && _music.ResultsQuery == query;
         var error = !local && query.Length > 0 && _mobileSearchAttempt == query && (_music.SearchError is not null || _catalogSearchFailed);
@@ -198,7 +199,8 @@ public sealed partial class MainView
         _clearSearch.IsVisible = !string.IsNullOrEmpty(_search.Text);
 
         var tracks = local && query.Length > 0
-            ? _music.Favorites.Where(track => MatchesLibraryQuery($"{track.Title} {track.Artist} {track.Album}", query)).ToArray()
+            ? (_music.CanUseOnline ? _music.Favorites.Concat(_music.OfflineTracks) : _music.OfflineTracks)
+                .DistinctBy(track => track.Source).Where(track => MatchesLibraryQuery($"{track.Title} {track.Artist} {track.Album}", query)).ToArray()
             : hasResult && _searchKind is "Tudo" or "Músicas" ? _music.Results.Where(t => !t.IsArtist).ToArray() : [];
         var artists = !local && _searchKind is "Tudo" or "Artistas" && _artistResultsQuery == query ? _foundArtists : [];
         var collections = !local && _artistResultsQuery == query ? _foundCollections.Where(c => _searchKind == "Tudo" || (_searchKind == "Álbuns" && c.Kind != "Playlist") || (_searchKind == "Playlists" && c.Kind == "Playlist")).ToArray() : [];
@@ -267,6 +269,7 @@ public sealed partial class MainView
             "no-results" => EmptyState("search", "Nenhum resultado", "Tente outro título ou nome de artista."),
             _ => EmptyState("search", "Pronto para buscar", "Toque em Buscar ou use o teclado.")
         };
+        if (_mobileSearchPage?.IsEffectivelyVisible == true) Animate(_mobileSearchState, 4);
     }
 
     private async Task SearchArtistResultsAsync(string query)

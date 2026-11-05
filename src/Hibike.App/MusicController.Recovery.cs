@@ -67,7 +67,7 @@ public sealed partial class MusicController
     private Task RetryPlaybackAsync()
     {
         if (_playbackRecovery is not { } recovery || LoadingAudio || !_wantsPlayback) return Task.CompletedTask;
-        if (!AppServices.HasNetwork)
+        if (!CanUseOnline)
         {
             _playbackRetryAt = DateTime.UtcNow + RecoveryInterval;
             if (_playbackRecoveryMessage != OfflineStatus)
@@ -105,6 +105,15 @@ public sealed partial class MusicController
     public async Task ResumePlaybackAsync()
     {
         if (LoadingAudio || Player.IsPlaying) return;
+        if (!CanUseOnline && (_playbackRecovery?.Track ?? Current) is { IsLocal: false } online)
+        {
+            if (FindOfflineCopy(online) is not null)
+            {
+                await PlayCoreAsync(online, CurrentQueueIndex, _playbackRecovery ?? CaptureRecovery(online, CurrentQueueIndex, null));
+                return;
+            }
+            if (OfflineMode) { SetStatus("Escolha uma faixa disponível offline em Downloads."); return; }
+        }
         _wantsPlayback = true;
         try
         {

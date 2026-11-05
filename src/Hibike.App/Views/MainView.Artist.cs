@@ -29,6 +29,12 @@ public sealed partial class MainView
         var saved = _music.Favorites.Concat(_music.History).Where(item => Matches(item.Artist))
             .Append(track).Where(item => !item.IsArtist).DistinctBy(item => item.Source).ToArray();
         var artwork = track with { Title = name };
+        if (!_music.CanUseOnline)
+        {
+            OpenCollection(name, _music.OfflineTracks.Where(item => Matches(item.Artist)).ToArray(),
+                "Artista · neste aparelho", artwork, replace: replace);
+            return;
+        }
         OpenCollection(name, [], "Artista", artwork, "Buscando perfil no YouTube Music…", replace: replace, artistPage: true);
         var page = _collectionPage.Child;
         bool IsCurrent() => _page == "collection" && ReferenceEquals(page, _collectionPage.Child);
@@ -243,6 +249,15 @@ public sealed partial class MainView
         async Task LoadAsync()
         {
             if (loading || _page != "collection" || !ReferenceEquals(page, _collectionPage.Child)) return;
+            if (!_music.CanUseOnline)
+            {
+                if (tracks.Count == 0)
+                {
+                    OpenCollection(title, [], kind, artwork, "Disponível no modo online", LoadAsync, replace: true);
+                    page = _collectionPage.Child;
+                }
+                return;
+            }
             loading = true;
             var trigger = more;
             if (trigger is not null)

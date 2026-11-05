@@ -168,10 +168,34 @@ internal static class ArtworkCache
         }
     }
 
+    internal static async Task<string?> SaveOfflineCoverAsync(string? source, string audioPath, CancellationToken token)
+    {
+        if (!Uri.TryCreate(source, UriKind.Absolute, out var uri) || uri.Scheme != "https") return source;
+        var coverPath = Path.ChangeExtension(audioPath, ".cover");
+        var temporary = coverPath + ".part";
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+            timeout.CancelAfter(TimeSpan.FromSeconds(3));
+            var bytes = await GetBytesAsync(Artwork.PlayerImageUrl(source!), source!, "", timeout.Token).ConfigureAwait(false);
+            await File.WriteAllBytesAsync(temporary, bytes, timeout.Token).ConfigureAwait(false);
+            File.Move(temporary, coverPath);
+            return new Uri(coverPath).AbsoluteUri;
+        }
+        catch (Exception error) when (error is IOException or HttpRequestException or OperationCanceledException or UnauthorizedAccessException)
+        {
+            try { File.Delete(temporary); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+            return source;
+        }
+    }
+
     private static async Task<byte[]> ReadAsync(string source, string fallback, CancellationToken token)
     {
         if (Uri.TryCreate(source, UriKind.Absolute, out var file) && file.IsFile)
             return await File.ReadAllBytesAsync(file.LocalPath, token).ConfigureAwait(false);
+        if (AppServices.Controller?.CanUseOnline == false) throw new IOException("Capa remota indisponível offline.");
         await Downloads.WaitAsync(token).ConfigureAwait(false);
         try
         {

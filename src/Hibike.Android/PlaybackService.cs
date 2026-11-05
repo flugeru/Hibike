@@ -111,6 +111,12 @@ public sealed class PlaybackService : MediaSessionService
         _player.Prepare(); _player.Play();
     }
     public void PauseAudio() => _player?.Pause();
+    public void StopAudio()
+    {
+        _player?.Stop();
+        _player?.ClearMediaItems();
+        StopForeground(StopForegroundFlags.Remove);
+    }
     public void ResumeAudio() { if (_player?.PlaybackState == 4) _player.SeekTo(0); _player?.Play(); }
     public void Seek(double seconds) => _player?.SeekTo((long)(Math.Max(0, seconds) * 1000));
     public void SetVolume(double volume) { if (_player is not null) _player.Volume = (float)volume; }

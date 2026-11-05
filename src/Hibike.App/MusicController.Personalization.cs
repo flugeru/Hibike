@@ -71,6 +71,7 @@ public sealed partial class MusicController
         public List<LocalPlaylist> Playlists { get; set; } = [];
         public bool Autoplay { get; set; } = true;
         public bool ReduceMotion { get; set; }
+        public bool OfflineMode { get; set; }
         public string Discovery { get; set; } = "Tudo";
         public bool OnboardingCompleted { get; set; }
         public List<MusicArtist> Artists { get; set; } = [];

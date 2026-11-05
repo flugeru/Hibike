@@ -102,13 +102,14 @@ public sealed partial class MainView : UserControl
         var statusRow = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.CompactGap };
         _status.TextWrapping = TextWrapping.Wrap; _status.MaxLines = 2; _status.VerticalAlignment = VerticalAlignment.Center; statusRow.Children.Add(_status);
         if (DeveloperFeatures.Enabled) Put(statusRow, IconButton("info", "Ver diagnóstico", () => { ShowDiagnostics(); return Task.CompletedTask; }), 0, 1);
-        _statusBox = new Border { Child = statusRow }; UiTheme.StateBanner(_statusBox, UiTheme.Warning); Put(content, _statusBox, 1, 0);
+        _statusBox = new Border { Child = statusRow }; UiTheme.StateBanner(_statusBox, UiTheme.Warning); var statusArea = new StackPanel { Children = { _statusBox } }; Put(content, statusArea, 1, 0);
         _play = IconButton("play", "Reproduzir, pausar ou cancelar", _music.ToggleAsync, UiTheme.OnPrimary); _play.Classes.Add("primary"); _play.Classes.Add("miniPlay");
         _mini = BuildMiniPlayer(); Put(_root, _mini, 1, 1);
         InitializeWorkspace(content);
+        InitializeOfflineWorkspace(content, statusArea);
         InitializeTopMenu(content);
-        var navGrid = new Grid { ColumnDefinitions = new("*,*,*,*"), Height = OperatingSystem.IsAndroid() ? 60 : UiTheme.NavHeight, Background = UiTheme.Brush(UiTheme.Surface) };
-        var tabs = new[] { ("home", "Início", "home"), ("explore", "Buscar", "search"), ("library", "Biblioteca", "library"), ("queue", "Fila", "queue") };
+        var navGrid = new Grid { ColumnDefinitions = new("*,*,*,*,*"), Height = OperatingSystem.IsAndroid() ? 60 : UiTheme.NavHeight, Background = UiTheme.Brush(UiTheme.Surface) };
+        var tabs = new[] { ("home", "Início", "home"), ("explore", "Buscar", "search"), ("library", "Biblioteca", "library"), ("downloads", "Downloads", "download"), ("queue", "Fila", "queue") };
         for (var index = 0; index < tabs.Length; index++)
         {
             var (key, label, icon) = tabs[index];
@@ -123,16 +124,15 @@ public sealed partial class MainView : UserControl
             _sidebar.IsVisible = !compact; _bottom.IsVisible = compact;
             headerImport.IsVisible = false;
             androidMenu.IsVisible = true;
-            brandIcon.IsVisible = _page == "home" && compact;
-            _pageTitle.IsVisible = _page != "home" || compact;
-            if (_page == "home") _pageTitle.Text = "Hibike";
+            brandIcon.IsVisible = _page == "home" && compact && !ShowOfflineHome;
+            _pageTitle.IsVisible = _page != "home" || compact || ShowOfflineHome;
             _main.IsVisible = !_showingPlayer;
             _bottom.IsVisible = compact && !_showingPlayer;
             _main.Padding = _androidLayout ? UiTheme.MobileContentPadding
                 : compact ? new Thickness(12, 0, 12, 4) : new Thickness(32, 4, 32, 12);
             _homeScroll.Margin = _androidLayout ? new Thickness(-UiTheme.MobileGutter, 0) : UiTheme.Zero;
             if (_androidLayout) _mini.Margin = UiTheme.MobileMiniMargin;
-            if (_page == "home") RefreshHome();
+            if (_page == "home" && !ShowOfflineHome) RefreshHome();
             RefreshWorkspace();
             RefreshCollectionPages();
             // Title and two 48dp actions fit at 360dp; no artificial second toolbar row.
@@ -167,8 +167,10 @@ public sealed partial class MainView : UserControl
             _music.StartObserving(); Refresh();
             StartDiscordRecovery();
             await _music.InitializeAsync();
-            await WithHeaderLoadingAsync("Restaurando conta Google…", RestoreAccountAsync); _accountRefreshTimer.Start();
-            if (!_music.OnboardingCompleted) ShowGoogleWelcome(firstRun: true);
+            if (_music.CanUseOnline)
+                await WithHeaderLoadingAsync("Restaurando conta Google…", RestoreAccountAsync);
+            _accountRefreshTimer.Start();
+            if (!_music.OnboardingCompleted && _music.CanUseOnline) ShowGoogleWelcome(firstRun: true);
             if (_music.OnboardingCompleted) _ = _music.RefreshRecommendationsAsync();
         };
         DetachedFromVisualTree += (_, _) => { StopDiscordRecovery(); _accountRefreshTimer.Stop(); _music.Changed -= Refresh; _music.Tick -= RefreshPlayback; _music.Tick -= RefreshDock; _music.StopObserving(); };
@@ -184,6 +186,7 @@ public sealed partial class MainView : UserControl
         panel.Children.Add(NavButton("home", "Início", "home", false));
         panel.Children.Add(NavButton("explore", "Buscar", "search", false));
         panel.Children.Add(NavButton("library", "Biblioteca", "library", false));
+        panel.Children.Add(NavButton("downloads", "Downloads", "download", false));
         panel.Children.Add(NavButton("queue", "Fila", "queue", false));
         panel.Children.Add(new Border { Height = 1, Background = UiTheme.Brush(UiTheme.Outline), Margin = new Thickness(8, 18) });
         var import = SidebarAction("folder", "Importar músicas", OpenLocalAsync);
@@ -248,7 +251,7 @@ public sealed partial class MainView : UserControl
             Refresh();
         }
         var query = _search.Text?.Trim() ?? "";
-        if (_searchScope == "Sua biblioteca" || query.Length == 0)
+        if (!_music.CanUseOnline || _searchScope == "Sua biblioteca" || query.Length == 0)
         {
             Refresh();
             return;
@@ -283,26 +286,41 @@ public sealed partial class MainView : UserControl
                 FileTypeFilter = [new FilePickerFileType("Áudio") { Patterns = ["*.mp3", "*.m4a", "*.aac", "*.ogg", "*.opus", "*.flac", "*.wav"], MimeTypes = ["audio/*"] }]
             });
             Track? first = null;
-            foreach (var file in files)
+            try
             {
-                // Import into private app storage so Android URI permissions cannot expire.
-                var fileName = file.Name;
-                var id = Guid.NewGuid().ToString("N");
-                var directory = System.IO.Path.Combine(_music.DataDirectory, "audio"); System.IO.Directory.CreateDirectory(directory);
-                var path = System.IO.Path.Combine(directory, id + System.IO.Path.GetExtension(fileName));
-                try
+                foreach (var file in files)
                 {
-                    await using var input = await file.OpenReadAsync();
-                    await using var output = System.IO.File.Create(path);
-                    await input.CopyToAsync(output);
+                    // Keep a private copy so the original and Android URI permissions are independent.
+                    var fileName = file.Name;
+                    var id = Guid.NewGuid().ToString("N");
+                    var directory = Path.Combine(_music.DataDirectory, "audio");
+                    Directory.CreateDirectory(directory);
+                    var path = Path.Combine(directory, id + Path.GetExtension(fileName));
+                    Track track;
+                    try
+                    {
+                        await using (var input = await file.OpenReadAsync())
+                        await using (var output = File.Create(path))
+                            await input.CopyToAsync(output);
+                        track = await Task.Run(() => AppServices.ReadLocalTrack(
+                            new Track(id, Path.GetFileNameWithoutExtension(fileName), "Áudio local", path, IsLocal: true),
+                            Path.Combine(_music.DataDirectory, "artwork")));
+                        await _music.SaveOfflineTrackAsync(track);
+                    }
+                    catch
+                    {
+                        File.Delete(path);
+                        throw;
+                    }
+                    _music.Enqueue(track);
+                    await _music.ToggleFavoriteAsync(track);
+                    first ??= track;
                 }
-                catch { if (System.IO.File.Exists(path)) System.IO.File.Delete(path); throw; }
-                finally { file.Dispose(); }
-                var track = await Task.Run(() => AppServices.ReadLocalTrack(new Track(id, System.IO.Path.GetFileNameWithoutExtension(fileName), "Áudio local", path, IsLocal: true), System.IO.Path.Combine(_music.DataDirectory, "artwork")));
-                _music.Enqueue(track); await _music.ToggleFavoriteAsync(track); first ??= track;
             }
-            _page = "library";
-            if (first is not null) await _music.PlayAsync(first);
+            finally { foreach (var file in files) file.Dispose(); }
+            if (first is null) return;
+            _page = "downloads";
+            await _music.PlayAsync(first);
             Refresh();
         }
         catch (Exception ex) { _music.SetStatus("Não foi possível abrir o áudio: " + ex.Message); }
@@ -321,7 +339,7 @@ public sealed partial class MainView : UserControl
         }
         RefreshHeaderLoading();
         RefreshProfile();
-        _statusBox.IsVisible = !IsCollectionPage && _music.HasError;
+        _statusBox.IsVisible = !IsCollectionPage && _music.HasError && (_music.CanUseOnline || _music.Current?.IsLocal == true);
         _status.Text = _music.Status;
         foreach (var button in _nav)
         {
@@ -330,7 +348,7 @@ public sealed partial class MainView : UserControl
             if (button.Classes.Contains("selected") == active && button.Content is not string) continue;
             button.Classes.Set("selected", active);
             button.Background = Brushes.Transparent;
-            button.CornerRadius = new(10); button.Padding = new Thickness(4, 4);
+            button.CornerRadius = new(10); button.Padding = new Thickness(vertical ? 1 : 4, 4);
             button.MinHeight = vertical ? 56 : 76;
             var stack = new StackPanel { Spacing = vertical ? 2 : 6, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
             var image = Icons.Make(icon, active ? Accent : Muted, 22); image.HorizontalAlignment = HorizontalAlignment.Center;
@@ -340,16 +358,21 @@ public sealed partial class MainView : UserControl
             stack.Children.Add(indicator);
             var caption = UiTheme.Text(label, UiTheme.Label, active ? UiTheme.TextPrimary : Muted, active ? FontWeight.SemiBold : FontWeight.Normal);
             caption.HorizontalAlignment = HorizontalAlignment.Center;
-            stack.Children.Add(caption); button.Content = stack;
+            stack.Children.Add(caption);
+            var wasBuilt = button.Content is not string;
+            button.Content = stack;
+            if (active && wasBuilt && button.IsEffectivelyVisible) Animate(indicator, 2);
         }
         var compactHeader = _androidLayout || Bounds.Width < UiTheme.DesktopWidth;
-        _brandIcon.IsVisible = _page == "home" && compactHeader;
-        _pageTitle.IsVisible = _page != "home" || compactHeader;
-        _pageTitle.Text = _page switch { "home" => "Hibike", "settings" => "Configurações", "account" => "Minha conta", "collection" => "Coleção", _ => "Buscar" };
-        _homeScroll.IsVisible = _page == "home";
-        if (_homeRefreshContainer is not null) _homeRefreshContainer.IsVisible = _page == "home";
+        _brandIcon.IsVisible = _page == "home" && compactHeader && !ShowOfflineHome;
+        _pageTitle.IsVisible = _page != "home" || compactHeader || ShowOfflineHome;
+        _pageTitle.Text = _page switch { "home" when ShowOfflineHome => _music.OfflineMode ? "Modo offline" : "Sem conexão", "home" => "Hibike", "downloads" => "Downloads", "settings" => "Configurações", "account" => "Minha conta", "collection" => "Coleção", _ => "Buscar" };
+        var showOnlineHome = _page == "home" && !ShowOfflineHome;
+        _homeScroll.IsVisible = showOnlineHome;
+        if (_homeRefreshContainer is not null) _homeRefreshContainer.IsVisible = showOnlineHome;
+        RefreshOfflineWorkspace();
         if (_preferencesPage is not null) _preferencesPage.IsVisible = _page is "settings" or "account";
-        if (_page == "home") RefreshHome();
+        if (_page == "home" && !ShowOfflineHome) RefreshHome();
         RefreshWorkspace();
         var displayed = _music.Pending ?? _music.Current;
         UpdateRows(displayed);
@@ -361,13 +384,15 @@ public sealed partial class MainView : UserControl
         RefreshPlayback();
         RefreshDiscovery();
         RefreshCollectionPages();
-        if (_animatedPage != _page)
+        var visualPage = ShowOfflineHome ? "offline" : _page;
+        if (_animatedPage != visualPage)
         {
             var previous = _animatedPage;
-            _animatedPage = _page;
-            var page = _page switch
+            _animatedPage = visualPage;
+            var page = visualPage switch
             {
                 "home" => (Control?)_homeRefreshContainer,
+                "offline" or "downloads" => _downloadsPage,
                 "explore" => _mobileSearchPage,
                 "library" => _mobileLibrary,
                 "queue" => _mobileQueue,
@@ -396,10 +421,10 @@ public sealed partial class MainView : UserControl
         _homeFingerprint = fingerprint;
         var previous = _homeSections.ToArray();
         var next = new List<Control>();
-        if (_accountError is { } accountError)
+        if (_accountExpired && _accountError is { } accountError)
         {
             var message = Text(accountError, UiTheme.Caption, UiTheme.Error); message.TextWrapping = TextWrapping.Wrap; next.Add(message);
-            next.Add(ActionButton(_accountExpired ? "Entrar novamente com Google" : "Tentar conexão novamente", _accountExpired ? ShowAccountAsync : RefreshHomeAsync));
+            next.Add(ActionButton("Entrar novamente com Google", ShowAccountAsync));
         }
         var shownRecommendations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         Task OpenHistory()
@@ -607,15 +632,16 @@ public sealed partial class MainView : UserControl
     }
     private async Task LoadAccountHomeAsync()
     {
-        if (_account is not { } account || _accountLoading) return;
+        if (!_music.CanUseOnline || _account is not { } account || _accountLoading) return;
         _accountLoading = true; Refresh();
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            _accountNetworkRequest = timeout;
             await account.ValidateSessionAsync(timeout.Token);
             var playlists = await account.PlaylistsAsync(timeout.Token);
             var likes = await account.TracksAsync(null, timeout.Token);
-            if (!ReferenceEquals(_account, account)) return;
+            if (!ReferenceEquals(_account, account) || !_music.CanUseOnline) return;
             _accountPlaylists = playlists; _accountLikes = likes;
             _accountExpired = false; _accountError = null; _profileAccount = null;
             PlaybackDiagnostics.Write(DiagnosticSector.Google, "Biblioteca", "Playlists e curtidas atualizadas.");
@@ -630,12 +656,12 @@ public sealed partial class MainView : UserControl
         }
         catch (Exception error)
         {
-            if (!ReferenceEquals(_account, account)) return;
+            if (!ReferenceEquals(_account, account) || !_music.CanUseOnline) return;
             PlaybackDiagnostics.WriteFailure(DiagnosticSector.Google, "Atualizar biblioteca", error);
             _accountError = "Não foi possível atualizar conta. Tente conexão novamente em Perfil · Minha conta.";
             _music.SetStatus(_accountError);
         }
-        finally { _accountLoading = false; Refresh(); }
+        finally { _accountNetworkRequest = null; _accountLoading = false; Refresh(); }
     }
     private void DisconnectAccount()
     {
@@ -663,7 +689,8 @@ public sealed partial class MainView : UserControl
     }
     private async Task PlayCollectionAsync(IEnumerable<Track> collection)
     {
-        var tracks = collection.ToArray(); if (tracks.Length == 0) return;
+        var tracks = (_music.CanUseOnline ? collection : collection.Where(_music.CanPlayOffline)).ToArray();
+        if (tracks.Length == 0) return;
         _music.ReplaceQueue(tracks);
         await _music.PlayAsync(tracks[0], 0);
     }
@@ -990,7 +1017,7 @@ public sealed partial class MainView : UserControl
         if (_page == "library" && _mobileLibraryGroup is not null) { CloseMobileLibraryGroup(); return true; }
         if (_page == "queue" && _queueOpenedFromPlayer) { ReturnFromMobileQueue(); return true; }
         if (_page == "collection") { BackFromCollection(); return true; }
-        if (_page == "queue") { _queueOpen = false; _page = "home"; Refresh(); return true; }
+        if (_page is "queue" or "downloads") { _queueOpen = false; _page = "home"; Refresh(); return true; }
         if (_queueOpen) { _queueOpen = false; Refresh(); return true; }
         return false;
     }
@@ -1049,7 +1076,9 @@ public sealed partial class MainView : UserControl
         if (state == "loading")
             content = LoadingRing(22, UiTheme.OnPrimary);
         else content = Icons.Make(state, UiTheme.OnPrimary, UiTheme.TransportIconSize);
+        var hadIcon = button.Content is Control { Tag: string };
         content.Tag = state; button.Content = content;
+        if (state != "loading" && hadIcon && button.IsEffectivelyVisible) Animate(content);
         Avalonia.Automation.AutomationProperties.SetName(button, state == "loading" ? "Carregando áudio; cancelar" : "Reproduzir ou pausar");
     }
     private static Control LoadingRing(double size, string color)
@@ -1334,7 +1363,6 @@ public sealed partial class MainView : UserControl
             }
         }, sector: DiagnosticSector.Google);
     }
-    private CancellationTokenSource? _download;
     private void ShowExperimental()
     {
         if (!DeveloperFeatures.Enabled) return;
@@ -1371,22 +1399,6 @@ public sealed partial class MainView : UserControl
             ShowSheet("Histórico", history); return Task.CompletedTask;
         }));
         ShowSheet("Laboratório experimental", panel);
-    }
-    private async Task DownloadCurrentAsync()
-    {
-        if (_download is not null) throw new InvalidOperationException("Já existe download em andamento.");
-        var track = _music.Current ?? throw new InvalidOperationException("Reproduza uma faixa primeiro.");
-        var source = _music.CurrentSource ?? throw new InvalidOperationException("Fonte ainda indisponível.");
-        if (track.IsLocal) throw new InvalidOperationException("Faixa já é local.");
-        using var request = new CancellationTokenSource(TimeSpan.FromMinutes(30)); _download = request;
-        try
-        {
-            var path = await AudioDownload.SaveAsync(source, System.IO.Path.Combine(_music.DataDirectory, "downloads"), new Progress<string>(_music.SetStatus), request.Token);
-            var local = track with { Id = Guid.NewGuid().ToString("N"), Source = path, IsLocal = true };
-            await _music.ToggleFavoriteAsync(local); _music.SetStatus("Download salvo na biblioteca local.");
-        }
-        catch (OperationCanceledException) { _music.SetStatus("Download cancelado ou tempo esgotado."); }
-        finally { _download = null; }
     }
     private async void ShowAudioInfo()
     {
@@ -1521,6 +1533,7 @@ public sealed partial class MainView : UserControl
     }
     private void BindAction(Button button, Func<Task> action)
     {
+        UiMotion.AttachPressFeedback(button);
         button.Click += async (_, _) =>
         {
             try { await action(); }

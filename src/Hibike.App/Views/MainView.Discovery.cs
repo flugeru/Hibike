@@ -41,7 +41,7 @@ public sealed partial class MainView
         {
             var label = button.Content as string ?? "";
             var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
-            var icon = label.Contains("favoritos") ? "heart" : label.Contains("artista") ? "search" : label.Contains("rádio") ? "shuffle" : label.Contains("Remover") ? "close" : "queue";
+            var icon = label.Contains("Baixar") ? "download" : label.Contains("favoritos") ? "heart" : label.Contains("artista") ? "search" : label.Contains("rádio") ? "shuffle" : label.Contains("Remover") ? "close" : "queue";
             row.Children.Add(Icons.Make(icon, UiTheme.Primary, 20)); row.Children.Add(Text(label, UiTheme.Caption)); button.Content = row;
             Avalonia.Automation.AutomationProperties.SetName(button, label);
             button.Classes.Add("subtle"); button.BorderThickness = new Thickness(0);
@@ -63,6 +63,7 @@ public sealed partial class MainView
         popup.KeyDown += (_, e) => { if (e.Key == Key.Escape) { popup.IsOpen = false; e.Handled = true; } };
         popup.Closed += (_, _) => { _root.Children.Remove(popup); if (_songPopup == popup) _songPopup = null; };
         popup.IsOpen = true;
+        if (popup.Child is Control menu) Animate(menu, -4);
     }
     private string _searchScope = "Online";
     private readonly StackPanel _sidebarPins = new() { Spacing = 4 };
@@ -79,7 +80,11 @@ public sealed partial class MainView
         actions.Children.Add(ActionButton("Não tenho interesse", () => { _music.DismissRecommendation(track); CloseSheet(); return Task.CompletedTask; }));
         actions.Children.Add(ActionButton("Tocar a seguir", () => { _music.PlayNext(track); CloseSheet(); return Task.CompletedTask; }));
         actions.Children.Add(ActionButton("Adicionar à fila", () => { _music.Enqueue(track); CloseSheet(); return Task.CompletedTask; }));
-        if (!track.IsLocal) actions.Children.Add(ActionButton("Criar rádio desta música", async () => { CloseSheet(); await _music.StartRadioAsync(track); }));
+        if (!track.IsLocal && !track.IsArtist && _music.CanUseOnline)
+        {
+            actions.Children.Add(ActionButton("Baixar para ouvir offline", () => DownloadTrackAsync(track)));
+            actions.Children.Add(ActionButton("Criar rádio desta música", async () => { CloseSheet(); await _music.StartRadioAsync(track); }));
+        }
         actions.Children.Add(ActionButton(_music.IsFavorite(track) ? "Remover dos favoritos" : "Salvar nos favoritos", async () => { await _music.ToggleFavoriteAsync(track); CloseSheet(); }));
         actions.Children.Add(ActionButton(_music.Pins.Any(t => t.Source == track.Source) ? "Desafixar de Ouvir de novo" : "Fixar em Ouvir de novo", () => { _music.TogglePin(track); CloseSheet(); return Task.CompletedTask; }));
         actions.Children.Add(ActionButton("Salvar na playlist local", () => { ShowPlaylistPicker(track); return Task.CompletedTask; }));
@@ -89,7 +94,7 @@ public sealed partial class MainView
                 _music.RemoveFromPlaylist(playlist, track);
                 return Task.CompletedTask;
             }));
-        actions.Children.Add(ActionButton("Ver artista", () => OpenTrackArtistAsync(track)));
+        if (_music.CanUseOnline) actions.Children.Add(ActionButton("Ver artista", () => OpenTrackArtistAsync(track)));
         if (!string.IsNullOrWhiteSpace(track.Album)) actions.Children.Add(ActionButton("Abrir álbum", () => { CloseSheet(); OpenLocalCollection(track.Album, _music.Favorites.Concat(_music.History).Append(track).Where(t => t.Album == track.Album && t.Artist == track.Artist)); return Task.CompletedTask; }));
         if (!track.IsLocal && Uri.TryCreate(track.Source, UriKind.Absolute, out var uri) && uri.Scheme == "https")
             actions.Children.Add(ActionButton("Compartilhar: copiar link", async () => { var clipboard = TopLevel.GetTopLevel(this)?.Clipboard; if (clipboard is null) throw new InvalidOperationException("Área de transferência indisponível."); await clipboard.SetTextAsync(track.Source); CloseSheet(); }));

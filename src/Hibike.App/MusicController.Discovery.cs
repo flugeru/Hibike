@@ -21,6 +21,7 @@ public sealed partial class MusicController
     private DateTime _homeUpdated;
     private bool _discoveryCacheLoaded;
     private TaskCompletionSource? _recommendationsRefresh;
+    private CancellationTokenSource? _recommendationsNetworkRequest;
     private sealed record DiscoveryCache(DateTime SavedUtc, string Region, Track[] Recommendations, Track[] Related, string Seed, MusicChart? Regional, MusicChart? Global, MusicChart? Trending = null);
     public async Task CompleteOnboardingAsync(IEnumerable<MusicArtist> artists, IEnumerable<string> genres)
     {
@@ -57,6 +58,7 @@ public sealed partial class MusicController
     public Task<IReadOnlyList<Track>> BrowsePageAsync(string source, int page, CancellationToken token) => _catalog.BrowsePageAsync(source, page, token);
     public async Task RefreshRecommendationsAsync(bool force = false)
     {
+        if (!CanUseOnline) return;
         if (_recommendationsRefresh is { } pending)
         {
             await pending.Task;
@@ -87,6 +89,7 @@ public sealed partial class MusicController
             }
             if (!force && DateTime.UtcNow - _homeUpdated < TimeSpan.FromMinutes(30)) return;
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+            _recommendationsNetworkRequest = timeout;
             var token = timeout.Token;
             var candidates = new List<Track>();
             var region = ChartRegion;
@@ -106,6 +109,7 @@ public sealed partial class MusicController
             if (seed is not null && !token.IsCancellationRequested)
                 try { HomeRelated = (await _catalog.RadioAsync(seed, token)).Where(t => t.Source != seed.Source && !_personal.Dismissed.Contains(t.Source)).Take(20).ToArray(); HomeSeed = TrackTextFormatter.Artist(seed.Artist); candidates.AddRange(HomeRelated); }
                 catch (Exception e) when (e is not OutOfMemoryException) { PlaybackDiagnostics.Write("Descoberta", e.Message); }
+            if (!CanUseOnline) return;
             var ranked = MusicRecommendations.Rank(candidates, FavoriteArtists.Select(a => a.Name).ToHashSet(StringComparer.OrdinalIgnoreCase),
                 History.ToArray(), Favorites.ToArray(), _personal.Dismissed, Affinity, _personal.Weights);
             var enriched = new List<Track>();
@@ -138,6 +142,7 @@ public sealed partial class MusicController
         catch (Exception e) when (e is not OutOfMemoryException) { HomeMessage = "Descoberta indisponível. Sua biblioteca continua disponível."; PlaybackDiagnostics.Write("Descoberta", e.Message); }
         finally
         {
+            _recommendationsNetworkRequest = null;
             _recommendationsRefresh = null;
             completion.SetResult();
             Changed?.Invoke();

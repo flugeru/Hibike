@@ -2,10 +2,12 @@ using Hibike.Core.Models;
 
 namespace Hibike.Core.Services;
 
+public readonly record struct AudioDownloadProgress(long Bytes, long? TotalBytes);
+
 public static class AudioDownload
 {
     private static readonly HttpClient Client = new() { Timeout = Timeout.InfiniteTimeSpan };
-    public static async Task<string> SaveAsync(AudioSource source, string directory, IProgress<string>? progress, CancellationToken token)
+    public static async Task<string> SaveAsync(AudioSource source, string directory, IProgress<AudioDownloadProgress>? progress, CancellationToken token)
     {
         if (!Uri.TryCreate(source.Url, UriKind.Absolute, out var uri) || uri.Scheme != "https")
             throw new InvalidOperationException("Download exige stream HTTPS direto.");
@@ -14,7 +16,7 @@ public static class AudioDownload
             throw new InvalidOperationException("Contêiner não suportado para download sem conversão.");
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
         foreach (var header in source.Headers) request.Headers.TryAddWithoutValidation(header.Key, header.Value);
-        using var response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+        using var response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         var type = response.Content.Headers.ContentType?.MediaType ?? "";
         if (type.Contains("mpegurl", StringComparison.OrdinalIgnoreCase) || type.Contains("dash", StringComparison.OrdinalIgnoreCase) || type.Contains("text/", StringComparison.OrdinalIgnoreCase))
@@ -24,17 +26,17 @@ public static class AudioDownload
         var temp = path + ".part";
         try
         {
-            await using (var input = await response.Content.ReadAsStreamAsync(token))
+            await using (var input = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false))
             await using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, true))
             {
                 var buffer = new byte[65536]; long total = 0; var last = DateTime.MinValue; int count;
-                while ((count = await input.ReadAsync(buffer, token)) > 0)
+                while ((count = await input.ReadAsync(buffer, token).ConfigureAwait(false)) > 0)
                 {
                     total += count;
                     if (total > 1_000_000_000) throw new IOException("Limite experimental: 1 GB por arquivo.");
-                    await output.WriteAsync(buffer.AsMemory(0, count), token);
+                    await output.WriteAsync(buffer.AsMemory(0, count), token).ConfigureAwait(false);
                     if ((DateTime.UtcNow - last).TotalMilliseconds >= 500)
-                    { progress?.Report($"Baixando: {total / 1048576d:0.0} MB"); last = DateTime.UtcNow; }
+                    { progress?.Report(new(total, response.Content.Headers.ContentLength)); last = DateTime.UtcNow; }
                 }
                 if (total == 0 || response.Content.Headers.ContentLength is { } length && total != length) throw new IOException("Download incompleto.");
             }
