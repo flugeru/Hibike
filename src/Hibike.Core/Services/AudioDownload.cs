@@ -125,8 +125,11 @@ public static class AudioDownload
         if (canResume && response.StatusCode == HttpStatusCode.PartialContent)
         {
             var range = response.Content.Headers.ContentRange;
-            if (range?.From != saved || range?.HasLength != true ||
-                previous!.TotalBytes is { } oldLength && range.Length != oldLength)
+            var validatorMatches = IsStrongTag(previous!.ETag)
+                ? string.Equals(response.Headers.ETag?.ToString(), previous.ETag, StringComparison.Ordinal)
+                : previous.LastModified.HasValue && response.Content.Headers.LastModified == previous.LastModified;
+            if (!validatorMatches || range?.From != saved || range?.HasLength != true ||
+                previous.TotalBytes is { } oldLength && range.Length != oldLength)
             {
                 File.Delete(temporary);
                 File.Delete(metadataPath);
