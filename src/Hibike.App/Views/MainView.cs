@@ -34,7 +34,7 @@ public sealed partial class MainView : UserControl
     private IReadOnlyList<Track> _accountLikes = [];
     private string? _homeFingerprint;
     private bool _accountLoading;
-    private readonly TextBlock _pageTitle = Text("Início", UiTheme.PageTitle);
+    private readonly TextBlock _pageTitle = TopBarTitle("Início");
     private readonly TextBox _search = UiTheme.Field("Música, artista ou link");
     private readonly TextBlock _status = Text("", UiTheme.Caption, Muted);
     private readonly Border _statusBox;
@@ -72,11 +72,10 @@ public sealed partial class MainView : UserControl
         _sidebar = BuildSidebar(); _root.Children.Add(_sidebar); Grid.SetRowSpan(_sidebar, 3);
         _main = new Border { Padding = UiTheme.ContentPadding, HorizontalAlignment = HorizontalAlignment.Stretch }; Put(_root, _main, 0, 1);
         var content = new Grid { RowDefinitions = new("Auto,Auto,*"), RowSpacing = 4 }; _main.Child = content;
-        var header = new Grid { Name = "AppHeader", ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = UiTheme.CompactGap };
-        _pageTitle.FontSize = 18;
+        var header = new Grid { Name = "AppHeader", RowDefinitions = new("Auto,Auto"), ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = UiTheme.CompactGap };
         var brandIcon = _brandIcon = new Image { Source = new Avalonia.Media.Imaging.Bitmap(Avalonia.Platform.AssetLoader.Open(new Uri("avares://Hibike.App/Assets/hibike-desktop.png"))), Width = 22, Height = 22, VerticalAlignment = VerticalAlignment.Center };
         var pageBrand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        _pageTitle.FontWeight = FontWeight.SemiBold; pageBrand.Children.Add(brandIcon); pageBrand.Children.Add(_pageTitle); header.Children.Add(pageBrand);
+        pageBrand.Children.Add(brandIcon); pageBrand.Children.Add(_pageTitle); header.Children.Add(pageBrand);
         var headerImport = IconButton("folder", "Abrir áudio local", OpenLocalAsync); Put(header, headerImport, 0, 1);
         var androidMenu = _profileButton = IconButton("account-off", "Perfil e menu do aplicativo", () => { ToggleTopMenu(); return Task.CompletedTask; });
         androidMenu.MinHeight = androidMenu.MinWidth = UiTheme.TouchSize;
@@ -115,7 +114,7 @@ public sealed partial class MainView : UserControl
         }
         _bottom = new Border { Child = navGrid, BorderBrush = UiTheme.Brush(UiTheme.Outline), BorderThickness = UiTheme.TopBorder };
         Put(_root, _bottom, 2, 1); Content = _root;
-        InitializeLoading(content);
+        InitializeLoading(header);
         SizeChanged += (_, _) =>
         {
             var compact = _androidLayout || Bounds.Width < UiTheme.DesktopWidth;

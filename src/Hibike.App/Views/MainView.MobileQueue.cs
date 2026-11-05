@@ -32,7 +32,7 @@ public sealed partial class MainView
             return Task.CompletedTask;
         });
         header.Children.Add(_mobileQueueBack);
-        _mobileQueueHeader = CollectionText("Sua fila", UiTheme.PageTitle, weight: FontWeight.SemiBold);
+        _mobileQueueHeader = TopBarTitle("Sua fila");
         Put(header, _mobileQueueHeader, 0, 1);
         Put(header, IconButton("more", "Opções da fila", () =>
         {

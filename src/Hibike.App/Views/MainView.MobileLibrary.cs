@@ -47,7 +47,7 @@ public sealed partial class MainView
         var header = new Grid { ColumnDefinitions = new("Auto,*,Auto") };
         _mobileLibraryBack = IconButton("back", "Voltar à biblioteca", () => { CloseMobileLibraryGroup(); return Task.CompletedTask; });
         header.Children.Add(_mobileLibraryBack);
-        _mobileLibraryTitle = CollectionText("Sua biblioteca", UiTheme.PageTitle, weight: FontWeight.SemiBold);
+        _mobileLibraryTitle = TopBarTitle("Sua biblioteca");
         Put(header, _mobileLibraryTitle, 0, 1);
         _mobileLibraryAdd = IconButton("folder", "Importar músicas", RunMobileLibraryHeaderActionAsync);
         Put(header, _mobileLibraryAdd, 0, 2);

@@ -62,6 +62,8 @@ public sealed partial class MainView
         else if (_page == "explore") RefreshMobileSearch();
     }
 
+    private static TextBlock TopBarTitle(string text) => CollectionText(text, UiTheme.TopBarTitle, weight: FontWeight.SemiBold);
+
     private static TextBlock CollectionText(string? value, double size, string color = UiTheme.TextPrimary,
         FontWeight weight = FontWeight.Normal)
     {

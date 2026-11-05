@@ -10,22 +10,22 @@ public sealed partial class MainView
     private readonly TextBlock _loadingLabel = Text("", UiTheme.Caption);
     private readonly ProgressBar _loadingProgress = new() { IsIndeterminate = true, Width = 48, Height = 4, VerticalAlignment = VerticalAlignment.Center };
     private Border _loadingBanner = null!;
-    private void InitializeLoading(Grid content)
+    private void InitializeLoading(Grid header)
     {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-        row.Children.Add(_loadingProgress); row.Children.Add(_loadingLabel);
-        _loadingBanner = UiTheme.Card(row, 12);
-        _loadingBanner.Background = UiTheme.Brush(UiTheme.SurfaceElevated);
-        _loadingBanner.BoxShadow = new Avalonia.Media.BoxShadows(new Avalonia.Media.BoxShadow { Blur = 16, OffsetY = 4, Color = Avalonia.Media.Color.Parse("#80000000") });
-        _loadingBanner.IsVisible = false; _loadingBanner.IsHitTestVisible = false;
-        _loadingBanner.ZIndex = 1000;
+        var row = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = UiTheme.CompactGap };
+        row.Children.Add(_loadingProgress);
+        Put(row, _loadingLabel, 0, 1);
         _loadingLabel.TextWrapping = Avalonia.Media.TextWrapping.Wrap;
-        _loadingLabel.MaxWidth = 240;
-        _loadingBanner.HorizontalAlignment = HorizontalAlignment.Center;
-        _loadingBanner.VerticalAlignment = VerticalAlignment.Top;
-        _loadingBanner.Margin = new Thickness(12, 8);
-        Grid.SetRow(_loadingBanner, 2);
-        content.Children.Add(_loadingBanner);
+        _loadingBanner = new Border
+        {
+            Child = row,
+            Padding = new Thickness(0, 4, 0, 6),
+            ClipToBounds = true,
+            IsVisible = false,
+            IsHitTestVisible = false
+        };
+        Put(header, _loadingBanner, 1, 0);
+        Grid.SetColumnSpan(_loadingBanner, header.ColumnDefinitions.Count);
     }
     private async Task WithLoadingAsync(string message, Func<Task> operation)
     {

@@ -30,7 +30,7 @@ public sealed partial class MainView
             HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 0, 0, UiTheme.PageGap) };
         var header = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = UiTheme.CompactGap };
         header.Children.Add(CollectionIcon("back", "Voltar", () => { BackFromPreferences(); return Task.CompletedTask; }));
-        Put(header, CollectionText(title, UiTheme.PageTitle, weight: FontWeight.SemiBold), 0, 1);
+        Put(header, TopBarTitle(title), 0, 1);
         body.Children.Add(header);
         foreach (var section in sections) body.Children.Add(section);
         _preferencesPage = UiTheme.FadingScroll(body);

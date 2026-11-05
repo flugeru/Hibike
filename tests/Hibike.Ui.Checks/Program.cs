@@ -104,7 +104,7 @@ internal static partial class Program
                 var pendingLoad = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 var loadingTask = (Task)loadingMethod.Invoke(view, ["Atualizando dados…", (Func<Task>)(() => pendingLoad.Task)])!;
                 Check(loadingBanner.IsVisible && !loadingBanner.IsHitTestVisible, "Loading banner missing or blocks navigation");
-                Check(loadingBanner.Parent is Grid loadingHost && loadingHost.Children.OfType<Grid>().Any(g => g.Name == "AppHeader") && Grid.GetRow(loadingBanner) == 2, "Loading banner overlaps app header");
+                Check(loadingBanner.Parent is Grid { Name: "AppHeader" } && Grid.GetRow(loadingBanner) == 1 && loadingBanner.ClipToBounds, "Loading indicator is not contained in the app header");
                 var refreshContainer = (RefreshContainer)typeof(MainView).GetField("_homeRefreshContainer", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
                 Check(refreshContainer.Visualizer?.Opacity == 0, "Default refresh spinner still visible");
                 pendingLoad.SetResult(); await loadingTask;

@@ -16,7 +16,7 @@ internal static class UiTheme
         TextSecondary = "#B0B0B0", TextDisabled = "#686868", Scrim = "#CC000000";
     public const double CardRadius = 18, ControlRadius = 12, ThumbRadius = 8, RoundRadius = 22,
         MobileGutter = 10, CompactGap = 8, SectionGap = 14, PageGap = 18, CardGap = 16, CardPadding = 20,
-        PageTitle = 28, SectionTitle = 18, DialogTitle = 22, Body = 15, Caption = 13, Label = 12,
+        TopBarTitle = 18, PageTitle = 28, SectionTitle = 18, DialogTitle = 22, Body = 15, Caption = 13, Label = 12,
         ButtonText = 14, TouchSize = 48, IconSize = 24, IconStroke = 1.8, RoundSize = 44,
         ThumbnailSize = 52, MiniArtworkSize = 40, PlaySize = 72, TransportIconSize = 32,
         ProgressHeight = 8, ProgressRadius = 4, MiniProgressHeight = 4, SeekHeight = 6,
