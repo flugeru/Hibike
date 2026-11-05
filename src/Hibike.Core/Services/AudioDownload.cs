@@ -33,7 +33,8 @@ public static class AudioDownload
         string directory,
         IProgress<AudioDownloadProgress>? progress,
         CancellationToken token,
-        string? stableKey = null)
+        string? stableKey = null,
+        HttpClient? client = null)
     {
         if (!Uri.TryCreate(source.Url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
             throw new InvalidOperationException("Download exige stream HTTPS direto.");
@@ -54,7 +55,7 @@ public static class AudioDownload
             token.ThrowIfCancellationRequested();
             try
             {
-                await TransferAsync(uri, source.Headers, temporary, metadataPath, progress, token).ConfigureAwait(false);
+                await TransferAsync(client ?? Client, uri, source.Headers, temporary, metadataPath, progress, token).ConfigureAwait(false);
                 token.ThrowIfCancellationRequested();
                 File.Move(temporary, destination, overwrite: true);
                 File.Delete(metadataPath);
@@ -72,6 +73,7 @@ public static class AudioDownload
     }
 
     private static async Task TransferAsync(
+        HttpClient client,
         Uri uri,
         IReadOnlyDictionary<string, string> headers,
         string temporary,
@@ -105,7 +107,7 @@ public static class AudioDownload
                 request.Headers.IfRange = new RangeConditionHeaderValue(lastModified);
         }
 
-        using var response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
         if (canResume && response.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable)
         {
             // The old partial cannot be verified against this origin; restart on the next attempt.
