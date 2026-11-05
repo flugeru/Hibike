@@ -43,6 +43,14 @@ public sealed partial class MainView
         foreach (var control in controls) body.Children.Add(control);
         return UiTheme.Card(body, UiTheme.ControlRadius);
     }
+    private static CheckBox PreferenceCheckBox(string title, bool isChecked = false)
+    {
+        var checkBox = new CheckBox { Content = title, IsChecked = isChecked };
+        // Fluent uses the resource to size the glyph row independently from the control.
+        checkBox.Resources["CheckBoxMinHeight"] = UiTheme.TouchSize;
+        return checkBox;
+    }
+
     private Control PreferenceLink(string icon, string title, string description, Func<Task> action)
     {
         var button = ActionButton("", action);

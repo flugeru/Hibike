@@ -1153,7 +1153,7 @@ public sealed partial class MainView : UserControl
 
         }
         sections.Add(PreferenceSection("Reprodução", sound));
-        var reduceMotion = new CheckBox { Content = "Reduzir movimento", IsChecked = _music.ReduceMotion, VerticalContentAlignment = VerticalAlignment.Center, MinHeight = UiTheme.TouchSize };
+        var reduceMotion = PreferenceCheckBox("Reduzir movimento", _music.ReduceMotion);
         reduceMotion.IsCheckedChanged += (_, _) => _music.SetReduceMotion(reduceMotion.IsChecked == true);
         sections.Add(PreferenceSection("Aparência", reduceMotion));
         sections.Add(PreferenceSection("Conta e biblioteca",
@@ -1219,7 +1219,8 @@ public sealed partial class MainView : UserControl
         var token = UiTheme.Field("Token pessoal do Discord");
         token.PasswordChar = '●';
         panel.Children.Add(token);
-        var remember = new CheckBox { Content = "Lembrar neste aparelho", IsVisible = storage is not null, VerticalContentAlignment = VerticalAlignment.Center, MinHeight = UiTheme.TouchSize };
+        var remember = PreferenceCheckBox("Lembrar neste aparelho");
+        remember.IsVisible = storage is not null;
         panel.Children.Add(remember);
         var actions = new Grid { ColumnDefinitions = new("*,*"), RowDefinitions = new("Auto,Auto"),
             ColumnSpacing = UiTheme.CompactGap, RowSpacing = UiTheme.CompactGap };
@@ -1230,6 +1231,7 @@ public sealed partial class MainView : UserControl
         useSaved.Content = new TextBlock { Text = "Usar token salvo", FontFamily = UiTheme.Inter, FontSize = UiTheme.ButtonText,
             TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center };
         Avalonia.Automation.AutomationProperties.SetName(useSaved, "Usar token salvo");
+        connect.VerticalAlignment = useSaved.VerticalAlignment = VerticalAlignment.Stretch;
         var disconnect = ActionButton("Desconectar e remover token", () =>
         {
             try

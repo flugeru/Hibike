@@ -213,10 +213,11 @@ internal static partial class Program
                 var connectDiscord = discordControls.Single(button => Equals(button.Content, "Conectar"));
                 var savedDiscord = discordControls.Single(button => Avalonia.Automation.AutomationProperties.GetName(button) == "Usar token salvo");
                 var disconnectDiscord = discordControls.Single(button => Equals(button.Content, "Desconectar e remover token"));
-                Check(Math.Abs(connectDiscord.Bounds.Width - savedDiscord.Bounds.Width) < 2 && connectDiscord.Bounds.Y == savedDiscord.Bounds.Y
-                    && connectDiscord.Bounds.Height == savedDiscord.Bounds.Height && disconnectDiscord.Bounds.Width > connectDiscord.Bounds.Width * 2,
-                    "Discord connection actions do not share a balanced grid");
                 Capture(view, "discord-320");
+                Check(Math.Abs(connectDiscord.Bounds.Width - savedDiscord.Bounds.Width) < 2 && connectDiscord.Bounds.Y == savedDiscord.Bounds.Y
+                    && Math.Abs(connectDiscord.Bounds.Height - savedDiscord.Bounds.Height) < 2 && Math.Abs(disconnectDiscord.Bounds.Width
+                        - connectDiscord.Bounds.Width - savedDiscord.Bounds.Width - 8) < 2,
+                    $"Discord action grid: connect {connectDiscord.Bounds}, saved {savedDiscord.Bounds}, disconnect {disconnectDiscord.Bounds}");
                 Check(AppServices.BackHandler!(), "Discord sheet cannot close");
                 AppServices.DiscordTokenStorage = tokenStorage;
                 window.MinWidth = minimumWindowWidth;
