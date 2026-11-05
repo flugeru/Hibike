@@ -185,6 +185,19 @@ public static class AudioDownload
         progress?.Report(new(downloaded, totalBytes, (downloaded - lastBytes) / Math.Max(tail.TotalSeconds, 0.001)));
     }
 
+    /// <summary>Explicitly discards only unfinished files for this track, without touching a completed download.</summary>
+    public static void DiscardPartial(string directory, string stableKey)
+    {
+        if (!Directory.Exists(directory)) return;
+        var identity = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(stableKey))).ToLowerInvariant();
+        foreach (var extension in new[] { "m4a", "webm", "mp3", "ogg", "opus", "flac", "wav", "aac" })
+        {
+            var partial = Path.Combine(directory, identity + "." + extension + ".part");
+            File.Delete(partial);
+            File.Delete(partial + ".json");
+        }
+    }
+
     private static bool IsStrongTag(string? etag) =>
         !string.IsNullOrWhiteSpace(etag) && !etag.StartsWith("W/", StringComparison.OrdinalIgnoreCase);
 
