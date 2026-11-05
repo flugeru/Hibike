@@ -1443,7 +1443,7 @@ public sealed partial class MainView : UserControl
             panel.Children.Add(ActionButton($"Sleep timer: {minutes} min", () => { _music.SleepAt = DateTime.UtcNow.AddMinutes(minutes); _music.SetStatus($"Pausar em {minutes} minutos."); return Task.CompletedTask; }));
         panel.Children.Add(ActionButton("Cancelar sleep timer", () => { _music.SleepAt = null; return Task.CompletedTask; }));
         panel.Children.Add(ActionButton("Baixar faixa atual (formato original)", DownloadCurrentAsync));
-        panel.Children.Add(ActionButton("Cancelar download", () => { _download?.Cancel(); return Task.CompletedTask; }));
+        panel.Children.Add(ActionButton("Cancelar downloads ativos", () => { foreach (var job in _downloadQueue.Jobs.ToArray()) _downloadQueue.Cancel(job); return Task.CompletedTask; }));
         panel.Children.Add(ActionButton("Histórico neste aparelho", () =>
         {
             var history = new StackPanel { Spacing = UiTheme.CompactGap };
