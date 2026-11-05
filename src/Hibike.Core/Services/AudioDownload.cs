@@ -107,7 +107,13 @@ public static class AudioDownload
                 request.Headers.IfRange = new RangeConditionHeaderValue(lastModified);
         }
 
-        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
+        using var headersTimeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+        headersTimeout.CancelAfter(TimeSpan.FromSeconds(30));
+        HttpResponseMessage received;
+        try { received = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, headersTimeout.Token).ConfigureAwait(false); }
+        catch (OperationCanceledException error) when (!token.IsCancellationRequested)
+        { throw new IOException("Servidor não respondeu por 30 segundos.", error); }
+        using var response = received;
         if (canResume && response.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable)
         {
             // The old partial cannot be verified against this origin; restart on the next attempt.
@@ -164,11 +170,20 @@ public static class AudioDownload
         var downloaded = saved;
         var lastBytes = downloaded;
         var lastReport = Stopwatch.GetTimestamp();
+        progress?.Report(new(downloaded, totalBytes));
         try
         {
+            using var idle = CancellationTokenSource.CreateLinkedTokenSource(token);
             int count;
-            while ((count = await input.ReadAsync(buffer.AsMemory(0, BufferSize), token).ConfigureAwait(false)) > 0)
+            while (true)
             {
+                // A stalled origin must release the worker and reach the bounded retry path.
+                idle.CancelAfter(TimeSpan.FromSeconds(30));
+                try { count = await input.ReadAsync(buffer.AsMemory(0, BufferSize), idle.Token).ConfigureAwait(false); }
+                catch (OperationCanceledException error) when (!token.IsCancellationRequested)
+                { throw new IOException("Servidor não enviou áudio por 30 segundos.", error); }
+                idle.CancelAfter(Timeout.InfiniteTimeSpan);
+                if (count == 0) break;
                 await output.WriteAsync(buffer.AsMemory(0, count), token).ConfigureAwait(false);
                 downloaded += count;
                 var elapsed = Stopwatch.GetElapsedTime(lastReport);

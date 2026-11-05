@@ -49,7 +49,7 @@ internal sealed class DownloadJob(Track track) : INotifyPropertyChanged
             if (Stage != TransferStage.Transferring || BytesPerSecond <= 1) return $"{label} · {bytes}";
             var speed = BytesPerSecond >= 1048576 ? $"{BytesPerSecond / 1048576d:0.0} MB/s" : $"{BytesPerSecond / 1024d:0} KB/s";
             var remaining = TotalBytes is > 0
-                ? $" · ETA {TimeSpan.FromSeconds(Math.Min(86400, Math.Max(0, TotalBytes.Value - Bytes) / BytesPerSecond)).ToString("c")}"
+                ? $" · {TimeSpan.FromSeconds(Math.Min(86400, Math.Max(0, TotalBytes.Value - Bytes) / BytesPerSecond)).ToString(@"hh\:mm\:ss")} restantes"
                 : "";
             return $"{label} · {bytes} · {speed}{remaining}";
         }
@@ -155,7 +155,7 @@ internal sealed class DownloadQueue(
 
     private async Task ExecuteAsync(DownloadJob job)
     {
-        using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(30));
+        using var cancellation = new CancellationTokenSource();
         job.Cancellation = cancellation;
         var acquired = false;
         string? destination = null;
@@ -166,6 +166,7 @@ internal sealed class DownloadQueue(
         {
             await _slots.WaitAsync(cancellation.Token);
             acquired = true;
+            cancellation.CancelAfter(TimeSpan.FromMinutes(30));
             job.ChangeStage(TransferStage.Resolving);
             using var resolving = CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token);
             resolving.CancelAfter(TimeSpan.FromSeconds(35));

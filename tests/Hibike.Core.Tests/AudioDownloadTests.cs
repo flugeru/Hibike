@@ -127,6 +127,38 @@ public sealed class AudioDownloadTests
 
     private static AudioSource Source() => new("https://example.test/audio", new Dictionary<string, string>(), Container: "mp3");
 
+    [Fact]
+    public async Task ReportsLengthBeforeFirstReadAndHonorsCancellationWithoutRetry()
+    {
+        var directory = CreateDirectory();
+        try
+        {
+            using var cancellation = new CancellationTokenSource();
+            var requests = 0;
+            using var client = new HttpClient(new StubHandler(_ =>
+            {
+                requests++;
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(Payload) };
+            }));
+            var progress = new ImmediateProgress(update =>
+            {
+                Assert.Equal(0, update.Bytes);
+                Assert.Equal(Payload.Length, update.TotalBytes);
+                cancellation.Cancel();
+            });
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                AudioDownload.SaveAsync(Source(), directory, progress, cancellation.Token, "cancel-test", client));
+            Assert.Equal(1, requests);
+            Assert.Empty(Directory.GetFiles(directory, "*.mp3"));
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    private sealed class ImmediateProgress(Action<AudioDownloadProgress> report) : IProgress<AudioDownloadProgress>
+    {
+        public void Report(AudioDownloadProgress value) => report(value);
+    }
+
     private static string CreateDirectory()
     {
         var path = Path.Combine(Path.GetTempPath(), "hibike-audio-test-" + Guid.NewGuid().ToString("N"));

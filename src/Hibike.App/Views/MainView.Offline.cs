@@ -14,7 +14,7 @@ public sealed partial class MainView
 {
     private Grid _downloadsPage = null!;
     private Border _connectionCard = null!, _connectionBanner = null!, _downloadActivity = null!;
-    private TextBlock _connectionTitle = null!, _connectionBody = null!, _downloadSummary = null!, _downloadEmpty = null!, _downloadQueueSummary = null!;
+    private TextBlock _connectionTitle = null!, _downloadSummary = null!, _downloadEmpty = null!, _downloadQueueSummary = null!;
     private Button _connectionAction = null!, _connectionShortcut = null!, _playDownloads = null!, _clearFinishedDownloads = null!;
     private TextBox _downloadFilter = null!;
     private ItemsControl _downloadItems = null!, _downloadQueueItems = null!;
@@ -25,13 +25,14 @@ public sealed partial class MainView
     private string? _lastDownloadOrigin;
     private (bool Network, bool Offline)? _lastConnection;
     private DownloadQueue _downloadQueue = null!;
+    private bool _showTransfers;
+    private Grid _downloadLibrary = null!;
+    private Button _deviceTab = null!, _transfersTab = null!;
     private bool ShowOfflineHome => _page == "home" && (!_music.NetworkAvailable || _music.OfflineMode);
 
     private void InitializeOfflineWorkspace(Grid content, Panel status)
     {
         _connectionTitle = UiTheme.Text("", UiTheme.SectionTitle, weight: FontWeight.SemiBold);
-        _connectionBody = Text("", UiTheme.Caption, Muted);
-        _connectionBody.TextWrapping = TextWrapping.Wrap;
         _connectionAction = ActionButton("", async () =>
         {
             if (!_music.OfflineMode) _music.SetOfflineMode(true);
@@ -43,9 +44,13 @@ public sealed partial class MainView
         });
         _connectionAction.Classes.Add("primary");
         _connectionAction.HorizontalAlignment = HorizontalAlignment.Left;
-        var connectionContent = new StackPanel { Spacing = UiTheme.CompactGap,
-            Children = { _connectionTitle, _connectionBody, _connectionAction } };
-        _connectionCard = UiTheme.Card(connectionContent);
+        _connectionTitle.FontSize = UiTheme.Body;
+        var connectionContent = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.CompactGap };
+        _connectionTitle.VerticalAlignment = VerticalAlignment.Center;
+        _connectionTitle.TextWrapping = TextWrapping.Wrap;
+        connectionContent.Children.Add(_connectionTitle);
+        Put(connectionContent, _connectionAction, 0, 1);
+        _connectionCard = UiTheme.Card(connectionContent, padding: 8);
 
         _connectionShortcut = ActionButton("", () =>
         {
@@ -56,7 +61,7 @@ public sealed partial class MainView
         _connectionBanner = new Border { Child = _connectionShortcut, IsVisible = false };
         status.Children.Add(_connectionBanner);
 
-        _downloadFilter = UiTheme.Field("Filtrar por título, artista ou álbum");
+        _downloadFilter = UiTheme.Field("Buscar neste aparelho");
         AddSearchIcon(_downloadFilter);
         _downloadFilter.TextChanged += (_, _) => RefreshDownloads();
         _downloadSummary = Text("", UiTheme.Caption, Muted);
@@ -64,10 +69,17 @@ public sealed partial class MainView
         _downloadEmpty.TextWrapping = TextWrapping.Wrap;
         _playDownloads = ActionButton("Tocar todas", () => PlayCollectionAsync(_shownDownloads));
         _playDownloads.Classes.Add("primary");
-        var actions = new WrapPanel { ItemSpacing = UiTheme.CompactGap, LineSpacing = UiTheme.CompactGap };
+        var actions = new Grid { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = UiTheme.CompactGap };
+        _downloadSummary.VerticalAlignment = VerticalAlignment.Center;
+        _downloadSummary.TextWrapping = TextWrapping.Wrap;
+        actions.Children.Add(_downloadSummary);
+        _playDownloads.Content = Icons.Make("play");
+        _playDownloads.MinWidth = UiTheme.TouchSize;
+        Avalonia.Automation.AutomationProperties.SetName(_playDownloads, "Tocar todas as músicas deste filtro");
+        Grid.SetColumn(_playDownloads, 1);
         actions.Children.Add(_playDownloads);
-        actions.Children.Add(ActionButton("Importar músicas", OpenLocalAsync));
-        var filters = new WrapPanel { ItemSpacing = UiTheme.CompactGap, LineSpacing = UiTheme.CompactGap };
+        Put(actions, IconButton("folder", "Importar músicas", OpenLocalAsync), 0, 2);
+        var filters = new StackPanel { Orientation = Orientation.Horizontal, Spacing = UiTheme.CompactGap };
         foreach (var (origin, label) in new[] { ("", "Todas"), ("Download", "Baixadas"), ("Importada", "Importadas") })
         {
             var filter = ActionButton(label, () =>
@@ -98,9 +110,10 @@ public sealed partial class MainView
         var queueHeader = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.CompactGap };
         queueHeader.Children.Add(_downloadQueueSummary);
         Put(queueHeader, _clearFinishedDownloads, 0, 1);
-        var activity = new StackPanel { Spacing = UiTheme.CompactGap,
-            Children = { queueHeader, _downloadQueueItems } };
-        _downloadActivity = UiTheme.Card(activity, padding: 12);
+        var activity = new Grid { RowDefinitions = new("Auto,*"), RowSpacing = UiTheme.CompactGap };
+        activity.Children.Add(queueHeader);
+        Put(activity, UiTheme.FadingScroll(_downloadQueueItems), 1, 0);
+        _downloadActivity = new Border { Child = activity };
         _downloadQueue.Changed += RefreshDownloadQueue;
         _downloadActivity.IsVisible = false;
 
@@ -108,12 +121,21 @@ public sealed partial class MainView
             openMenu: _ => ShowOfflineTrackOptions(track),
             subtitle: TrackTextFormatter.Artist(track.Artist) + " · " + _music.OfflineOrigin(track)));
         var tools = new StackPanel { Spacing = UiTheme.CompactGap,
-            Children = { _connectionCard, _downloadActivity, _downloadSummary, actions, _downloadFilter, filters } };
-        _downloadsPage = new Grid { IsVisible = false, RowDefinitions = new("Auto,*"), RowSpacing = UiTheme.CompactGap, ClipToBounds = true };
-        var toolsScroll = UiTheme.FadingScroll(tools);
-        _downloadsPage.SizeChanged += (_, e) => toolsScroll.MaxHeight = Math.Max(120, e.NewSize.Height * (_androidLayout ? .50 : .58));
-        _downloadsPage.Children.Add(toolsScroll);
-        Put(_downloadsPage, new Grid { Children = { UiTheme.FadingScroll(_downloadItems), _downloadEmpty } }, 1, 0);
+            Children = { actions, _downloadFilter, UiTheme.FadingScroll(filters, horizontal: true) } };
+        _downloadLibrary = new Grid { RowDefinitions = new("Auto,*"), RowSpacing = UiTheme.CompactGap };
+        _downloadLibrary.Children.Add(tools);
+        _downloadEmpty.Margin = new Thickness(0, 24, 0, 0);
+        Put(_downloadLibrary, new Grid { Children = { UiTheme.FadingScroll(_downloadItems), _downloadEmpty } }, 1, 0);
+        var tabs = new Grid { ColumnDefinitions = new("*,*"), ColumnSpacing = UiTheme.CompactGap };
+        _deviceTab = ActionButton("No aparelho", () => { _showTransfers = false; RefreshDownloadQueue(); return Task.CompletedTask; });
+        _transfersTab = ActionButton("Transferências", () => { _showTransfers = true; RefreshDownloadQueue(); return Task.CompletedTask; });
+        tabs.Children.Add(_deviceTab);
+        Put(tabs, _transfersTab, 0, 1);
+        _downloadsPage = new Grid { IsVisible = false, RowDefinitions = new("Auto,Auto,*"), RowSpacing = UiTheme.CompactGap, ClipToBounds = true };
+        _downloadsPage.Children.Add(tabs);
+        Put(_downloadsPage, _connectionCard, 1, 0);
+        Put(_downloadsPage, new Grid { Children = { _downloadLibrary, _downloadActivity } }, 2, 0);
+        RefreshDownloadQueue();
         Put(content, _downloadsPage, 2, 0);
     }
 
@@ -137,11 +159,7 @@ public sealed partial class MainView
                 _accountNetworkRequest?.Cancel();
             }
             _connectionTitle.Text = offline ? "Modo offline" : network ? "Músicas neste aparelho" : "Sem conexão";
-            _connectionBody.Text = offline && network ? "A internet está disponível. Quer voltar ao modo online?"
-                : offline ? "Você está ouvindo músicas disponíveis no aparelho."
-                : network ? "Quer usar só as músicas baixadas e importadas?"
-                : "As músicas deste aparelho estão disponíveis. Quer entrar no modo offline?";
-            _connectionAction.Content = offline ? "Voltar ao modo online" : "Entrar no modo offline";
+            _connectionAction.Content = offline ? "Usar online" : "Usar offline";
             _connectionAction.IsVisible = !offline || network;
             _connectionShortcut.Content = network ? "Modo offline · Ver opções" : "Sem conexão · Ver músicas offline";
             if (reconnected) Dispatcher.UIThread.Post(async () => await RefreshHomeAsync(), DispatcherPriority.Background);
@@ -151,6 +169,7 @@ public sealed partial class MainView
         if (showBanner && !_connectionBanner.IsVisible) UiMotion.Enter(_connectionBanner, -4);
         _connectionBanner.IsVisible = showBanner;
         _downloadsPage.IsVisible = showDownloads;
+        _connectionCard.IsVisible = !_showTransfers || !network || offline;
         if (showDownloads) RefreshDownloads();
     }
 
@@ -221,6 +240,7 @@ public sealed partial class MainView
             return Task.CompletedTask;
         }
         _downloadQueue.Enqueue(track);
+        _showTransfers = true;
         RefreshDownloadQueue();
         return Task.CompletedTask;
     }
@@ -244,8 +264,14 @@ public sealed partial class MainView
         var pending = jobs.Count(job => job.Stage == TransferStage.Queued);
         var paused = jobs.Count(job => job.Stage == TransferStage.Paused);
         var failed = jobs.Count(job => job.Stage == TransferStage.Failed);
-        _downloadQueueSummary.Text = $"{active} ativos · {pending} na fila · {paused} pausados · {failed} com erro";
-        _downloadActivity.IsVisible = jobs.Count > 0;
+        _downloadQueueSummary.Text = jobs.Count == 0 ? "Nenhuma transferência. Baixe pelo menu de uma música."
+            : $"{active} ativos · {pending} na fila · {paused} pausados · {failed} com erro";
+        _transfersTab.Content = active + pending > 0 ? $"Transferências ({active + pending})" : "Transferências";
+        _deviceTab.Classes.Set("primary", !_showTransfers);
+        _transfersTab.Classes.Set("primary", _showTransfers);
+        _downloadActivity.IsVisible = _showTransfers;
+        _downloadLibrary.IsVisible = !_showTransfers;
+        _connectionCard.IsVisible = !_showTransfers || !_music.NetworkAvailable || _music.OfflineMode;
         _clearFinishedDownloads.IsVisible = jobs.Any(job => job.Stage is TransferStage.Completed or TransferStage.Cancelled);
     }
 
@@ -271,6 +297,12 @@ public sealed partial class MainView
         var progress = new ProgressBar { Maximum = 1, Height = UiTheme.ProgressHeight };
         progress.Bind(ProgressBar.ValueProperty, new Binding(nameof(DownloadJob.Progress)) { Source = job });
         progress.Bind(ProgressBar.IsIndeterminateProperty, new Binding(nameof(DownloadJob.IsIndeterminate)) { Source = job });
+        progress.Bind(Visual.IsVisibleProperty, new Binding(nameof(DownloadJob.Stage))
+        {
+            Source = job,
+            Converter = new Avalonia.Data.Converters.FuncValueConverter<TransferStage, bool>(stage =>
+                stage is TransferStage.Transferring or TransferStage.Paused or TransferStage.Finalizing)
+        });
         var actions = new WrapPanel { ItemSpacing = UiTheme.CompactGap, LineSpacing = UiTheme.CompactGap };
         var pause = ActionButton("Pausar", () => { _downloadQueue.Pause(job); return Task.CompletedTask; });
         pause.Bind(Visual.IsVisibleProperty, new Binding(nameof(DownloadJob.CanPause)) { Source = job });

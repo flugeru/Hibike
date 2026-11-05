@@ -73,18 +73,19 @@ public sealed partial class MainView
                 return Task.CompletedTask;
             });
             button.Classes.Add("pill");
-            button.Padding = UiTheme.Zero;
+            button.Padding = new Thickness(16, 0);
             AutomationProperties.SetName(button, label);
             _mobileLibraryTabs.Add(button);
             _mobileLibraryTabRail.Children.Add(button);
         }
         Put(page, UiTheme.FadingScroll(_mobileLibraryTabRail, horizontal: true), 1, 0);
 
-        _mobileLibraryTools = new Grid { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = 8 };
+        _mobileLibraryTools = new Grid { ColumnDefinitions = new("*,Auto,Auto"), RowDefinitions = new("Auto,Auto"), ColumnSpacing = 8 };
         AddSearchIcon(_mobileLibrarySearch);
         AutomationProperties.SetName(_mobileLibrarySearch, "Buscar na biblioteca");
         _mobileLibrarySearch.TextChanged += (_, _) => RefreshMobileLibrary();
         _mobileLibraryTools.Children.Add(_mobileLibrarySearch);
+        Grid.SetColumnSpan(_mobileLibrarySearch, 3);
         var clearSearch = CollectionIcon("close", "Limpar busca da biblioteca", () =>
         {
             _mobileLibrarySearch.Clear();
@@ -99,7 +100,7 @@ public sealed partial class MainView
         {
             ShowMobileLibraryFilters();
             return Task.CompletedTask;
-        }), 0, 1);
+        }), 1, 1);
         _mobileLibraryViewMode = CollectionAction("Lista", () =>
         {
             _mobileLibraryListMode = !_mobileLibraryListMode;
@@ -107,10 +108,12 @@ public sealed partial class MainView
             return Task.CompletedTask;
         });
         _mobileLibraryViewMode.Padding = new Thickness(8, 0);
-        Put(_mobileLibraryTools, _mobileLibraryViewMode, 0, 2);
+        Put(_mobileLibraryTools, _mobileLibraryViewMode, 1, 2);
         Put(page, _mobileLibraryTools, 2, 0);
         _mobileLibraryFilterSummary = CollectionText("", UiTheme.Caption, Muted);
-        Put(page, _mobileLibraryFilterSummary, 3, 0);
+        _mobileLibraryFilterSummary.TextWrapping = TextWrapping.Wrap;
+        _mobileLibraryFilterSummary.VerticalAlignment = VerticalAlignment.Center;
+        Put(_mobileLibraryTools, _mobileLibraryFilterSummary, 1, 0);
 
         _mobileLibraryHero = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch };
         Put(page, _mobileLibraryHero, 4, 0);
