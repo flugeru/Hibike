@@ -69,6 +69,7 @@ public sealed partial class MainView
                     _mobileLibraryTab = tab;
                     _mobileLibraryScroll.Offset = default;
                     RefreshMobileLibrary();
+                    Animate(_mobileLibraryScroll, 6);
                 }
                 return Task.CompletedTask;
             });
@@ -348,7 +349,7 @@ public sealed partial class MainView
     // One column at very narrow widths; additional columns only when cards stay readable.
     private int LibraryColumns => _mobileLibraryListMode ? 1
         : Math.Clamp((int)Math.Floor(((_mobileLibrary?.Bounds.Width ?? 360) + UiTheme.SectionGap)
-            / (_androidLayout ? 156d : 188d)), 1, 6);
+            / (_androidLayout || Bounds.Width < UiTheme.DesktopWidth ? 156d : 188d)), 1, 6);
 
     private double MobileLibraryCardSize => _mobileLibrary is { Bounds.Width: > 0 } page
         ? Math.Min(240, Math.Max(1, Math.Floor((page.Bounds.Width - (LibraryColumns - 1) * UiTheme.SectionGap) / LibraryColumns)))

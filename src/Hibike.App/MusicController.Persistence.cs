@@ -43,6 +43,7 @@ public sealed partial class MusicController
     private void WriteState(PersistedState snapshot)
     {
         if (snapshot.Session is { } session) _session.Save(session);
+        if (_personalizationUnreadable) throw new IOException("Personalização original ilegível; arquivo preservado. Restaure um backup antes de salvar preferências.");
         Directory.CreateDirectory(DataDirectory);
         var path = Path.Combine(DataDirectory, "personalization.json");
         var temporary = path + ".tmp";

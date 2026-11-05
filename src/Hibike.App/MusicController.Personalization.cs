@@ -81,6 +81,7 @@ public sealed partial class MusicController
         public RecommendationWeights Weights { get; set; } = new();
     }
     private Personalization _personal = new();
+    private bool _personalizationUnreadable;
     private readonly HashSet<string> _recommended = new(StringComparer.OrdinalIgnoreCase);
     private DateTime _listenTick = DateTime.UtcNow;
     private double _sessionSeconds;
@@ -124,8 +125,11 @@ public sealed partial class MusicController
                 throw new InvalidDataException("Dados de personalização inválidos.");
             _personal = data;
         }
-        catch (Exception error) when (error is IOException or JsonException or UnauthorizedAccessException)
-        { PlaybackDiagnostics.Write("Personalização", "Não foi possível carregar dados locais: " + error.Message); }
+        catch (Exception error) when (error is IOException or InvalidDataException or JsonException or UnauthorizedAccessException)
+        {
+            _personalizationUnreadable = true;
+            PlaybackDiagnostics.Write("Personalização", "Não foi possível carregar dados locais: " + error.Message);
+        }
     }
     private void SavePersonalization() => QueueStateSave();
     private void PersistPersonalization()

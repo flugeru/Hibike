@@ -60,6 +60,7 @@ public sealed partial class MainView
         _topMenuVersion++; _topMenuOpen = true; _topMenuLayer.IsVisible = true;
         SizeTopMenu();
         _topMenuPanel.IsHitTestVisible = true;
+        _topMenuPanel.IsEnabled = true;
         UiMotion.Enter(_topMenuPanel, -12);
     }
     private async void CloseTopMenu()
@@ -67,6 +68,7 @@ public sealed partial class MainView
         if (!_topMenuOpen) return;
         var version = ++_topMenuVersion; _topMenuOpen = false;
         _topMenuPanel.IsHitTestVisible = false;
+        _topMenuPanel.IsEnabled = false;
         await UiMotion.ExitAsync(_topMenuPanel, -12);
         if (version == _topMenuVersion) _topMenuLayer.IsVisible = false;
     }

@@ -73,7 +73,8 @@ public sealed partial class MainView
         _downloadSummary.VerticalAlignment = VerticalAlignment.Center;
         _downloadSummary.TextWrapping = TextWrapping.Wrap;
         actions.Children.Add(_downloadSummary);
-        _playDownloads.Content = Icons.Make("play");
+        _playDownloads.Content = Icons.Make("play", UiTheme.OnPrimary);
+        ToolTip.SetTip(_playDownloads, "Tocar todas as músicas deste filtro");
         _playDownloads.MinWidth = UiTheme.TouchSize;
         Avalonia.Automation.AutomationProperties.SetName(_playDownloads, "Tocar todas as músicas deste filtro");
         Grid.SetColumn(_playDownloads, 1);
@@ -269,8 +270,10 @@ public sealed partial class MainView
         _transfersTab.Content = active + pending > 0 ? $"Transferências ({active + pending})" : "Transferências";
         _deviceTab.Classes.Set("primary", !_showTransfers);
         _transfersTab.Classes.Set("primary", _showTransfers);
+        var entering = _showTransfers ? !_downloadActivity.IsVisible : !_downloadLibrary.IsVisible;
         _downloadActivity.IsVisible = _showTransfers;
         _downloadLibrary.IsVisible = !_showTransfers;
+        if (entering && _downloadsPage.IsEffectivelyVisible) Animate(_showTransfers ? _downloadActivity : _downloadLibrary, 6);
         _connectionCard.IsVisible = !_showTransfers || !_music.NetworkAvailable || _music.OfflineMode;
         _clearFinishedDownloads.IsVisible = jobs.Any(job => job.Stage is TransferStage.Completed or TransferStage.Cancelled);
     }
