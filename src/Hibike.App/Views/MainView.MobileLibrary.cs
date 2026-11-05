@@ -28,6 +28,9 @@ public sealed partial class MainView
     private readonly TextBox _mobileLibrarySearch = UiTheme.Field("Buscar na biblioteca");
     private TextBlock _mobileLibraryTitle = null!, _mobileLibrarySummary = null!;
     private Button _mobileLibraryBack = null!, _mobileLibraryAdd = null!, _mobileLibraryPlay = null!;
+    private bool _mobileLibraryListMode;
+    private Button _mobileLibraryViewMode = null!;
+    private TextBlock _mobileLibraryFilterSummary = null!;
     private Grid _mobileLibraryTabRail = null!, _mobileLibraryTools = null!;
     private ContentControl _mobileLibraryHero = null!, _mobileLibraryEmpty = null!;
     private ItemsControl _mobileLibraryTracks = null!, _mobileLibraryGroups = null!;
@@ -40,7 +43,7 @@ public sealed partial class MainView
 
     private Grid BuildMobileLibrary()
     {
-        var page = new Grid { RowDefinitions = new("Auto,Auto,Auto,Auto,Auto,Auto,*"), RowSpacing = UiTheme.CompactGap };
+        var page = new Grid { RowDefinitions = new("Auto,Auto,Auto,Auto,Auto,Auto,Auto,*"), RowSpacing = UiTheme.CompactGap };
         var header = new Grid { ColumnDefinitions = new("Auto,*,Auto") };
         _mobileLibraryBack = IconButton("back", "Voltar à biblioteca", () => { CloseMobileLibraryGroup(); return Task.CompletedTask; });
         header.Children.Add(_mobileLibraryBack);
@@ -73,25 +76,45 @@ public sealed partial class MainView
         }
         Put(page, _mobileLibraryTabRail, 1, 0);
 
-        _mobileLibraryTools = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = 8 };
+        _mobileLibraryTools = new Grid { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = 8 };
         AddSearchIcon(_mobileLibrarySearch);
         _mobileLibrarySearch.TextChanged += (_, _) => RefreshMobileLibrary();
         _mobileLibraryTools.Children.Add(_mobileLibrarySearch);
+        var clearSearch = CollectionIcon("close", "Limpar busca da biblioteca", () =>
+        {
+            _mobileLibrarySearch.Clear();
+            _mobileLibrarySearch.Focus();
+            return Task.CompletedTask;
+        });
+        clearSearch.IsVisible = false;
+        _mobileLibrarySearch.InnerRightContent = clearSearch;
+        _mobileLibrarySearch.TextChanged += (_, _) =>
+            clearSearch.IsVisible = !string.IsNullOrEmpty(_mobileLibrarySearch.Text);
         Put(_mobileLibraryTools, CollectionIcon("sort", "Ordenar e filtrar biblioteca", () =>
         {
             ShowMobileLibraryFilters();
             return Task.CompletedTask;
         }), 0, 1);
+        _mobileLibraryViewMode = CollectionAction("Lista", () =>
+        {
+            _mobileLibraryListMode = !_mobileLibraryListMode;
+            RefreshMobileLibrary();
+            return Task.CompletedTask;
+        });
+        _mobileLibraryViewMode.Padding = new Thickness(8, 0);
+        Put(_mobileLibraryTools, _mobileLibraryViewMode, 0, 2);
         Put(page, _mobileLibraryTools, 2, 0);
+        _mobileLibraryFilterSummary = CollectionText("", UiTheme.Caption, Muted);
+        Put(page, _mobileLibraryFilterSummary, 3, 0);
 
         _mobileLibraryHero = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch };
-        Put(page, _mobileLibraryHero, 3, 0);
+        Put(page, _mobileLibraryHero, 4, 0);
         var summary = new Grid { ColumnDefinitions = new("*,Auto") };
         _mobileLibrarySummary = CollectionText("", UiTheme.Caption, Muted, FontWeight.Medium);
         summary.Children.Add(_mobileLibrarySummary);
         _mobileLibraryPlay = CollectionAction("Tocar tudo", () => PlayCollectionAsync(_mobileLibraryShownTracks), prominent: true);
         Put(summary, _mobileLibraryPlay, 0, 1);
-        Put(page, summary, 4, 0);
+        Put(page, summary, 5, 0);
 
         _mobileLibraryTracks = CollectionList<Track>(track => TrackRow(track, showMenu: true));
         _mobileLibraryGroups = CollectionList<LibraryGroup[]>(BuildMobileLibraryGroupRow);
@@ -101,8 +124,8 @@ public sealed partial class MainView
         _mobileLibraryError = CollectionText("", UiTheme.Caption, UiTheme.Error);
         _mobileLibraryError.TextWrapping = TextWrapping.Wrap;
         _mobileLibraryError.MaxLines = 2;
-        Put(page, _mobileLibraryError, 5, 0);
-        Put(page, new Grid { Children = { _mobileLibraryScroll, _mobileLibraryEmpty } }, 6, 0);
+        Put(page, _mobileLibraryError, 6, 0);
+        Put(page, new Grid { Children = { _mobileLibraryScroll, _mobileLibraryEmpty } }, 7, 0);
 
         page.SizeChanged += (_, e) =>
         {
@@ -123,6 +146,17 @@ public sealed partial class MainView
         _mobileLibraryBack.IsVisible = detail is not null;
         _mobileLibraryTitle.Text = detail is null ? "Sua biblioteca" : detail.Playlist?.Name ?? detail.Title;
         _mobileLibraryTabRail.IsVisible = _mobileLibraryTools.IsVisible = detail is null;
+        _mobileLibraryViewMode.IsVisible = detail is null && _mobileLibraryTab != LibraryTab.Songs;
+        _mobileLibraryViewMode.Content = _mobileLibraryListMode ? "Grade" : "Lista";
+        _mobileLibraryFilterSummary.IsVisible = detail is null;
+        var sourceLabel = _mobileLibrarySource switch { LibrarySource.Local => "No dispositivo", LibrarySource.Online => "Online", _ => "Todas as fontes" };
+        var orderLabel = _mobileLibraryOrder switch
+        {
+            LibraryOrder.Artist => "Por artista",
+            LibraryOrder.Title => "Por título",
+            _ => "Tocadas recentemente"
+        };
+        _mobileLibraryFilterSummary.Text = _mobileLibraryTab == LibraryTab.Songs ? sourceLabel + " · " + orderLabel : sourceLabel + " · A–Z";
 
         for (var index = 0; index < _mobileLibraryTabs.Count; index++)
         {
@@ -179,7 +213,7 @@ public sealed partial class MainView
         {
             var groups = MobileLibraryGroups(tracks, query).ToArray();
             count = groups.Length;
-            var key = _mobileLibraryTab + ":" + LibraryColumns + ":" + MobileLibraryCardSize + ":" + string.Join("|", groups.Select(group => $"{group.Title}\n{group.Subtitle}\n{group.Artwork?.Thumbnail}\n{group.OnlinePlaylist?.Id}\n{string.Join(",", group.Tracks.Select(track => track.Source))}"));
+            var key = _mobileLibraryTab + ":" + _mobileLibraryListMode + ":" + LibraryColumns + ":" + MobileLibraryCardSize + ":" + string.Join("|", groups.Select(group => $"{group.Title}\n{group.Subtitle}\n{group.Artwork?.Thumbnail}\n{group.OnlinePlaylist?.Id}\n{string.Join(",", group.Tracks.Select(track => track.Source))}"));
             if (_mobileLibraryGroupKey != key)
             {
                 _mobileLibraryGroupKey = key;
@@ -285,12 +319,13 @@ public sealed partial class MainView
         if (_mobileLibraryTab == LibraryTab.Playlists)
         {
             var local = _music.Playlists.Where(playlist => _mobileLibrarySource != LibrarySource.Online && MatchesLibraryQuery(playlist.Name, query))
-                .Select(playlist => new LibraryGroup(playlist.Name, TrackCount(playlist.Tracks.Count),
+                .Select(playlist => new LibraryGroup(playlist.Name, (playlist.Pinned ? "Fixada · " : "") + TrackCount(playlist.Tracks.Count),
                     playlist.Tracks.FirstOrDefault(track => track.Thumbnail is not null), playlist.Tracks, playlist));
             var online = _accountPlaylists.Where(playlist => _mobileLibrarySource != LibrarySource.Local && MatchesLibraryQuery(playlist.Title, query))
                 .Select(playlist => new LibraryGroup(playlist.Title, "YouTube",
                     new Track(playlist.Id, playlist.Title, "YouTube", playlist.Id, Thumbnail: playlist.Thumbnail), [], OnlinePlaylist: playlist));
-            return local.Concat(online).OrderBy(group => group.Title, StringComparer.CurrentCultureIgnoreCase);
+            return local.Concat(online).OrderByDescending(group => group.Playlist?.Pinned == true)
+                .ThenBy(group => group.Title, StringComparer.CurrentCultureIgnoreCase);
         }
 
         var byArtist = _mobileLibraryTab == LibraryTab.Artists;
@@ -300,11 +335,10 @@ public sealed partial class MainView
             .Select(group => new LibraryGroup(byArtist ? TrackTextFormatter.Artist(group.Key.Artist) : group.Key.Album!,
                 byArtist ? TrackCount(group.Count()) : TrackTextFormatter.Artist(group.Key.Artist),
                 group.FirstOrDefault(track => track.Thumbnail is not null), group.ToArray()))
-            .OrderBy(group => _mobileLibraryOrder == LibraryOrder.Artist ? group.Tracks.FirstOrDefault()?.Artist : group.Title,
-                StringComparer.CurrentCultureIgnoreCase);
+            .OrderBy(group => group.Title, StringComparer.CurrentCultureIgnoreCase);
     }
 
-    private int LibraryColumns => _androidLayout ? 2
+    private int LibraryColumns => _mobileLibraryListMode ? 1 : _androidLayout ? 2
         : Math.Clamp((int)((_mobileLibrary?.Bounds.Width ?? 0) / 180), 2, 6);
 
     private double MobileLibraryCardSize => _mobileLibrary is { Bounds.Width: > 0 } page
@@ -313,6 +347,13 @@ public sealed partial class MainView
 
     private Control BuildMobileLibraryGroupRow(LibraryGroup[] groups)
     {
+        if (_mobileLibraryListMode)
+        {
+            var group = groups[0];
+            var kind = _mobileLibraryTab switch { LibraryTab.Artists => "Artista", LibraryTab.Albums => "Álbum", _ => "Playlist" };
+            return SearchCatalogRow(new("", group.Title, kind, group.Artwork?.Thumbnail),
+                () => OpenMobileLibraryGroupAsync(group), group.Subtitle);
+        }
         var row = new Grid { ColumnDefinitions = new(string.Join(",", Enumerable.Repeat("*", LibraryColumns))), ColumnSpacing = UiTheme.SectionGap,
             Margin = new Thickness(0, 0, 0, UiTheme.SectionGap) };
         for (var index = 0; index < groups.Length; index++)
@@ -321,7 +362,7 @@ public sealed partial class MainView
             var artwork = group.Artwork is { } track ? track with { Title = group.Title, Artist = "" }
                 : new Track(group.Title, group.Title, "", "");
             var card = CoverCard(artwork, group.Subtitle, () => OpenMobileLibraryGroupAsync(group), songActions: false,
-                cardSize: MobileLibraryCardSize);
+                cardSize: MobileLibraryCardSize, roundArtwork: _mobileLibraryTab == LibraryTab.Artists);
             Put(row, card, 0, index);
         }
         return row;
@@ -330,11 +371,16 @@ public sealed partial class MainView
     private Control BuildMobileLibraryHero(LibraryGroup group)
     {
         var hero = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = 16 };
-        hero.Children.Add(new Artwork(group.Artwork, UiTheme.RowHeight, highQuality: true));
+        var art = new Artwork(group.Artwork, UiTheme.RowHeight, highQuality: true);
+        if (_mobileLibraryTab == LibraryTab.Artists) art.CornerRadius = new CornerRadius(UiTheme.RowHeight / 2d);
+        hero.Children.Add(art);
         var labels = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
         var kind = group.Playlist is not null ? "Playlist" : _mobileLibraryTab == LibraryTab.Albums ? "Álbum" : "Artista";
         labels.Children.Add(CollectionText(kind, UiTheme.Caption, Muted));
         labels.Children.Add(CollectionText(group.Playlist is not null ? "Sua coleção" : "Faixas na sua biblioteca · " + group.Subtitle, UiTheme.Body, Muted));
+        if (group.Playlist is null && group.Tracks.FirstOrDefault() is { } track)
+            labels.Children.Add(CollectionAction(_mobileLibraryTab == LibraryTab.Artists ? "Ver perfil online" : "Ver artista",
+                () => OpenTrackArtistAsync(track)));
         Put(hero, labels, 0, 1);
         return UiTheme.Inner(hero);
     }

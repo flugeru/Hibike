@@ -184,6 +184,7 @@ public sealed partial class MainView
         Add("Mover para cima", -1, index > first);
         Add("Mover para baixo", 1, index < _music.Queue.Count - 1);
         Add("Remover da fila", 0, true);
+        panel.Children.Add(CollectionAction("Ver artista", () => OpenTrackArtistAsync(track)));
         ShowSheet(TrackTextFormatter.Title(track.Title, track.Artist), panel);
 
         void Add(string label, int direction, bool enabled)

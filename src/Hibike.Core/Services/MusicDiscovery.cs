@@ -7,7 +7,8 @@ namespace Hibike.Core.Services;
 
 public sealed record MusicArtist(string Id, string Name, string? Image);
 public sealed record MusicChart(string Region, string Title, DateTime RetrievedUtc, IReadOnlyList<Track> Tracks, string? PlaylistId = null);
-public sealed record ArtistCollection(string Id, string Title, string Kind, string? Image);
+public sealed record ArtistCollection(string Id, string Title, string Kind, string? Image,
+    MusicArtist? Artist = null);
 public sealed record ArtistSection(string Title, string Id, string? Parameters);
 public sealed record ArtistProfile(string Id, string Name, string? Image, IReadOnlyList<Track> Tracks, IReadOnlyList<ArtistCollection> Collections, IReadOnlyList<ArtistSection> Sections);
 
@@ -22,7 +23,7 @@ public static class MusicDiscovery
     {
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
-        if (Nodes(root, "messageRenderer").Any() && !Nodes(root, "musicTwoRowItemRenderer").Any() && !Nodes(root, "musicResponsiveListItemRenderer").Any())
+        if (id != "search" && Nodes(root, "messageRenderer").Any() && !Nodes(root, "musicTwoRowItemRenderer").Any() && !Nodes(root, "musicResponsiveListItemRenderer").Any())
             throw new InvalidOperationException("YouTube Music não disponibilizou este catálogo.");
         var meta = Nodes(root, "microformatDataRenderer").FirstOrDefault();
         var name = meta.ValueKind == JsonValueKind.Object && meta.TryGetProperty("title", out var title) ? title.GetString() ?? "Artista" : "Artista";
@@ -34,16 +35,33 @@ public static class MusicDiscovery
         var collections = new List<ArtistCollection>();
         foreach (var item in Nodes(root, "musicTwoRowItemRenderer").Concat(Nodes(root, "musicResponsiveListItemRenderer")))
         {
-            var label = item.TryGetProperty("title", out var t) ? Text(t) : Nodes(item, "musicResponsiveListItemFlexColumnRenderer").Select(c => c.TryGetProperty("text", out var text) ? Text(text) : "").FirstOrDefault() ?? "";
+            var columns = Nodes(item, "musicResponsiveListItemFlexColumnRenderer")
+                .Select(column => column.TryGetProperty("text", out var text) ? text : default).ToArray();
+            var titleNode = item.TryGetProperty("title", out var titleRuns) ? titleRuns : columns.FirstOrDefault();
+            var label = Text(titleNode);
+            if (string.IsNullOrWhiteSpace(label)) continue;
             var thumb = Nodes(item, "url").Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString()).LastOrDefault(u => u?.StartsWith("https://") == true);
-            var video = Nodes(item, "videoId").Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString()).FirstOrDefault();
-            var browse = Nodes(item, "browseId").Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString()).FirstOrDefault(b => b is not null && (b.StartsWith("VL") || b.StartsWith("MPRE")));
-            if (browse is not null)
+            var endpoints = PrimaryEndpoints(item, titleNode).ToArray();
+            var browse = endpoints.SelectMany(endpoint => Nodes(endpoint, "browseId")).Select(node => node.GetString()).FirstOrDefault();
+            if (browse is not null && (browse.StartsWith("VL", StringComparison.Ordinal) || browse.StartsWith("MPRE", StringComparison.Ordinal)))
             {
-                var subtitle = item.TryGetProperty("subtitle", out var sub) ? Text(sub) : "";
-                collections.Add(new(browse, label, browse.StartsWith("MPRE") ? subtitle.Contains("Single", StringComparison.OrdinalIgnoreCase) || subtitle.Contains("EP", StringComparison.OrdinalIgnoreCase) ? "Single / EP" : "Álbum" : "Playlist", thumb));
+                var subtitles = item.TryGetProperty("subtitle", out var subtitle) ? new[] { subtitle } : columns.Skip(1);
+                var secondary = subtitles.ToArray();
+                var type = string.Join(" ", secondary.Select(Text));
+                var creditedArtist = secondary.SelectMany(node => Nodes(node, "runs"))
+                    .Where(runs => runs.ValueKind == JsonValueKind.Array).SelectMany(runs => runs.EnumerateArray())
+                    .Select(run => (Name: run.TryGetProperty("text", out var value) ? value.GetString() : null, Id: Nodes(run, "browseId").Select(node => node.GetString()).FirstOrDefault(IsArtistId)))
+                    .FirstOrDefault(credit => credit.Id is not null && !string.IsNullOrWhiteSpace(credit.Name));
+                var kind = !browse.StartsWith("MPRE", StringComparison.Ordinal) ? "Playlist"
+                    : type.Contains("Single", StringComparison.OrdinalIgnoreCase) || type.Contains("EP", StringComparison.OrdinalIgnoreCase) ? "Single / EP" : "Álbum";
+                collections.Add(new(browse, label, kind, thumb,
+                    creditedArtist.Id is { } artistId ? new MusicArtist(artistId, creditedArtist.Name!, null) : null));
             }
-            else if (video is not null) tracks.Add(new(video, label, name, "https://www.youtube.com/watch?v=" + video, Thumbnail: thumb));
+            else if (!IsArtistId(browse))
+            {
+                var video = endpoints.SelectMany(endpoint => Nodes(endpoint, "videoId")).Select(node => node.GetString()).FirstOrDefault();
+                if (video is not null) tracks.Add(new(video, label, name, "https://www.youtube.com/watch?v=" + video, Thumbnail: thumb));
+            }
         }
         var sections = new List<ArtistSection>();
         foreach (var header in Nodes(root, "musicCarouselShelfBasicHeaderRenderer"))
@@ -115,14 +133,29 @@ public static class MusicDiscovery
             foreach (var item in node.EnumerateArray()) foreach (var child in Nodes(item, key)) yield return child;
     }
     private static string Text(JsonElement node) => string.Concat(Nodes(node, "text").Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString()));
+    private static bool IsArtistId(string? id) => id is not null && Regex.IsMatch(id, "^UC[\\w-]{22}$");
+
+    private static IEnumerable<JsonElement> PrimaryEndpoints(JsonElement item, JsonElement title)
+    {
+        if (item.TryGetProperty("navigationEndpoint", out var navigation)) yield return navigation;
+        foreach (var endpoint in Nodes(title, "navigationEndpoint")) yield return endpoint;
+        // Some renderers put these directly on the item instead of wrapping them in a navigation endpoint.
+        if (item.TryGetProperty("browseEndpoint", out var browse)) yield return browse;
+        if (item.TryGetProperty("watchEndpoint", out var watch)) yield return watch;
+        if (item.TryGetProperty("playlistItemData", out var playlist)) yield return playlist;
+    }
+
     public static IReadOnlyList<MusicArtist> ParseArtists(string json)
     {
         using var doc = JsonDocument.Parse(json);
         var result = new List<MusicArtist>();
-        foreach (var item in Nodes(doc.RootElement, "musicResponsiveListItemRenderer"))
+        foreach (var item in Nodes(doc.RootElement, "musicResponsiveListItemRenderer").Concat(Nodes(doc.RootElement, "musicTwoRowItemRenderer")))
         {
-            var id = Nodes(item, "browseId").Select(n => n.GetString()).FirstOrDefault(s => s is not null && Regex.IsMatch(s, "^UC[\\w-]{22}$"));
-            var name = Nodes(item, "musicResponsiveListItemFlexColumnRenderer").Select(Text).FirstOrDefault();
+            var column = Nodes(item, "musicResponsiveListItemFlexColumnRenderer").FirstOrDefault();
+            var title = item.TryGetProperty("title", out var itemTitle) ? itemTitle : column;
+            var id = PrimaryEndpoints(item, title).SelectMany(endpoint => Nodes(endpoint, "browseId"))
+                .Select(node => node.GetString()).FirstOrDefault(IsArtistId);
+            var name = Text(title);
             var image = Nodes(item, "url").Select(n => n.GetString()).LastOrDefault(s => s?.StartsWith("https://", StringComparison.Ordinal) == true);
             if (id is not null && !string.IsNullOrWhiteSpace(name)) result.Add(new(id, name, image));
         }
@@ -133,10 +166,12 @@ public static class MusicDiscovery
         if (string.IsNullOrWhiteSpace(query) || query.Length > 200) return [];
         return ParseArtists(await RequestAsync("search", new { query = query.Trim(), @params = "EgWKAQIgAQ==" }, token));
     }
-    public static async Task<IReadOnlyList<ArtistCollection>> SearchCollectionsAsync(string query, CancellationToken token)
+    public static async Task<IReadOnlyList<ArtistCollection>> SearchCollectionsAsync(string query, bool playlists, CancellationToken token)
     {
         if (string.IsNullOrWhiteSpace(query) || query.Length > 200) return [];
-        return ParseArtist(await RequestAsync("search", new { query = query.Trim() }, token), "search").Collections;
+        var filter = playlists ? "Eg-KAQwIABAAGAAgACgBMABqChAEEAMQCRAFEAo=" : "EgWKAQIYAWoMEA4QChADEAQQCRAF";
+        var result = ParseArtist(await RequestAsync("search", new { query = query.Trim(), @params = filter }, token), "search");
+        return result.Collections.Where(entry => (entry.Kind == "Playlist") == playlists).ToArray();
     }
     public static async Task<MusicChart?> ChartAsync(string region, CancellationToken token, bool trending = false)
     {

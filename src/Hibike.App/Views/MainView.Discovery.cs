@@ -89,8 +89,8 @@ public sealed partial class MainView
                 _music.RemoveFromPlaylist(playlist, track);
                 return Task.CompletedTask;
             }));
-        actions.Children.Add(ActionButton("Buscar artista", async () => { CloseSheet(); _search.Text = track.Artist; _searchScope = "Online"; await SearchAsync(); }));
-        if (!string.IsNullOrWhiteSpace(track.Album)) actions.Children.Add(ActionButton("Abrir álbum", () => { CloseSheet(); OpenLocalCollection(track.Album, _music.Favorites.Concat(_music.History).Where(t => t.Album == track.Album && t.Artist == track.Artist)); return Task.CompletedTask; }));
+        actions.Children.Add(ActionButton("Ver artista", () => OpenTrackArtistAsync(track)));
+        if (!string.IsNullOrWhiteSpace(track.Album)) actions.Children.Add(ActionButton("Abrir álbum", () => { CloseSheet(); OpenLocalCollection(track.Album, _music.Favorites.Concat(_music.History).Append(track).Where(t => t.Album == track.Album && t.Artist == track.Artist)); return Task.CompletedTask; }));
         if (!track.IsLocal && Uri.TryCreate(track.Source, UriKind.Absolute, out var uri) && uri.Scheme == "https")
             actions.Children.Add(ActionButton("Compartilhar: copiar link", async () => { var clipboard = TopLevel.GetTopLevel(this)?.Clipboard; if (clipboard is null) throw new InvalidOperationException("Área de transferência indisponível."); await clipboard.SetTextAsync(track.Source); CloseSheet(); }));
         if (_music.Queue.Contains(track))

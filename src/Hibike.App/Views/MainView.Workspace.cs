@@ -4,6 +4,8 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Hibike.Core.Models;
 using Hibike.Core.Services;
 using Track = Hibike.Core.Models.Track;
@@ -218,23 +220,76 @@ public sealed partial class MainView
 
     private double PlaybackDuration => _music.Player.Duration > 0 ? _music.Player.Duration : _music.Current?.DurationSeconds ?? 0;
 
-    private void OpenCollection(string title, IReadOnlyList<Track> tracks, string kind = "Playlist", Track? artwork = null, string? message = null, Func<Task>? retry = null)
+    private sealed record CollectionRoute(string Page, Control? Content, IReadOnlyList<Track> Tracks,
+        (ScrollViewer View, Vector Offset)[] ScrollPositions);
+    private readonly Stack<CollectionRoute> _collectionBack = new();
+
+    private void BackFromCollection()
+    {
+        if (!_collectionBack.TryPop(out var route))
+        {
+            _page = "home";
+            Refresh();
+            return;
+        }
+        _collectionPage.Child = route.Content;
+        _collectionTracks = route.Tracks;
+        _page = route.Page;
+        Refresh();
+        if (route.Content is null) return;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!ReferenceEquals(_collectionPage.Child, route.Content)) return;
+            foreach (var (scroll, offset) in route.ScrollPositions) scroll.Offset = offset;
+        }, DispatcherPriority.Loaded);
+    }
+
+    private void OpenCollection(string title, IReadOnlyList<Track> tracks, string kind = "Playlist", Track? artwork = null, string? message = null, Func<Task>? retry = null,
+        bool replace = false, bool artistPage = false)
     {
         ClosePlayer(); CloseTopMenu(); CloseSheet();
+        var prior = _page == "collection" ? _collectionPage.Child : null;
+        var scrollPositions = prior?.GetVisualDescendants().OfType<ScrollViewer>()
+            .Select(scroll => (scroll, scroll.Offset)).ToArray() ?? [];
+        if (_page != "collection" || !replace)
+            _collectionBack.Push(new(_page, prior, prior is null ? [] : _collectionTracks, scrollPositions));
+
         _collectionTracks = tracks;
-        var grid = new Grid { RowDefinitions = new("Auto,Auto,*"), RowSpacing = 20 };
-        var hero = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = 20 };
-        hero.Children.Add(new Artwork(artwork ?? tracks.FirstOrDefault(), 100, highQuality: true));
-        var labels = new StackPanel { Spacing = 8 };
+        var grid = new Grid { RowDefinitions = new("Auto,Auto,*"), RowSpacing = UiTheme.SectionGap };
+        var hero = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = UiTheme.PageGap };
+        var coverSize = Bounds.Width >= UiTheme.DesktopWidth ? 128 : 88;
+        var imageTrack = artwork is { IsArtist: true, Thumbnail: not null } ? artwork with { Source = "" } : artwork;
+        var cover = new Artwork(imageTrack ?? tracks.FirstOrDefault(), coverSize, highQuality: true);
+        if (artistPage) cover.CornerRadius = new CornerRadius(coverSize / 2d);
+        hero.Children.Add(cover);
+        var labels = new StackPanel { Spacing = UiTheme.CompactGap, VerticalAlignment = VerticalAlignment.Center };
         labels.Children.Add(Text(kind, UiTheme.Label, Muted));
         var heading = Text(title, UiTheme.PageTitle); heading.TextWrapping = TextWrapping.Wrap; heading.MaxLines = 3; labels.Children.Add(heading);
-        labels.Children.Add(Text($"{tracks.Count} faixas · {Time(tracks.Sum(t => Math.Max(0, t.DurationSeconds)))}", UiTheme.Caption, Muted)); Put(hero, labels, 0, 1); grid.Children.Add(hero);
+        if (tracks.Count > 0)
+        {
+            var duration = tracks.Sum(t => Math.Max(0, t.DurationSeconds));
+            labels.Children.Add(Text(TrackCount(tracks.Count) + (duration > 0 && !artistPage ? $" · {Time(duration)}" : ""), UiTheme.Caption, Muted));
+        }
+        Put(hero, labels, 0, 1); grid.Children.Add(UiTheme.Card(hero));
+        if (replace && prior?.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is { } previous)
+        {
+            var offset = previous.Offset;
+            if (offset.Y > 0)
+                grid.AttachedToVisualTree += (_, _) => Dispatcher.UIThread.Post(() =>
+                {
+                    if (ReferenceEquals(_collectionPage.Child, grid)
+                        && grid.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is { } scroll) scroll.Offset = offset;
+                }, DispatcherPriority.Loaded);
+        }
         var actions = new WrapPanel { ItemSpacing = 8, LineSpacing = 8 };
-        var play = ActionButton("Tocar tudo", () => PlayCollectionAsync(tracks)); play.IsEnabled = tracks.Count > 0; play.Classes.Add("primary"); actions.Children.Add(play);
+        actions.Children.Add(CollectionIcon("back", "Voltar", () => { BackFromCollection(); return Task.CompletedTask; }));
+        var play = ActionButton(artistPage ? "Tocar destaques" : "Tocar tudo", () => PlayCollectionAsync(tracks)); play.IsVisible = tracks.Count > 0; play.Classes.Add("primary"); actions.Children.Add(play);
         var enqueue = ActionButton("Adicionar à fila", () => { foreach (var track in tracks) _music.Enqueue(track); _music.SetStatus("Faixas adicionadas à fila."); return Task.CompletedTask; });
-        enqueue.IsEnabled = tracks.Count > 0; actions.Children.Add(enqueue);
-        actions.Children.Add(ActionButton("Voltar ao início", () => { _page = "home"; Refresh(); return Task.CompletedTask; })); Put(grid, actions, 1, 0);
-        var list = new ItemsControl { ItemsSource = tracks, ItemsPanel = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel()), ItemTemplate = new FuncDataTemplate<Track>((track, _) => track is null ? new Border() : TrackRow(track)) };
+        enqueue.IsVisible = tracks.Count > 0; actions.Children.Add(enqueue);
+        if (!artistPage && artwork is { IsArtist: true } && !string.Equals(artwork.Title, title, StringComparison.OrdinalIgnoreCase))
+            actions.Children.Add(ActionButton("Ver artista", () => ShowChannelAsync(artwork)));
+        Put(grid, actions, 1, 0);
+        var list = new ItemsControl { ItemsSource = tracks, ItemsPanel = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel()), ItemTemplate = new FuncDataTemplate<Track>((track, _) => track is null ? new Border() : TrackRow(track, showMenu: true)) };
         Put(grid, tracks.Count > 0 ? UiTheme.FadingScroll(list)
             : EmptyState("library", message ?? "Nenhuma faixa disponível", "", retry is null ? null : "Tentar novamente", retry), 2, 0);
         _collectionPage.Child = grid; _page = "collection"; CloseSheet(); Refresh();

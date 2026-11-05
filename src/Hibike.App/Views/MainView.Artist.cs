@@ -19,17 +19,69 @@ public sealed partial class MainView
         return profile;
     }
 
+    private async Task OpenTrackArtistAsync(Track track, bool replace = false)
+    {
+        var name = TrackTextFormatter.Artist(track.Artist);
+        if (string.IsNullOrWhiteSpace(name)) return;
+        bool Matches(string artist) => System.Globalization.CultureInfo.CurrentCulture.CompareInfo.Compare(
+            TrackTextFormatter.Artist(artist), name, System.Globalization.CompareOptions.IgnoreCase |
+            System.Globalization.CompareOptions.IgnoreNonSpace) == 0;
+        var saved = _music.Favorites.Concat(_music.History).Where(item => Matches(item.Artist))
+            .Append(track).Where(item => !item.IsArtist).DistinctBy(item => item.Source).ToArray();
+        var artwork = track with { Title = name };
+        OpenCollection(name, [], "Artista", artwork, "Buscando perfil no YouTube Music…", replace: replace, artistPage: true);
+        var page = _collectionPage.Child;
+        bool IsCurrent() => _page == "collection" && ReferenceEquals(page, _collectionPage.Child);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+            var candidates = await _music.SearchArtistsAsync(name, timeout.Token);
+            if (!IsCurrent()) return;
+            var exact = candidates.Where(artist => Matches(artist.Name)).Take(2).ToArray();
+            if (exact.Length == 1)
+            {
+                await ShowArtistAsync(exact[0], replace: true);
+                return;
+            }
+
+            OpenCollection(name, saved, "Artista · na sua biblioteca", artwork,
+                "Nenhuma faixa salva deste artista.", replace: true, artistPage: true);
+            if (candidates.Count == 0) return;
+            var grid = (Grid)_collectionPage.Child!;
+            var actions = (WrapPanel)grid.Children.Single(control => Grid.GetRow(control) == 1);
+            actions.Children.Add(ActionButton("Perfis no YouTube Music", () =>
+            {
+                var profiles = CollectionList<MusicArtist>(artist => SearchCatalogRow(
+                    new(artist.Id, artist.Name, "Artista", artist.Image), () => ShowArtistAsync(artist)));
+                profiles.ItemsSource = candidates;
+                ShowSheet("Perfis no YouTube Music", profiles);
+                return Task.CompletedTask;
+            }));
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        {
+            PlaybackDiagnostics.Write("Perfil do artista", error.Message);
+            if (!IsCurrent()) return;
+            OpenCollection(name, saved, "Artista · na sua biblioteca", artwork, "Perfil online indisponível.",
+                () => OpenTrackArtistAsync(track, replace: true), replace: true, artistPage: true);
+            if (saved.Length > 0 && _collectionPage.Child is Grid grid)
+            {
+                var actions = (WrapPanel)grid.Children.Single(control => Grid.GetRow(control) == 1);
+                actions.Children.Add(ActionButton("Tentar perfil online", () => OpenTrackArtistAsync(track, replace: true)));
+            }
+        }
+    }
+
     private void ShowArtistCatalog(MusicArtist artist, ArtistProfile profile)
     {
         var artwork = new Track(artist.Id, artist.Name, artist.Name, "https://www.youtube.com/channel/" + artist.Id, Thumbnail: profile.Image ?? artist.Image);
-        OpenCollection(artist.Name, profile.Tracks, "Artista · destaques", artwork);
+        OpenCollection(artist.Name, profile.Tracks, "Artista", artwork, replace: true, artistPage: true);
         var grid = (Grid)_collectionPage.Child!;
         var body = new StackPanel { Spacing = UiTheme.SectionGap, Margin = new Thickness(0, UiTheme.PageGap) };
         var videos = ActionButton("Ver todos os vídeos", () => ShowPagedCollectionAsync(artist.Name, artwork.Source + "/videos", artwork, "Vídeos"));
         var navigation = new WrapPanel { ItemSpacing = UiTheme.CompactGap, LineSpacing = UiTheme.CompactGap };
         navigation.Children.Add(videos);
         navigation.Children.Add(ActionButton("Playlists do canal", () => ShowChannelPlaylistsAsync(artwork)));
-        body.Children.Add(navigation);
         if (profile.Collections.Count == 0)
             navigation.Children.Add(ActionButton("Buscar discografia no YouTube Music", async () =>
             {
@@ -50,7 +102,7 @@ public sealed partial class MainView
             foreach (var track in profile.Tracks.Take(5)) body.Children.Add(TrackRow(track, showMenu: true));
             if (profile.Tracks.Count > 5) body.Children.Add(ActionButton("Mostrar todas", () => { OpenCollection(artist.Name, profile.Tracks, "Músicas", artwork); return Task.CompletedTask; }));
         }
-        foreach (var kind in profile.Collections.Select(c => c.Kind).Distinct())
+        foreach (var kind in new[] { "Álbum", "Single / EP", "Playlist" }.Concat(profile.Collections.Select(c => c.Kind)).Distinct())
         {
             var collections = profile.Collections.Where(c => c.Kind == kind).ToArray();
             if (collections.Length == 0) continue;
@@ -60,6 +112,10 @@ public sealed partial class MainView
         }
         foreach (var section in profile.Sections.Where(s => s.Title.Contains("parcial", StringComparison.OrdinalIgnoreCase)))
             body.Children.Add(ActionButton(section.Title, () => ShowMusicSectionAsync(artist, section)));
+        if (profile.Tracks.Count == 0 && profile.Collections.Count == 0)
+            body.Children.Add(Text("O catálogo não retornou faixas nem lançamentos para este perfil.", UiTheme.Caption, Muted));
+        body.Children.Add(Text("Mais do artista", UiTheme.SectionTitle));
+        body.Children.Add(navigation);
         var previous = grid.Children.Single(c => Grid.GetRow(c) == 2);
         grid.Children.Remove(previous);
         Put(grid, UiTheme.FadingScroll(body), 2, 0);
@@ -81,8 +137,8 @@ public sealed partial class MainView
         Put(header, actions, 0, 1); section.Children.Add(header);
         var cards = CollectionList<ArtistCollection>(c =>
         {
-            var card = CoverCard(new(c.Id, c.Title, title, "", Thumbnail: c.Image), c.Kind, () => open(c), songActions: false,
-                cardSize: _androidLayout ? MobileHomeCardSize : 196);
+            var card = CoverCard(new(c.Id, c.Title, title, "", Thumbnail: c.Image), c.Artist?.Name ?? c.Kind, () => open(c), songActions: false,
+                cardSize: _androidLayout ? MobileHomeCardSize : 196, roundArtwork: c.Kind == "Artista");
             card.Margin = new Thickness(0, 0, UiTheme.PageGap, 0);
             return card;
         });
@@ -91,37 +147,61 @@ public sealed partial class MainView
         return section;
     }
 
-    private async Task ShowMusicSectionAsync(MusicArtist artist, ArtistSection section)
+    private async Task ShowMusicSectionAsync(MusicArtist artist, ArtistSection section, bool replace = false)
     {
         var artwork = new Track(artist.Id, artist.Name, artist.Name, "https://www.youtube.com/channel/" + artist.Id, Thumbnail: artist.Image);
         if (section.Id.StartsWith("VL", StringComparison.Ordinal))
         {
-            await ShowPagedCollectionAsync(section.Title, "https://www.youtube.com/playlist?list=" + Uri.EscapeDataString(section.Id[2..]), artwork, "Catálogo musical");
+            await ShowPagedCollectionAsync(section.Title, "https://www.youtube.com/playlist?list=" + Uri.EscapeDataString(section.Id[2..]), artwork, "Catálogo musical", replace);
             return;
         }
-        OpenCollection(section.Title, [], "Catálogo musical", artwork, "Buscando catálogo completo…");
+        OpenCollection(section.Title, [], "Catálogo musical", artwork, "Buscando catálogo completo…", replace: replace);
         var page = _collectionPage.Child;
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
             var profile = await MusicDiscovery.ArtistSectionAsync(section, timeout.Token);
             if (_page != "collection" || !ReferenceEquals(page, _collectionPage.Child)) return;
-            ShowArtistCatalog(artist, profile);
+            OpenCollection(section.Title, profile.Tracks, "Catálogo musical", artwork, replace: true);
+            if (profile.Collections.Count == 0) return;
+            var grid = (Grid)_collectionPage.Child!;
+            ItemsControl BuildReleases()
+            {
+                var list = CollectionList<ArtistCollection>(entry => SearchCatalogRow(entry, () => OpenArtistCollectionAsync(entry, artwork)));
+                list.ItemsSource = profile.Collections;
+                return list;
+            }
+            if (profile.Tracks.Count > 0)
+            {
+                var actions = (WrapPanel)grid.Children.Single(control => Grid.GetRow(control) == 1);
+                actions.Children.Add(ActionButton("Ver lançamentos", () =>
+                {
+                    ShowSheet(section.Title, BuildReleases());
+                    return Task.CompletedTask;
+                }));
+            }
+            else
+            {
+                var previous = grid.Children.Single(control => Grid.GetRow(control) == 2);
+                grid.Children.Remove(previous);
+                Put(grid, UiTheme.FadingScroll(BuildReleases()), 2, 0);
+            }
         }
         catch (Exception e) when (e is not OutOfMemoryException)
         {
             PlaybackDiagnostics.Write("Discografia", e.Message);
             if (_page == "collection" && ReferenceEquals(page, _collectionPage.Child))
-                OpenCollection(section.Title, [], "Catálogo musical", artwork, "Catálogo indisponível", () => ShowMusicSectionAsync(artist, section));
+                OpenCollection(section.Title, [], "Catálogo musical", artwork, "Catálogo indisponível", () => ShowMusicSectionAsync(artist, section, replace: true), replace: true);
         }
     }
 
-    private async Task OpenArtistCollectionAsync(ArtistCollection collection, Track artist)
+    private async Task OpenArtistCollectionAsync(ArtistCollection collection, Track artist, bool replace = false)
     {
         var playlist = collection.Id.StartsWith("VL", StringComparison.Ordinal) ? collection.Id[2..] : null;
         if (playlist is null)
         {
-            OpenCollection(collection.Title, [], collection.Kind, artist, "Buscando álbum…");
+            OpenCollection(collection.Title, [], collection.Kind, artist with { Thumbnail = collection.Image ?? artist.Thumbnail }, "Buscando álbum…", replace: replace);
+            replace = true;
             var page = _collectionPage.Child;
             try
             {
@@ -133,19 +213,19 @@ public sealed partial class MainView
             catch (Exception e) when (e is not OutOfMemoryException)
             {
                 if (_page == "collection" && ReferenceEquals(page, _collectionPage.Child))
-                    OpenCollection(collection.Title, [], collection.Kind, artist, "Álbum indisponível", () => OpenArtistCollectionAsync(collection, artist));
+                    OpenCollection(collection.Title, [], collection.Kind, artist, "Álbum indisponível", () => OpenArtistCollectionAsync(collection, artist, replace: true), replace: true);
                 return;
             }
         }
         await ShowPagedCollectionAsync(collection.Title, "https://www.youtube.com/playlist?list=" + Uri.EscapeDataString(playlist),
-            artist with { Thumbnail = collection.Image ?? artist.Thumbnail }, collection.Kind);
+            artist with { Thumbnail = collection.Image ?? artist.Thumbnail }, collection.Kind, replace);
     }
 
-    private async Task ShowPagedCollectionAsync(string title, string source, Track artwork, string kind)
+    private async Task ShowPagedCollectionAsync(string title, string source, Track artwork, string kind, bool replace = false)
     {
         var tracks = new List<Track>();
         var pageIndex = 0;
-        OpenCollection(title, [], kind, artwork, "Buscando conteúdo…");
+        OpenCollection(title, [], kind, artwork, "Buscando conteúdo…", replace: replace);
         var page = _collectionPage.Child;
         var more = ActionButton("Carregar mais", () => Task.CompletedTask);
         more.Click += async (_, _) => await LoadAsync();
@@ -163,7 +243,7 @@ public sealed partial class MainView
                 tracks.AddRange(batch.Where(t => !t.IsArtist).Select(t => t.Artist == "YouTube" ? t with { Artist = artwork.Artist } : t));
                 pageIndex++;
                 if (more.Parent is Panel parent) parent.Children.Remove(more);
-                OpenCollection(title, tracks.DistinctBy(t => t.Source).ToArray(), kind, artwork);
+                OpenCollection(title, tracks.DistinctBy(t => t.Source).ToArray(), kind, artwork, replace: true);
                 page = _collectionPage.Child;
                 if (batch.Count >= 50)
                 {
@@ -178,7 +258,7 @@ public sealed partial class MainView
                 if (_page != "collection" || !ReferenceEquals(page, _collectionPage.Child)) return;
                 if (tracks.Count == 0)
                 {
-                    OpenCollection(title, [], kind, artwork, "Conteúdo indisponível", LoadAsync);
+                    OpenCollection(title, [], kind, artwork, "Conteúdo indisponível", LoadAsync, replace: true);
                     page = _collectionPage.Child;
                 }
                 else more.Content = "Falha ao carregar · tentar novamente";
@@ -259,7 +339,7 @@ public sealed partial class MainView
                 {
                     if (playlists.Count == 0)
                     {
-                        OpenCollection(artist.Title, [], "Playlists do canal", artist, "Playlists indisponíveis", LoadAsync);
+                        OpenCollection(artist.Title, [], "Playlists do canal", artist, "Playlists indisponíveis", LoadAsync, replace: true);
                         page = _collectionPage.Child;
                     }
                     else more.Content = "Falha ao carregar · tentar novamente";

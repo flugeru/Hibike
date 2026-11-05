@@ -234,15 +234,20 @@ public sealed partial class MainView : UserControl
     }
     private async Task SearchAsync()
     {
-        _page = "explore";
+        if (_page != "explore" || _mobileSearchPage is null)
+        {
+            _page = "explore";
+            Refresh();
+        }
         var query = _search.Text?.Trim() ?? "";
         if (_searchScope == "Sua biblioteca" || query.Length == 0)
         {
             Refresh();
             return;
         }
+        if (_mobileSearchAttempt == query && (_music.Searching || _artistLookup is not null)) return;
         _mobileSearchAttempt = query;
-        await Task.WhenAll(_music.SearchAsync(query), SearchArtistResultsAsync(query));
+        await Task.WhenAll(SearchArtistResultsAsync(query), _music.SearchAsync(query));
     }
     private async Task OpenLocalAsync()
     {
@@ -287,6 +292,12 @@ public sealed partial class MainView : UserControl
 
     private void Refresh()
     {
+        if (_page != "collection" && _collectionBack.Count > 0)
+        {
+            _collectionBack.Clear();
+            _collectionPage.Child = null;
+            _collectionTracks = [];
+        }
         RefreshLoading();
         RefreshProfile();
         _statusBox.IsVisible = !IsCollectionPage && _music.HasError;
@@ -534,7 +545,7 @@ public sealed partial class MainView : UserControl
     {
         return CoverCard(track, TrackTextFormatter.Artist(track.Artist), async () => { await _music.PlayAsync(track); });
     }
-    private Control CoverCard(Track track, string subtitle, Func<Task> action, bool playlist = false, bool songActions = true, double? cardSize = null)
+    private Control CoverCard(Track track, string subtitle, Func<Task> action, bool playlist = false, bool songActions = true, double? cardSize = null, bool roundArtwork = false)
     {
         if (track.IsArtist)
         {
@@ -550,7 +561,7 @@ public sealed partial class MainView : UserControl
         var cover = new Grid { Width = size, Height = size };
         var artwork = new Artwork(track, size, highQuality: true)
         {
-            DeferOffscreen = _page == "home", CornerRadius = new(16), Background = Brushes.Transparent, BorderThickness = new Thickness(0)
+            DeferOffscreen = _page == "home", CornerRadius = new(roundArtwork ? size / 2 : 16), Background = Brushes.Transparent, BorderThickness = new Thickness(0)
         };
         cover.Children.Add(artwork);
         var playOverlay = new Button { Content = Icons.Make("play"), IsHitTestVisible = false, Focusable = false,
@@ -719,7 +730,15 @@ public sealed partial class MainView : UserControl
         var metadata = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.CompactGap };
         var labels = new StackPanel { Spacing = UiTheme.CompactGap };
         var title = Text(TrackTextFormatter.Title(track.Title, track.Artist), UiTheme.DialogTitle); title.FontWeight = FontWeight.SemiBold; title.TextWrapping = TextWrapping.Wrap; title.MaxLines = 2; labels.Children.Add(title);
-        var artist = Text(TrackTextFormatter.Artist(track.Artist), UiTheme.Body, Muted); artist.TextTrimming = TextTrimming.CharacterEllipsis; labels.Children.Add(artist); metadata.Children.Add(labels);
+        var artist = Text(TrackTextFormatter.Artist(track.Artist), UiTheme.Body, Muted);
+        artist.TextTrimming = TextTrimming.CharacterEllipsis;
+        var artistLink = ActionButton("", () => OpenTrackArtistAsync(_music.Pending ?? _music.Current ?? track));
+        artistLink.Content = artist;
+        artistLink.Classes.Add("subtle");
+        artistLink.Padding = UiTheme.Zero;
+        artistLink.HorizontalContentAlignment = HorizontalAlignment.Left;
+        labels.Children.Add(artistLink);
+        metadata.Children.Add(labels);
         Track? artworkTrack = null;
         _updatePlayerTrack = UpdatePlayerTrack;
         UpdatePlayerTrack(track);
@@ -729,6 +748,8 @@ public sealed partial class MainView : UserControl
             album.Text = displayed.Album ?? TrackTextFormatter.Artist(displayed.Artist);
             title.Text = TrackTextFormatter.Title(displayed.Title, displayed.Artist);
             artist.Text = TrackTextFormatter.Artist(displayed.Artist);
+            artistLink.IsVisible = !string.IsNullOrEmpty(artist.Text);
+            Avalonia.Automation.AutomationProperties.SetName(artistLink, "Ver artista · " + artist.Text);
             var cover = displayed == _music.Current && _music.CurrentSource?.Artwork is { } resolved
                 ? displayed with { Thumbnail = resolved } : displayed;
             if (Equals(artworkTrack, cover)) return;
@@ -927,7 +948,7 @@ public sealed partial class MainView : UserControl
         if (_page is "settings" or "account") { _page = "home"; Refresh(); return true; }
         if (_page == "library" && _mobileLibraryGroup is not null) { CloseMobileLibraryGroup(); return true; }
         if (_page == "queue" && _queueOpenedFromPlayer) { ReturnFromMobileQueue(); return true; }
-        if (_page == "collection") { _page = "home"; Refresh(); return true; }
+        if (_page == "collection") { BackFromCollection(); return true; }
         if (_page == "queue") { _queueOpen = false; _page = "home"; Refresh(); return true; }
         if (_queueOpen) { _queueOpen = false; Refresh(); return true; }
         return false;

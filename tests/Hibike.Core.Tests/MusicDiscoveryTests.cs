@@ -30,6 +30,25 @@ public class MusicDiscoveryTests
         Assert.Empty(MusicDiscovery.ParseArtists("{}"));
     }
     [Fact]
+    public void SearchKeepsAlbumCreditsSeparateFromArtistResults()
+    {
+        const string json = """
+            {"musicResponsiveListItemRenderer":{
+              "navigationEndpoint":{"browseEndpoint":{"browseId":"MPREalbum"}},
+              "flexColumns":[
+                {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Debut"}]}}},
+                {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Single • "},{"text":"Artist","navigationEndpoint":{"browseEndpoint":{"browseId":"UCabcdefghijklmnopqrstuv"}}}]}}}
+              ]
+            }}
+            """;
+        var release = Assert.Single(MusicDiscovery.ParseArtist(json, "search").Collections);
+        Assert.Equal("Single / EP", release.Kind);
+        Assert.Equal("Artist", release.Artist?.Name);
+        Assert.Equal("UCabcdefghijklmnopqrstuv", release.Artist?.Id);
+        Assert.Empty(MusicDiscovery.ParseArtists(json));
+    }
+
+    [Fact]
     public void RankingHonorsFeedbackDiversityAndArtistPreference()
     {
         var tracks = Enumerable.Range(0, 12).Select(i => new Track(i.ToString(), "Song " + i, i < 8 ? "Favorite" : "Discovery", "https://example.org/" + i)).ToArray();

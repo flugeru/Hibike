@@ -164,10 +164,10 @@ public sealed partial class MainView
         catch (Exception e) { _music.SetStatus("Não foi possível salvar suas escolhas: " + e.Message); }
         finally { _savingOnboarding = false; }
     }
-    private async Task ShowArtistAsync(MusicArtist artist)
+    private async Task ShowArtistAsync(MusicArtist artist, bool replace = false)
     {
         var artwork = new Track(artist.Id, artist.Name, artist.Name, "https://music.youtube.com/channel/" + artist.Id, Thumbnail: artist.Image);
-        OpenCollection(artist.Name, [], "Artista", artwork, "Buscando músicas…");
+        OpenCollection(artist.Name, [], "Artista", artwork, "Carregando perfil…", replace: replace, artistPage: true);
         var page = _collectionPage.Child;
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(25));
         try
@@ -179,12 +179,14 @@ public sealed partial class MainView
         catch (Exception e) when (e is not OutOfMemoryException)
         {
             if (_page == "collection" && ReferenceEquals(_collectionPage.Child, page))
-                OpenCollection(artist.Name, [], "Artista", artwork, "Catálogo indisponível", () => ShowArtistAsync(artist));
+                OpenCollection(artist.Name, [], "Artista", artwork, "Catálogo indisponível", () => ShowArtistAsync(artist, replace: true), replace: true, artistPage: true);
         }
     }
     private Task ShowChannelAsync(Track channel)
     {
-        var id = new Uri(channel.Source).AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries).ElementAtOrDefault(1);
+        if (!Uri.TryCreate(channel.Source, UriKind.Absolute, out var source)) return OpenTrackArtistAsync(channel);
+        var id = System.Text.RegularExpressions.Regex.IsMatch(channel.Id, "^UC[\\w-]{22}$")
+            ? channel.Id : source.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries).ElementAtOrDefault(1);
         return id is not null && System.Text.RegularExpressions.Regex.IsMatch(id, "^UC[\\w-]{22}$")
             ? ShowArtistAsync(new MusicArtist(id, channel.Title, channel.Thumbnail))
             : ShowPagedCollectionAsync(channel.Title, channel.Source.TrimEnd('/') + "/videos", channel, "Vídeos");

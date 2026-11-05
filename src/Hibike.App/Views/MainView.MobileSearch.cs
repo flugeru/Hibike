@@ -24,6 +24,8 @@ public sealed partial class MainView
     private IReadOnlyList<MusicArtist> _foundArtists = [];
     private IReadOnlyList<ArtistCollection> _foundCollections = [];
     private string? _artistResultsQuery;
+    private bool _catalogSearchFailed;
+    private TextBlock _searchSongsHeading = null!, _searchProgress = null!;
     private CancellationTokenSource? _artistLookup;
 
     private Grid BuildMobileSearch()
@@ -33,21 +35,33 @@ public sealed partial class MainView
             HorizontalAlignment = HorizontalAlignment.Left };
         page.SizeChanged += (_, e) => input.Width = Math.Min(e.NewSize.Width, 720);
         input.Children.Add(_search);
-        _mobileSearchSubmit = ActionButton("Buscar", SearchAsync);
+        _mobileSearchSubmit = ActionButton("Buscar", () =>
+        {
+            if (_searchScope == "Online" && _mobileSearchAttempt == _search.Text?.Trim() && (_music.Searching || _artistLookup is not null))
+            {
+                CancelExploreSearch();
+                return Task.CompletedTask;
+            }
+            return SearchAsync();
+        });
         Put(input, _mobileSearchSubmit, 0, 1);
         page.Children.Add(input);
 
-        var scopes = new WrapPanel { ItemSpacing = UiTheme.CompactGap, LineSpacing = UiTheme.CompactGap };
+        var filterBar = new StackPanel { Spacing = UiTheme.CompactGap };
+        var scopes = new StackPanel { Orientation = Orientation.Horizontal, Spacing = UiTheme.CompactGap };
+        filterBar.Children.Add(scopes);
         _mobileSearchOnline = ScopeButton("Online");
         _mobileSearchLocal = ScopeButton("Sua biblioteca");
         scopes.Children.Add(_mobileSearchOnline);
         scopes.Children.Add(_mobileSearchLocal);
+        var types = new StackPanel { Orientation = Orientation.Horizontal, Spacing = UiTheme.CompactGap };
+        filterBar.Children.Add(UiTheme.FadingScroll(types, horizontal: true));
         foreach (var kind in new[] { "Tudo", "Músicas", "Artistas", "Álbuns", "Playlists" })
         {
-            var button = ActionButton(kind, () => { _searchKind = kind; RefreshMobileSearch(); return Task.CompletedTask; });
-            button.Tag = kind; button.Classes.Add("pill"); _searchKindButtons.Add(button); scopes.Children.Add(button);
+            var button = ActionButton(kind, () => { SelectSearchKind(kind); return Task.CompletedTask; });
+            button.Tag = kind; button.Classes.Add("pill"); _searchKindButtons.Add(button); types.Children.Add(button);
         }
-        Put(page, scopes, 1, 0);
+        Put(page, filterBar, 1, 0);
 
         _mobileSearchHeading = new Grid { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = UiTheme.CompactGap };
         _mobileSearchHeading.Children.Add(CollectionText("Resultados", UiTheme.DialogTitle, weight: FontWeight.SemiBold));
@@ -70,7 +84,10 @@ public sealed partial class MainView
 
         _mobileSearchItems = CollectionList<Track>(track => TrackRow(track, showMenu: true));
         _searchArtists = new StackPanel { Spacing = UiTheme.CompactGap };
-        _searchContent = new StackPanel { Spacing = UiTheme.SectionGap, Children = { _searchArtists, _mobileSearchItems } };
+        _searchSongsHeading = CollectionText("Músicas", UiTheme.SectionTitle, weight: FontWeight.SemiBold);
+        _searchProgress = CollectionText("Carregando mais resultados…", UiTheme.Caption, Muted);
+        _searchContent = new StackPanel { Spacing = UiTheme.SectionGap,
+            Children = { _searchProgress, _searchArtists, _searchSongsHeading, _mobileSearchItems } };
         _mobileSearchScroll = UiTheme.FadingScroll(_searchContent);
         _mobileSearchState = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch,
             VerticalContentAlignment = VerticalAlignment.Stretch };
@@ -82,7 +99,7 @@ public sealed partial class MainView
         spinner.VerticalAlignment = VerticalAlignment.Center;
         loading.Children.Add(spinner);
         Put(loading, Text("Buscando…", UiTheme.Body), 0, 1);
-        var cancel = ActionButton("Cancelar", () => { _music.CancelSearch(); return Task.CompletedTask; });
+        var cancel = ActionButton("Cancelar", () => { CancelExploreSearch(); return Task.CompletedTask; });
         cancel.Classes.Add("subtle");
         Put(loading, cancel, 0, 2);
         _mobileSearchBusy = UiTheme.Card(loading, UiTheme.CompactGap);
@@ -92,6 +109,7 @@ public sealed partial class MainView
         {
             var version = ++filterVersion;
             if (_page != "explore") return;
+            if (_mobileSearchAttempt != _search.Text?.Trim()) CancelExploreSearch();
             if (_searchScope == "Sua biblioteca") await Task.Delay(120);
             if (version == filterVersion && _page == "explore") RefreshMobileSearch();
         };
@@ -101,6 +119,8 @@ public sealed partial class MainView
         {
             var button = ActionButton(name, () =>
             {
+                if (_searchScope == name) return Task.CompletedTask;
+                if (name == "Sua biblioteca") CancelExploreSearch();
                 _searchScope = name;
                 _mobileSearchScroll.Offset = default;
                 RefreshMobileSearch();
@@ -128,35 +148,91 @@ public sealed partial class MainView
         return panel;
     }
 
+    private void SelectSearchKind(string kind)
+    {
+        if (_searchKind == kind) return;
+        _searchKind = kind;
+        _mobileSearchScroll.Offset = default;
+        RefreshMobileSearch();
+    }
+
+    private void CancelExploreSearch()
+    {
+        _artistLookup?.Cancel();
+        _music.CancelSearch();
+    }
+
+    private Control SearchCatalogRow(ArtistCollection entry, Func<Task> open, string? subtitle = null)
+    {
+        var row = new Grid { ColumnDefinitions = new("Auto,*,Auto"), ColumnSpacing = UiTheme.PageGap };
+        var art = new Artwork(new(entry.Id, entry.Title, "", "", Thumbnail: entry.Image), 48);
+        if (entry.Kind == "Artista") art.CornerRadius = new CornerRadius(24);
+        row.Children.Add(art);
+        var labels = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 2 };
+        labels.Children.Add(CollectionText(entry.Title, UiTheme.Body, weight: FontWeight.SemiBold));
+        labels.Children.Add(CollectionText(subtitle ?? (entry.Artist is { } artist ? entry.Kind + " · " + artist.Name : entry.Kind), UiTheme.Caption, Muted));
+        Put(row, labels, 0, 1);
+        Put(row, Icons.Make("forward", Muted), 0, 2);
+        var button = ActionButton("", open);
+        button.Classes.Add("subtle");
+        button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+        button.Content = row;
+        Avalonia.Automation.AutomationProperties.SetName(button, entry.Title + " · " + entry.Kind);
+        return button;
+    }
+
     private void RefreshMobileSearch()
     {
         var query = _search.Text?.Trim() ?? "";
         var local = _searchScope == "Sua biblioteca";
-        var busy = !local && _music.Searching && _mobileSearchAttempt == query;
+        var busy = !local && _mobileSearchAttempt == query && (_music.Searching || _artistLookup is not null);
         var hasResult = !local && query.Length > 0 && _music.ResultsQuery == query;
-        var error = !local && !busy && query.Length > 0 && _mobileSearchAttempt == query && _music.SearchError is not null;
+        var error = !local && query.Length > 0 && _mobileSearchAttempt == query && (_music.SearchError is not null || _catalogSearchFailed);
         _mobileSearchOnline.Classes.Set("primary", !local);
         _mobileSearchLocal.Classes.Set("primary", local);
         foreach (var button in _searchKindButtons) { button.Classes.Set("primary", Equals(button.Tag, _searchKind)); button.IsVisible = !local; }
-        _mobileSearchSubmit.IsEnabled = query.Length > 0 && !busy;
+        _mobileSearchSubmit.IsEnabled = query.Length > 0;
+        _mobileSearchSubmit.Content = busy ? "Cancelar" : "Buscar";
         _mobileSearchSubmit.Classes.Set("primary", _mobileSearchSubmit.IsEnabled);
-        _clearSearch.IsVisible = !busy && !string.IsNullOrEmpty(_search.Text);
+        _clearSearch.IsVisible = !string.IsNullOrEmpty(_search.Text);
 
         var tracks = local && query.Length > 0
             ? _music.Favorites.Where(track => MatchesLibraryQuery($"{track.Title} {track.Artist} {track.Album}", query)).ToArray()
-            : hasResult && !busy && !error && _searchKind is "Tudo" or "Músicas" ? _music.Results.Where(t => !t.IsArtist).ToArray() : [];
-        var artists = !local && !busy && _searchKind is "Tudo" or "Artistas" && _artistResultsQuery == query ? _foundArtists : [];
-        var collections = !local && !busy && _artistResultsQuery == query ? _foundCollections.Where(c => _searchKind == "Tudo" || (_searchKind == "Álbuns" && c.Kind != "Playlist") || (_searchKind == "Playlists" && c.Kind == "Playlist")).ToArray() : [];
+            : hasResult && _searchKind is "Tudo" or "Músicas" ? _music.Results.Where(t => !t.IsArtist).ToArray() : [];
+        var artists = !local && _searchKind is "Tudo" or "Artistas" && _artistResultsQuery == query ? _foundArtists : [];
+        var collections = !local && _artistResultsQuery == query ? _foundCollections.Where(c => _searchKind == "Tudo" || (_searchKind == "Álbuns" && c.Kind != "Playlist") || (_searchKind == "Playlists" && c.Kind == "Playlist")).ToArray() : [];
         _searchArtists.IsVisible = artists.Count > 0 || collections.Length > 0;
         var catalogKey = (query, _searchKind, artists, _foundCollections);
         if (!Equals(_searchArtists.Tag, catalogKey))
         {
             _searchArtists.Tag = catalogKey; _searchArtists.Children.Clear();
-            if (artists.Count > 0)
-                _searchArtists.Children.Add(ArtistShelf("Artistas", artists.Select(a => new ArtistCollection(a.Id, a.Name, "Artista", a.Image)),
-                    c => ShowArtistAsync(new(c.Id, c.Title, c.Image))));
-            foreach (var group in collections.GroupBy(c => c.Kind == "Playlist" ? "Playlists" : "Álbuns e singles"))
-                _searchArtists.Children.Add(ArtistShelf(group.Key, group, c => OpenArtistCollectionAsync(c, new(c.Id, c.Title, "YouTube Music", "", Thumbnail: c.Image))));
+            AddCatalog("Artistas", "Artistas", artists.Select(a => new ArtistCollection(a.Id, a.Name, "Artista", a.Image)),
+                c => ShowArtistAsync(new(c.Id, c.Title, c.Image)));
+            foreach (var group in collections.GroupBy(c => c.Kind == "Playlist").OrderBy(group => group.Key))
+                AddCatalog(group.Key ? "Playlists" : "Álbuns e singles", group.Key ? "Playlists" : "Álbuns", group,
+                    c => OpenArtistCollectionAsync(c, c.Artist is { } artist
+                        ? new(artist.Id, artist.Name, artist.Name, "https://music.youtube.com/channel/" + artist.Id, Thumbnail: c.Image)
+                        : new(c.Id, c.Title, "YouTube Music", "", Thumbnail: c.Image)));
+
+            void AddCatalog(string title, string kind, IEnumerable<ArtistCollection> source, Func<ArtistCollection, Task> open)
+            {
+                var entries = source.ToArray();
+                if (entries.Length == 0) return;
+                if (_searchKind == "Tudo")
+                {
+                    _searchArtists.Children.Add(ArtistShelf(title, entries.Take(8), open, () =>
+                    {
+                        SelectSearchKind(kind);
+                        return Task.CompletedTask;
+                    }));
+                }
+                else
+                {
+                    var list = CollectionList<ArtistCollection>(entry => SearchCatalogRow(entry, () => open(entry)));
+                    list.ItemsSource = entries;
+                    _searchArtists.Children.Add(list);
+                }
+            }
         }
         if (!_mobileSearchTracks.SequenceEqual(tracks))
         {
@@ -164,7 +240,9 @@ public sealed partial class MainView
             _mobileSearchItems.ItemsSource = tracks;
             _mobileSearchScroll.Offset = default;
         }
-        var notice = error ? _music.SearchError : !busy && tracks.Length > 0 && _music.HasError ? _music.Status : null;
+        _searchSongsHeading.IsVisible = !local && _searchKind == "Tudo" && tracks.Length > 0 && _searchArtists.IsVisible;
+        _searchProgress.IsVisible = busy;
+        var notice = error && !busy ? "Parte da busca falhou. Você pode tentar novamente." : null;
         _mobileSearchError.Text = notice ?? "";
         _mobileSearchError.IsVisible = !string.IsNullOrWhiteSpace(notice);
         var any = tracks.Length > 0 || artists.Count > 0 || collections.Length > 0;
@@ -176,7 +254,7 @@ public sealed partial class MainView
         if (any) return;
 
         var state = busy ? "busy" : query.Length == 0 ? local ? "local" : "explore"
-            : error ? "error" : local || hasResult ? "no-results" : _mobileSearchAttempt == query ? "retry" : "ready";
+            : error ? "error" : local || hasResult || _artistResultsQuery == query ? "no-results" : _mobileSearchAttempt == query ? "retry" : "ready";
         if (Equals(_mobileSearchState.Tag, state)) return;
         _mobileSearchState.Tag = state;
         _mobileSearchState.Content = state switch
@@ -195,18 +273,50 @@ public sealed partial class MainView
         _artistLookup?.Cancel();
         using var request = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         _artistLookup = request;
+        _catalogSearchFailed = false;
+        if (_artistResultsQuery != query)
+        {
+            _foundArtists = [];
+            _foundCollections = [];
+            _artistResultsQuery = null;
+        }
         try
         {
-            var artists = Uri.TryCreate(query, UriKind.Absolute, out _) ? [] : await _music.SearchArtistsAsync(query, request.Token);
-            IReadOnlyList<ArtistCollection> collections = [];
             if (!Uri.TryCreate(query, UriKind.Absolute, out _))
-                try { collections = await MusicDiscovery.SearchCollectionsAsync(query, request.Token); }
-                catch (Exception e) when (e is not OutOfMemoryException) { PlaybackDiagnostics.Write("Busca de coleções", e.Message); }
-            if (!ReferenceEquals(_artistLookup, request)) return;
-            _foundArtists = artists; _foundCollections = collections; _artistResultsQuery = query;
+                await Task.WhenAll(
+                    LoadAsync(token => _music.SearchArtistsAsync(query, token), result => _foundArtists = result),
+                    LoadAsync(token => MusicDiscovery.SearchCollectionsAsync(query, playlists: false, token), result => ApplyCollections(result, false)),
+                    LoadAsync(token => MusicDiscovery.SearchCollectionsAsync(query, playlists: true, token), result => ApplyCollections(result, true)));
         }
-        catch (Exception e) when (e is not OutOfMemoryException) { PlaybackDiagnostics.Write("Busca de artistas", e.Message); }
-        finally { if (ReferenceEquals(_artistLookup, request)) { _artistLookup = null; RefreshMobileSearch(); } }
+        finally
+        {
+            if (ReferenceEquals(_artistLookup, request))
+            {
+                _artistLookup = null;
+                if (_page == "explore") RefreshMobileSearch();
+            }
+        }
+
+        void ApplyCollections(IReadOnlyList<ArtistCollection> result, bool playlists) =>
+            _foundCollections = _foundCollections.Where(entry => (entry.Kind == "Playlist") != playlists).Concat(result).ToArray();
+
+        async Task LoadAsync<T>(Func<CancellationToken, Task<IReadOnlyList<T>>> load, Action<IReadOnlyList<T>> apply)
+        {
+            try
+            {
+                var result = await load(request.Token);
+                if (!ReferenceEquals(_artistLookup, request) || request.IsCancellationRequested) return;
+                apply(result);
+                _artistResultsQuery = query;
+            }
+            catch (OperationCanceledException) when (request.IsCancellationRequested) { }
+            catch (Exception error) when (error is not OutOfMemoryException)
+            {
+                PlaybackDiagnostics.Write("Busca no catálogo", error.Message);
+                if (ReferenceEquals(_artistLookup, request)) _catalogSearchFailed = true;
+            }
+            if (ReferenceEquals(_artistLookup, request) && _page == "explore") RefreshMobileSearch();
+        }
     }
 
     private void ShowMobileSearchOptions()
@@ -216,8 +326,7 @@ public sealed partial class MainView
         panel.Children.Add(ActionButton("Tocar resultados", async () => { CloseSheet(); await PlayCollectionAsync(tracks); }));
         panel.Children.Add(ActionButton("Adicionar resultados à fila", () =>
         {
-            if (_searchScope == "Online") _music.EnqueueResults();
-            else foreach (var track in tracks) _music.Enqueue(track);
+            foreach (var track in tracks) _music.Enqueue(track);
             CloseSheet();
             return Task.CompletedTask;
         }));

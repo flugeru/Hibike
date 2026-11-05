@@ -304,6 +304,14 @@ internal static partial class Program
                 var searchState = (ContentControl)typeof(MainView).GetField("_mobileSearchState", hidden)!.GetValue(view)!;
                 Check(Equals(searchState.Tag, "busy") && searchState.GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Ellipse>().Any(), "Search loading missing");
                 Capture(view, "search-loading");
+                typeof(MainView).GetField("_artistResultsQuery", hidden)!.SetValue(view, loadingQuery.Text);
+                typeof(MainView).GetField("_foundArtists", hidden)!.SetValue(view, new[] { new MusicArtist(artistProfile.Id, artistProfile.Name, null) });
+                typeof(MainView).GetMethod("SelectSearchKind", hidden)!.Invoke(view, ["Artistas"]);
+                await Task.Delay(100);
+                Check(!searchState.IsVisible && view.GetVisualDescendants().OfType<Button>().Any(b =>
+                    b.IsEffectivelyVisible && Avalonia.Automation.AutomationProperties.GetName(b) == "Layout artist · Artista"),
+                    "A pending track request hid the available artist result");
+                typeof(MainView).GetMethod("SelectSearchKind", hidden)!.Invoke(view, ["Tudo"]);
                 searchingField.SetValue(AppServices.Controller, false);
                 loadingQuery.Text = "";
                 route.SetValue(view, "home");
@@ -563,6 +571,14 @@ internal static partial class Program
                     await Task.Delay(150); Capture(view, $"library-playlists-{width}");
                     var libraryGrid = (ItemsControl)typeof(MainView).GetField("_mobileLibraryGroups", hidden)!.GetValue(view)!;
                     Check(libraryGrid.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "Library visual check"), "Library playlist cover missing");
+                    var layoutToggle = (Button)typeof(MainView).GetField("_mobileLibraryViewMode", hidden)!.GetValue(view)!;
+                    layoutToggle.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                    await Task.Delay(100);
+                    Check(Equals(layoutToggle.Content, "Grade") && libraryGrid.GetVisualDescendants().OfType<Button>().Any(b =>
+                        Avalonia.Automation.AutomationProperties.GetName(b) == "Library visual check · Playlist"),
+                        "Library list mode lost its playlist");
+                    Capture(view, $"library-list-{width}");
+                    layoutToggle.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
                     libraryTabs[0].RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
                     if (width == 360)
                     {
@@ -610,12 +626,17 @@ internal static partial class Program
                 music.EditQueue(nextA, -1); Check(music.Queue[0] == current && music.Queue[1] == nextA, "Upcoming track moved before current");
                 music.ReorderQueue(true); Check(music.Queue[0] == current, "Shuffle displaced current track");
                 var collectionCard = (Control)typeof(MainView).GetMethod("CoverCard", hidden)!.Invoke(view,
-                    [nextA, "Artista", (Func<Task>)(() => Task.CompletedTask), false, false, null])!;
+                    [nextA, "Artista", (Func<Task>)(() => Task.CompletedTask), false, false, null, false])!;
                 Check(!collectionCard.GetVisualDescendants().OfType<Button>().Any(b => b.Classes.Contains("cardAction") && b.IsHitTestVisible == false), "Collection card contains play overlay");
-                await (Task)typeof(MainView).GetMethod("ShowArtistAsync", hidden)!.Invoke(view, [artists[0]])!;
+                var artistCache = (Dictionary<string, ArtistProfile>)typeof(MainView).GetField("_artistProfiles", hidden)!.GetValue(view)!;
+                artistCache[artists[0].Id] = artistProfile with { Id = artists[0].Id, Name = artists[0].Name };
+                var previousRoute = route.GetValue(view);
+                await (Task)typeof(MainView).GetMethod("ShowArtistAsync", hidden)!.Invoke(view, [artists[0], false])!;
+                var detailHost = (Border)typeof(MainView).GetField("_collectionPage", hidden)!.GetValue(view)!;
+                var artistScreen = detailHost.Child;
                 Check(typeof(MainView).GetField("_page", hidden)!.GetValue(view) as string == "collection", "Artist did not open dedicated page");
                 Check(typeof(MainView).GetField("_overlay", hidden)!.GetValue(view) is null, "Artist opened modal");
-                typeof(MainView).GetMethod("OpenCollection", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(view, ["Playlist de teste", new Track[] { nextA, nextB }, "Playlist", null, null, null]);
+                typeof(MainView).GetMethod("OpenCollection", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(view, ["Playlist de teste", new Track[] { nextA, nextB }, "Playlist", null, null, null, false, false]);
                 await Task.Delay(150); Capture(view, "collection-1260");
                 Check(view.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "Playlist de teste" && t.IsEffectivelyVisible), "Collection page missing");
                 var queueCount = music.Queue.Count;
@@ -623,7 +644,10 @@ internal static partial class Program
                 addCollection.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
                 addCollection.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
                 Check(music.Queue.Count == queueCount, "Adding collection duplicated existing queued tracks");
-                Check(AppServices.BackHandler!(), "Collection cannot return home");
+                Check(AppServices.BackHandler!() && ReferenceEquals(detailHost.Child, artistScreen),
+                    "Nested collection did not return to the artist");
+                Check(AppServices.BackHandler!() && Equals(route.GetValue(view), previousRoute),
+                    "Artist did not return to the originating screen");
                 music.SaveSession(); await music.FlushPendingSavesAsync();
                 var restored = new MusicController(new Catalog(), new Player(), new LibraryStore(directory), directory);
                 await restored.InitializeAsync();
