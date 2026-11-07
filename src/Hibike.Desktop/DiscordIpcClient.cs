@@ -26,10 +26,15 @@ internal sealed class DiscordIpcClient : IDisposable
         try
         {
             if (_connection is null) await ConnectAsync(timeout.Token);
+            // A null activity must be sent explicitly to clear Rich Presence when playback stops.
+            // Using a JsonElement keeps that null value even though optional activity fields are omitted.
+            var activityJson = activity is null
+                ? JsonSerializer.SerializeToElement<object?>(null)
+                : JsonSerializer.SerializeToElement(activity, JsonOptions);
             await ExchangeAsync(1, new
             {
                 cmd = "SET_ACTIVITY", nonce = Guid.NewGuid().ToString("N"),
-                args = new { pid = Environment.ProcessId, activity }
+                args = new { pid = Environment.ProcessId, activity = activityJson }
             }, timeout.Token);
         }
         catch
