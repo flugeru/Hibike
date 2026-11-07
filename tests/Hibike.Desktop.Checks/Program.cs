@@ -3,6 +3,28 @@ using Hibike.Desktop;
 using Hibike.Core.Models;
 using Hibike.Core.Services;
 
+// A preferência deve preservar o nome original por padrão e alterar apenas a primeira linha.
+var discordTrack = new Track("discord-check", "Faixa de teste", "Artista", "https://www.youtube.com/watch?v=test");
+var standardPresence = DiscordPresence.Build(discordTrack, 0, 180, null, DateTime.UtcNow);
+var titlePresence = DiscordPresence.Build(discordTrack, 0, 180, null, DateTime.UtcNow, titleAsName: true);
+if (standardPresence.Name != "Hibike" || titlePresence.Name != "Faixa de teste"
+    || titlePresence.Details != standardPresence.Details || titlePresence.State != standardPresence.State)
+    throw new Exception("Desktop Discord activity-name option failed.");
+var accountPresenceType = typeof(Hibike.App.AppServices).Assembly.GetType("Hibike.App.DiscordAccountPresence")!;
+var buildAndroidActivity = accountPresenceType.GetMethod("BuildActivity", BindingFlags.NonPublic | BindingFlags.Static)!;
+string GetAndroidActivityName(bool titleAsName)
+{
+    var payload = buildAndroidActivity.Invoke(null, [discordTrack, 0d, 180d, null, DateTimeOffset.UtcNow, titleAsName]);
+    return System.Text.Json.JsonSerializer.SerializeToElement(payload).GetProperty("name").GetString()!;
+}
+if (GetAndroidActivityName(false) != "Hibike" || GetAndroidActivityName(true) != "Faixa de teste")
+    throw new Exception("Android Discord activity-name option failed.");
+var personal = new Hibike.App.MusicController.Personalization { DiscordUseTrackTitleAsName = true };
+if (System.Text.Json.JsonSerializer.Deserialize<Hibike.App.MusicController.Personalization>(
+        System.Text.Json.JsonSerializer.Serialize(personal))?.DiscordUseTrackTitleAsName != true)
+    throw new Exception("Discord activity-name preference persistence failed.");
+Console.WriteLine("Discord activity-name checks passed.");
+
 var login = typeof(VlcAudioPlayer).Assembly.GetType("Hibike.Desktop.WebAccountLogin")!;
 var mediaInfo = typeof(VlcAudioPlayer).Assembly.GetType("Hibike.Desktop.MediaInfoReader")!;
 var mediaDetails = (IReadOnlyDictionary<string, string>)mediaInfo.GetMethod("Parse", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, ["""{"media":{"track":[{"@type":"General"},{"@type":"Audio","Format":"FLAC","SamplingRate":"96000","BitDepth":"24"}]}}"""])!;

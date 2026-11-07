@@ -44,14 +44,14 @@ public sealed class DiscordPresence : IDisposable
             }
             var position = _music.Player.Position;
             var now = DateTime.UtcNow;
-            var key = track.Source + "\n" + track.Title + "\n" + track.Artist;
+            var key = track.Source + "\n" + track.Title + "\n" + track.Artist + "\n" + _music.DiscordUseTrackTitleAsName;
             if (_visible && key == _lastKey && Math.Abs(position - _lastPosition - (now - _lastUpdate).TotalSeconds) < 3) return;
             var cover = PublicArtwork(_music.CurrentSource?.Artwork ?? track.Thumbnail);
             if (cover is null && track.IsLocal) cover = await FindCoverAsync(track);
             if (_disposed || _music.Current != track || !_music.Player.IsPlaying || _music.LoadingAudio) return;
             position = _music.Player.Position; now = DateTime.UtcNow;
             var duration = _music.Player.Duration > 0 ? _music.Player.Duration : track.DurationSeconds;
-            _client.SetPresence(Build(track, position, duration, cover, now));
+            _client.SetPresence(Build(track, position, duration, cover, now, _music.DiscordUseTrackTitleAsName));
             _visible = true; _lastKey = key; _lastPosition = position; _lastUpdate = now;
         }
         catch (OperationCanceledException) { }
@@ -99,7 +99,7 @@ public sealed class DiscordPresence : IDisposable
         && uri.Scheme == "https" && Uri.CheckHostName(uri.Host) == UriHostNameType.Dns
         && !uri.IsLoopback && string.IsNullOrEmpty(uri.UserInfo) ? url : null;
 
-    public static RichPresence Build(Track track, double position, double duration, string? cover, DateTime now)
+    public static RichPresence Build(Track track, double position, double duration, string? cover, DateTime now, bool titleAsName = false)
     {
         static string Limit(string value)
         {
@@ -117,6 +117,7 @@ public sealed class DiscordPresence : IDisposable
         return new RichPresence
         {
             Type = ActivityType.Listening,
+            Name = Limit(titleAsName ? title : "Hibike"),
             Details = Limit(title), State = Limit(track.IsLocal ? track.Artist : TrackTextFormatter.Artist(track.Artist)),
             Timestamps = new Timestamps { Start = now.AddSeconds(-position), End = duration > position ? now.AddSeconds(duration - position) : null },
             Assets = PublicArtwork(cover) is { } image ? new Assets { LargeImageKey = image, LargeImageText = Limit(track.Album ?? title) } : null,

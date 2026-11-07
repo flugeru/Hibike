@@ -1193,7 +1193,7 @@ public sealed partial class MainView : UserControl
             history.ItemsSource = _music.History.ToArray();
             ShowSheet("Histórico local", history); return Task.CompletedTask;
         })));
-        if (OperatingSystem.IsAndroid()) sections.Add(PreferenceSection("Integrações", PreferenceLink("info", "Discord", "Atividade de reprodução", ShowDiscordAccountAsync)));
+        sections.Add(PreferenceSection("Integrações", PreferenceLink("info", "Discord", "Atividade de reprodução", ShowDiscordAccountAsync)));
         var cookies = System.IO.Path.Combine(_music.DataDirectory, "youtube-cookies.txt");
         var support = new List<Control> { PreferenceLink("info", "Diagnósticos", "Relatórios por setor para copiar", () => { ShowDiagnostics(); return Task.CompletedTask; }), PreferenceLink("info", "Privacidade", "Como Hibike trata seus dados", () => OpenLegalAsync("privacy.html")), PreferenceLink("info", "Termos", "Condições de uso", () => OpenLegalAsync("terms.html")) };
         if (System.IO.File.Exists(cookies)) support.Add(PreferenceLink("close", "Apagar cookies antigos (não utilizados)", "Remove arquivo legado", () => { System.IO.File.Delete(cookies); ShowSettings(); return Task.CompletedTask; }));
@@ -1205,8 +1205,31 @@ public sealed partial class MainView : UserControl
         OpenPreferencesPage("settings", sections.ToArray());
     }
     private YouTubeAccountLibrary? _account;
+
+    private Control DiscordTitleNamePreference()
+    {
+        var option = PreferenceCheckBox("Exibir título da música no lugar de Hibike", _music.DiscordUseTrackTitleAsName);
+        option.IsCheckedChanged += (_, _) => _music.SetDiscordUseTrackTitleAsName(option.IsChecked == true);
+        return option;
+    }
+
     private Task ShowDiscordAccountAsync()
     {
+        if (!OperatingSystem.IsAndroid())
+        {
+            var desktopPanel = new StackPanel { Spacing = 12 };
+            var explanation = Text("O desktop usa o Rich Presence do Discord instalado, sem token pessoal. O Discord precisa estar aberto para mostrar a atividade.", UiTheme.Caption, Muted);
+            explanation.TextWrapping = TextWrapping.Wrap;
+            desktopPanel.Children.Add(PreferenceSection("Exibição da atividade", DiscordTitleNamePreference(), explanation));
+            desktopPanel.Children.Add(PreferenceLink("info", "Diagnóstico do Discord", "", () =>
+            {
+                ShowDiagnostics(DiagnosticSector.Discord);
+                return Task.CompletedTask;
+            }));
+            ShowSheet("Discord", desktopPanel);
+            return Task.CompletedTask;
+        }
+
         var storage = AppServices.DiscordTokenStorage;
         var hasSaved = false;
         var panel = new StackPanel { Spacing = 12 };
@@ -1233,6 +1256,7 @@ public sealed partial class MainView : UserControl
                 await launcher.LaunchUriAsync(new Uri("https://discord.com/users/" + profile.Id));
         });
         panel.Children.Add(PreferenceSection("Perfil e atividade", identity, activityDetails, profileLink));
+        panel.Children.Add(PreferenceSection("Exibição da atividade", DiscordTitleNamePreference()));
 
         var note = Text("Integração não oficial. O Discord pode restringir contas que usam token pessoal.", UiTheme.Caption, Muted);
         note.TextWrapping = TextWrapping.Wrap;
