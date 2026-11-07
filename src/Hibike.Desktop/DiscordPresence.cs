@@ -108,8 +108,10 @@ public sealed class DiscordPresence : IDisposable
     {
         [JsonPropertyName("type")] public int Type { get; init; } = 2;
         [JsonPropertyName("name")] public string Name { get; init; } = "";
-        [JsonPropertyName("details")] public string Details { get; init; } = "";
-        [JsonPropertyName("state")] public string State { get; init; } = "";
+        [JsonPropertyName("details"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Details { get; init; }
+        [JsonPropertyName("state"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? State { get; init; }
         [JsonPropertyName("timestamps")] public DiscordTimestamps? Timestamps { get; init; }
         [JsonPropertyName("assets")] public DiscordAssets? Assets { get; init; }
         [JsonPropertyName("buttons")] public DiscordButton[]? Buttons { get; init; }
@@ -119,9 +121,9 @@ public sealed class DiscordPresence : IDisposable
         [property: JsonPropertyName("end")] long? End);
     public sealed record DiscordAssets(
         [property: JsonPropertyName("large_image")] string LargeImage,
-        [property: JsonPropertyName("large_text")] string LargeText,
-        [property: JsonPropertyName("small_image")] string? SmallImage,
-        [property: JsonPropertyName("small_text")] string? SmallText);
+        [property: JsonPropertyName("large_text"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? LargeText,
+        [property: JsonPropertyName("small_image"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SmallImage,
+        [property: JsonPropertyName("small_text"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SmallText);
     public sealed record DiscordButton(
         [property: JsonPropertyName("label")] string Label,
         [property: JsonPropertyName("url")] string Url);

@@ -11,19 +11,21 @@ public static class DiscordActivityDisplay
 {
     public const string IconUrl = "https://raw.githubusercontent.com/flugeru/Hibike/main/site/Assets/hibike.png";
 
-    public static (string Name, string Details, string State, string ArtworkText) Format(Track track, bool titleAsName)
+    public static (string Name, string? Details, string? State, string? ArtworkText) Format(Track track, bool titleAsName)
     {
-        var title = track.IsLocal ? track.Title : TrackTextFormatter.Title(track.Title, track.Artist);
-        var artist = track.IsLocal ? track.Artist : TrackTextFormatter.Artist(track.Artist);
-        if (string.IsNullOrWhiteSpace(title)) title = "Faixa desconhecida";
-        if (string.IsNullOrWhiteSpace(artist)) artist = "Artista desconhecido";
-        var album = string.IsNullOrWhiteSpace(track.Album) ? null : track.Album.Trim();
+        var title = Optional(track.IsLocal ? track.Title : TrackTextFormatter.Title(track.Title, track.Artist));
+        var artist = Optional(track.IsLocal ? track.Artist : TrackTextFormatter.Artist(track.Artist));
+        var album = Optional(track.Album);
 
-        return (Limit(titleAsName ? title : "Hibike"),
-            Limit(titleAsName ? artist : title),
-            Limit(titleAsName ? album ?? "Álbum não informado" : artist),
-            Limit(album ?? title));
+        // Missing metadata must be omitted, never replaced by placeholder labels.
+        return (titleAsName && title is not null ? title : "Hibike",
+            titleAsName ? artist : title,
+            titleAsName ? album : artist,
+            album ?? title);
     }
+
+    private static string? Optional(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : Limit(value.Trim());
 
     public static string Limit(string value)
     {

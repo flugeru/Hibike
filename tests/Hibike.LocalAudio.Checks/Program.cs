@@ -35,6 +35,12 @@ if (payload.GetProperty("name").GetString() != "Une vie à t'aimer"
     || payload.GetProperty("assets").GetProperty("small_image").GetString() != Hibike.App.DiscordActivityDisplay.IconUrl
     || payload.GetProperty("type").GetInt32() != 2)
     throw new Exception("Discord IPC JSON payload invalid.");
+var missingAlbum = DiscordPresence.Build(presenceTrack with { Album = null }, 0, 180, null, now, titleAsName: true);
+var missingArtist = DiscordPresence.Build(presenceTrack with { Artist = "" }, 0, 180, null, now, titleAsName: true);
+var missingAlbumJson = JsonSerializer.SerializeToElement(missingAlbum);
+var missingArtistJson = JsonSerializer.SerializeToElement(missingArtist);
+if (missingAlbumJson.TryGetProperty("state", out _) || missingArtistJson.TryGetProperty("details", out _))
+    throw new Exception("Unknown album/artist text must be omitted.");
 if (args is ["--presence-only"]) { Console.WriteLine("Discord payload checks passed."); return; }
 if (args.Length != 1 || !File.Exists(args[0])) throw new ArgumentException("Pass existing local audio file.");
 using var player = new VlcAudioPlayer();
