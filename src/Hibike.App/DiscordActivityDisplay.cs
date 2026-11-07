@@ -21,7 +21,7 @@ public static class DiscordActivityDisplay
         return (titleAsName && title is not null ? title : "Hibike",
             titleAsName ? artist : title,
             titleAsName ? album : artist,
-            album ?? title);
+            album);
     }
 
     private static string? Optional(string? value) =>

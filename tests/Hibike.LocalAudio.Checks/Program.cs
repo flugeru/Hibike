@@ -39,7 +39,8 @@ var missingAlbum = DiscordPresence.Build(presenceTrack with { Album = null }, 0,
 var missingArtist = DiscordPresence.Build(presenceTrack with { Artist = "" }, 0, 180, null, now, titleAsName: true);
 var missingAlbumJson = JsonSerializer.SerializeToElement(missingAlbum);
 var missingArtistJson = JsonSerializer.SerializeToElement(missingArtist);
-if (missingAlbumJson.TryGetProperty("state", out _) || missingArtistJson.TryGetProperty("details", out _))
+if (missingAlbumJson.TryGetProperty("state", out _) || missingArtistJson.TryGetProperty("details", out _)
+    || missingAlbumJson.GetProperty("assets").TryGetProperty("large_text", out _))
     throw new Exception("Unknown album/artist text must be omitted.");
 if (args is ["--presence-only"]) { Console.WriteLine("Discord payload checks passed."); return; }
 if (args.Length != 1 || !File.Exists(args[0])) throw new ArgumentException("Pass existing local audio file.");

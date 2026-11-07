@@ -23,6 +23,12 @@ var androidWithoutAlbum = System.Text.Json.JsonSerializer.SerializeToElement(
     buildAndroidActivity.Invoke(null, [discordTrack, 0d, 180d, null, DateTimeOffset.UtcNow, true, null]));
 if (androidWithoutAlbum.TryGetProperty("state", out _) || androidWithoutAlbum.TryGetProperty("assets", out _))
     throw new Exception("Missing Android album or artwork should not produce placeholder fields.");
+var androidIconWithoutAlbum = System.Text.Json.JsonSerializer.SerializeToElement(
+    buildAndroidActivity.Invoke(null, [discordTrack, 0d, 180d, null, DateTimeOffset.UtcNow, true, "mp:icon"]));
+if (androidIconWithoutAlbum.TryGetProperty("state", out _)
+    || androidIconWithoutAlbum.GetProperty("assets").TryGetProperty("large_text", out _)
+    || androidIconWithoutAlbum.GetProperty("assets").GetProperty("large_image").GetString() != "mp:icon")
+    throw new Exception("Android missing album or cover should not be fabricated.");
 var androidWithIcon = System.Text.Json.JsonSerializer.SerializeToElement(
     buildAndroidActivity.Invoke(null, [discordTrack, 0d, 180d, "mp:cover", DateTimeOffset.UtcNow, true, "mp:icon"]));
 if (androidWithIcon.GetProperty("assets").GetProperty("small_image").GetString() != "mp:icon")
