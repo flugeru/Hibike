@@ -93,7 +93,7 @@ internal sealed class DiscordAccountPresence : IDisposable
                 var position = _music.Player.Position;
                 var cover = _music.CurrentSource?.Artwork ?? track.Thumbnail;
                 var titleAsName = _music.DiscordUseTrackTitleAsName;
-                var key = track.Source + "\n" + track.Title + "\n" + track.Artist + "\n" + cover + "\n" + titleAsName;
+                var key = track.Source + "\n" + track.Title + "\n" + track.Artist + "\n" + track.Album + "\n" + cover + "\n" + titleAsName;
                 if (key == _lastKey && Math.Abs(position - _lastPosition - (now - _lastUpdate).TotalSeconds) < 3) return;
                 // Discord limits presence updates; coalesce rapid seeks on subsequent player ticks.
                 if ((now - _lastUpdate).TotalSeconds < 5 && titleAsName == _lastTitleMode) return;
@@ -125,29 +125,28 @@ internal sealed class DiscordAccountPresence : IDisposable
 
     internal static object BuildActivity(Track track, double position, double duration, string? image, DateTimeOffset now, bool titleAsName = false)
     {
-        static string Limit(string value)
-        {
-            var text = new System.Text.StringBuilder(); var bytes = 0;
-            foreach (var rune in value.EnumerateRunes())
-            {
-                if (bytes + rune.Utf8SequenceLength > 128) break;
-                text.Append(rune); bytes += rune.Utf8SequenceLength;
-            }
-            return text.Length == 0 ? "—" : text.ToString();
-        }
-        position = double.IsFinite(position) ? Math.Max(0, position) : 0;
-        duration = double.IsFinite(duration) ? Math.Max(0, duration) : 0;
-        // ponytail: invalid multi-year media times omitted; support longer recordings if needed.
-        position = Math.Min(position, 31_536_000); duration = Math.Min(duration, 31_536_000);
-        var title = track.IsLocal ? track.Title : TrackTextFormatter.Title(track.Title, track.Artist);
+        position = double.IsFinite(position) ? Math.Clamp(position, 0, 31_536_000) : 0;
+        duration = double.IsFinite(duration) ? Math.Clamp(duration, 0, 31_536_000) : 0;
+        var info = DiscordActivityDisplay.Format(track, titleAsName);
         var youtube = !track.IsLocal && Uri.TryCreate(track.Source, UriKind.Absolute, out var source)
             && source.Scheme == "https" && source.Host is "www.youtube.com" or "youtube.com" or "youtu.be";
+        object assets = image is null
+            ? new { large_image = DiscordActivityDisplay.IconUrl, large_text = info.ArtworkText }
+            : new
+            {
+                large_image = image, large_text = info.ArtworkText,
+                small_image = DiscordActivityDisplay.IconUrl, small_text = "Hibike"
+            };
         return new
         {
-            application_id = "1566415890596241459", name = Limit(titleAsName ? title : "Hibike"), type = 2,
-            details = Limit(title), state = Limit(track.IsLocal ? track.Artist : TrackTextFormatter.Artist(track.Artist)),
-            timestamps = new { start = now.AddSeconds(-position).ToUnixTimeMilliseconds(), end = duration > position ? (long?)now.AddSeconds(duration - position).ToUnixTimeMilliseconds() : null },
-            assets = image is null ? null : new { large_image = image, large_text = Limit(track.Album ?? title) },
+            application_id = "1566415890596241459", name = info.Name, type = 2,
+            details = info.Details, state = info.State,
+            timestamps = new
+            {
+                start = now.AddSeconds(-position).ToUnixTimeMilliseconds(),
+                end = duration > position ? (long?)now.AddSeconds(duration - position).ToUnixTimeMilliseconds() : null
+            },
+            assets,
             buttons = youtube ? new[] { "Ouvir no YouTube" } : null,
             metadata = youtube ? new { button_urls = new[] { track.Source } } : null
         };

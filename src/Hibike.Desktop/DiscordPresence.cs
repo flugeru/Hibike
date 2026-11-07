@@ -1,6 +1,5 @@
 using System.Text;
-using System.Text.Json;
-using DiscordRPC;
+using System.Text.Json.Serialization;
 using Hibike.App;
 using Hibike.Core.Models;
 using Hibike.Core.Services;
@@ -11,7 +10,7 @@ public sealed class DiscordPresence : IDisposable
 {
     public const string ApplicationId = "1566415890596241459";
     private readonly MusicController _music;
-    private readonly DiscordRpcClient _client = new(ApplicationId);
+    private readonly DiscordIpcClient _client = new();
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(8) };
     private readonly CancellationTokenSource _stop = new();
     private readonly Dictionary<string, string?> _covers = new();
@@ -19,47 +18,53 @@ public sealed class DiscordPresence : IDisposable
     private string? _lastKey;
     private double _lastPosition;
     private DateTime _lastUpdate;
+    private DateTime _retryAt;
 
     public DiscordPresence(MusicController music)
     {
         _music = music;
-        _client.OnReady += (_, _) => PlaybackDiagnostics.Write("Discord", "Rich Presence conectado.");
-        _client.OnError += (_, error) => PlaybackDiagnostics.Write("Discord", error.Message);
-        _client.Initialize();
         music.Changed += Update; music.Tick += Update;
         Update();
     }
 
     private async void Update()
     {
-        if (_busy || _disposed) return;
+        if (_busy || _disposed || DateTime.UtcNow < _retryAt) return;
         _busy = true;
         try
         {
             var track = _music.Current;
             if (track is null || !_music.Player.IsPlaying || _music.LoadingAudio)
             {
-                if (_visible) _client.ClearPresence();
+                if (_visible) await _client.SetActivityAsync(null);
                 _visible = false; _lastKey = null; return;
             }
             var position = _music.Player.Position;
             var now = DateTime.UtcNow;
-            var key = track.Source + "\n" + track.Title + "\n" + track.Artist + "\n" + _music.DiscordUseTrackTitleAsName;
-            if (_visible && key == _lastKey && Math.Abs(position - _lastPosition - (now - _lastUpdate).TotalSeconds) < 3) return;
             var cover = PublicArtwork(_music.CurrentSource?.Artwork ?? track.Thumbnail);
+            var key = track.Source + "\n" + track.Title + "\n" + track.Artist + "\n" + track.Album
+                + "\n" + cover + "\n" + _music.DiscordUseTrackTitleAsName;
+            if (_visible && key == _lastKey && Math.Abs(position - _lastPosition - (now - _lastUpdate).TotalSeconds) < 3) return;
             if (cover is null && track.IsLocal) cover = await FindCoverAsync(track);
             if (_disposed || _music.Current != track || !_music.Player.IsPlaying || _music.LoadingAudio) return;
             position = _music.Player.Position; now = DateTime.UtcNow;
             var duration = _music.Player.Duration > 0 ? _music.Player.Duration : track.DurationSeconds;
-            _client.SetPresence(Build(track, position, duration, cover, now, _music.DiscordUseTrackTitleAsName));
+            await _client.SetActivityAsync(Build(track, position, duration, cover, now, _music.DiscordUseTrackTitleAsName));
             _visible = true; _lastKey = key; _lastPosition = position; _lastUpdate = now;
+            _retryAt = DateTime.MinValue;
         }
-        catch (OperationCanceledException) { }
-        catch (Exception error) { PlaybackDiagnostics.Write("Discord", error.Message); }
+        catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
+        catch (Exception error)
+        {
+            _visible = false;
+            _lastKey = null;
+            _retryAt = DateTime.UtcNow.AddSeconds(10);
+            PlaybackDiagnostics.Write("Discord", error.Message);
+        }
         finally { _busy = false; }
     }
 
-    // ponytail: iTunes album art only; add another provider if album coverage proves insufficient.
+    // Retain best-effort iTunes album art for local files without publicly accessible artwork.
     private async Task<string?> FindCoverAsync(Track track)
     {
         if (string.IsNullOrWhiteSpace(track.Album) || string.IsNullOrWhiteSpace(track.Artist)) return null;
@@ -71,7 +76,7 @@ public sealed class DiscordPresence : IDisposable
             var url = "https://itunes.apple.com/search?entity=album&limit=10&term=" + Uri.EscapeDataString(track.Artist + " " + track.Album);
             using var response = await _http.GetAsync(url, _stop.Token);
             response.EnsureSuccessStatusCode();
-            using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(_stop.Token), cancellationToken: _stop.Token);
+            using var json = await System.Text.Json.JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(_stop.Token), cancellationToken: _stop.Token);
             foreach (var item in json.RootElement.GetProperty("results").EnumerateArray())
             {
                 if (!MatchesAlbum(track, item.GetProperty("artistName").GetString(), item.GetProperty("collectionName").GetString())) continue;
@@ -80,7 +85,7 @@ public sealed class DiscordPresence : IDisposable
             }
             _covers[key] = cover;
         }
-        catch (Exception error) when (error is HttpRequestException or JsonException or OperationCanceledException)
+        catch (Exception error) when (error is HttpRequestException or System.Text.Json.JsonException or OperationCanceledException)
         {
             PlaybackDiagnostics.Write("Discord", "Busca de capa indisponível; presença continua sem capa.");
             _covers[key] = null;
@@ -99,37 +104,54 @@ public sealed class DiscordPresence : IDisposable
         && uri.Scheme == "https" && Uri.CheckHostName(uri.Host) == UriHostNameType.Dns
         && !uri.IsLoopback && string.IsNullOrEmpty(uri.UserInfo) ? url : null;
 
-    public static RichPresence Build(Track track, double position, double duration, string? cover, DateTime now, bool titleAsName = false)
+    public sealed record DiscordActivity
     {
-        static string Limit(string value)
+        [JsonPropertyName("type")] public int Type { get; init; } = 2;
+        [JsonPropertyName("name")] public string Name { get; init; } = "";
+        [JsonPropertyName("details")] public string Details { get; init; } = "";
+        [JsonPropertyName("state")] public string State { get; init; } = "";
+        [JsonPropertyName("timestamps")] public DiscordTimestamps? Timestamps { get; init; }
+        [JsonPropertyName("assets")] public DiscordAssets? Assets { get; init; }
+        [JsonPropertyName("buttons")] public DiscordButton[]? Buttons { get; init; }
+    }
+    public sealed record DiscordTimestamps(
+        [property: JsonPropertyName("start")] long Start,
+        [property: JsonPropertyName("end")] long? End);
+    public sealed record DiscordAssets(
+        [property: JsonPropertyName("large_image")] string LargeImage,
+        [property: JsonPropertyName("large_text")] string LargeText,
+        [property: JsonPropertyName("small_image")] string? SmallImage,
+        [property: JsonPropertyName("small_text")] string? SmallText);
+    public sealed record DiscordButton(
+        [property: JsonPropertyName("label")] string Label,
+        [property: JsonPropertyName("url")] string Url);
+
+    public static DiscordActivity Build(Track track, double position, double duration, string? cover, DateTime now, bool titleAsName = false)
+    {
+        position = double.IsFinite(position) ? Math.Clamp(position, 0, 31_536_000) : 0;
+        duration = double.IsFinite(duration) ? Math.Clamp(duration, 0, 31_536_000) : 0;
+        var info = DiscordActivityDisplay.Format(track, titleAsName);
+        var art = PublicArtwork(cover);
+        var youtube = !track.IsLocal && Uri.TryCreate(track.Source, UriKind.Absolute, out var source)
+            && source.Scheme == "https" && source.Host is "www.youtube.com" or "youtube.com" or "youtu.be";
+        var start = new DateTimeOffset(DateTime.SpecifyKind(now, DateTimeKind.Utc)).AddSeconds(-position).ToUnixTimeSeconds();
+        var end = duration > position
+            ? new DateTimeOffset(DateTime.SpecifyKind(now, DateTimeKind.Utc)).AddSeconds(duration - position).ToUnixTimeSeconds()
+            : (long?)null;
+        return new DiscordActivity
         {
-            var text = new StringBuilder(); var bytes = 0;
-            foreach (var rune in value.EnumerateRunes())
-            {
-                if (bytes + rune.Utf8SequenceLength > 128) break;
-                text.Append(rune); bytes += rune.Utf8SequenceLength;
-            }
-            return text.Length == 0 ? "—" : text.ToString();
-        }
-        position = double.IsFinite(position) ? Math.Max(0, position) : 0;
-        duration = double.IsFinite(duration) ? Math.Max(0, duration) : 0;
-        var title = track.IsLocal ? track.Title : TrackTextFormatter.Title(track.Title, track.Artist);
-        return new RichPresence
-        {
-            Type = ActivityType.Listening,
-            Name = Limit(titleAsName ? title : "Hibike"),
-            Details = Limit(title), State = Limit(track.IsLocal ? track.Artist : TrackTextFormatter.Artist(track.Artist)),
-            Timestamps = new Timestamps { Start = now.AddSeconds(-position), End = duration > position ? now.AddSeconds(duration - position) : null },
-            Assets = PublicArtwork(cover) is { } image ? new Assets { LargeImageKey = image, LargeImageText = Limit(track.Album ?? title) } : null,
-            Buttons = !track.IsLocal && Uri.TryCreate(track.Source, UriKind.Absolute, out var source) && source.Scheme == "https"
-                && (source.Host == "www.youtube.com" || source.Host == "youtube.com" || source.Host == "youtu.be")
-                ? [new DiscordRPC.Button { Label = "Ouvir no YouTube", Url = track.Source }] : null
+            Name = info.Name, Details = info.Details, State = info.State,
+            Timestamps = new DiscordTimestamps(start, end),
+            Assets = new DiscordAssets(art ?? DiscordActivityDisplay.IconUrl,
+                info.ArtworkText, art is null ? null : DiscordActivityDisplay.IconUrl,
+                art is null ? null : "Hibike"),
+            Buttons = youtube ? [new DiscordButton("Ouvir no YouTube", track.Source)] : null
         };
     }
 
     public void Dispose()
     {
         _disposed = true; _music.Changed -= Update; _music.Tick -= Update;
-        _stop.Cancel(); _client.Dispose(); _http.Dispose();
+        _stop.Cancel(); _client.Dispose(); _http.Dispose(); _stop.Dispose();
     }
 }

@@ -8,7 +8,7 @@ var discordTrack = new Track("discord-check", "Faixa de teste", "Artista", "http
 var standardPresence = DiscordPresence.Build(discordTrack, 0, 180, null, DateTime.UtcNow);
 var titlePresence = DiscordPresence.Build(discordTrack, 0, 180, null, DateTime.UtcNow, titleAsName: true);
 if (standardPresence.Name != "Hibike" || titlePresence.Name != "Faixa de teste"
-    || titlePresence.Details != standardPresence.Details || titlePresence.State != standardPresence.State)
+    || titlePresence.Details != "Artista" || titlePresence.State != "Álbum não informado")
     throw new Exception("Desktop Discord activity-name option failed.");
 var accountPresenceType = typeof(Hibike.App.AppServices).Assembly.GetType("Hibike.App.DiscordAccountPresence")!;
 var buildAndroidActivity = accountPresenceType.GetMethod("BuildActivity", BindingFlags.NonPublic | BindingFlags.Static)!;
