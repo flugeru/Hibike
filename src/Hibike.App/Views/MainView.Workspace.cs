@@ -84,8 +84,25 @@ public sealed partial class MainView
         var display = _music.Pending ?? _music.Current;
         _desktopDock.IsVisible = display is not null && !_showingPlayer && Bounds.Width >= 1000 && !_androidLayout;
         _mini.IsVisible = display is not null && !_showingPlayer && !_desktopDock.IsVisible && !(_androidLayout && _page == "queue");
+        Grid.SetRowSpan(_main, _mini.IsVisible ? 2 : 1);
         _collectionPage.IsVisible = _page == "collection";
         RefreshDock();
+    }
+
+    private void RefreshMiniPlayerInset()
+    {
+        var inset = _mini.IsVisible ? _mini.Bounds.Height + _mini.Margin.Top + _mini.Margin.Bottom : 0;
+        foreach (var scroll in _main.GetVisualDescendants().OfType<ScrollViewer>().Where(s => s.Classes.Contains("contentScroll")))
+        {
+            if (scroll.GetVisualAncestors().TakeWhile(parent => parent != _main)
+                .OfType<ScrollViewer>().Any(parent => parent.Classes.Contains("contentScroll"))) continue;
+            if (scroll.Content is not Control content) continue;
+            var previous = content.Resources["MiniPlayerInset"] is double value ? value : 0;
+            if (previous == inset) continue;
+            var margin = content.Margin;
+            content.Margin = new Thickness(margin.Left, margin.Top, margin.Right, margin.Bottom - previous + inset);
+            content.Resources["MiniPlayerInset"] = inset;
+        }
     }
 
     private void BuildDesktopDock()

@@ -48,16 +48,19 @@ internal static class UiTheme
             HorizontalScrollBarVisibility = horizontal ? ScrollBarVisibility.Hidden : ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = horizontal ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Hidden
         };
+        // Carousels already clip at the viewport; a mask makes artwork edges look like black bars.
+        if (horizontal) return scroll;
+        scroll.Classes.Add("contentScroll");
         var android = OperatingSystem.IsAndroid();
         (double Fade, byte Start, byte End)? previous = null;
         void UpdateMask()
         {
-            var length = horizontal ? scroll.Viewport.Width : scroll.Viewport.Height;
-            var extent = horizontal ? scroll.Extent.Width : scroll.Extent.Height;
-            var offset = horizontal ? scroll.Offset.X : scroll.Offset.Y;
+            var length = scroll.Viewport.Height;
+            var extent = scroll.Extent.Height;
+            var offset = scroll.Offset.Y;
             var remaining = Math.Max(0, extent - length - offset);
             if (length <= 0 || extent <= length + 1) { scroll.OpacityMask = null; previous = null; return; }
-            var fade = Math.Min(.5, (android ? 12 : horizontal ? 20 : 16) / length);
+            var fade = Math.Min(.5, (android ? 12 : 16) / length);
             var strength = android ? 144 : 191;
             var start = (byte)(255 - strength * Math.Clamp(offset / 12, 0, 1));
             var end = (byte)(255 - strength * Math.Clamp(remaining / 12, 0, 1));
@@ -67,7 +70,7 @@ internal static class UiTheme
             scroll.OpacityMask = new LinearGradientBrush
             {
                 StartPoint = new(0, 0, RelativeUnit.Relative),
-                EndPoint = horizontal ? new(1, 0, RelativeUnit.Relative) : new(0, 1, RelativeUnit.Relative),
+                EndPoint = new(0, 1, RelativeUnit.Relative),
                 GradientStops =
                 [
                     new(Color.FromArgb(start, 0, 0, 0), 0),
@@ -125,16 +128,16 @@ internal static class UiTheme
         border.CornerRadius = new(ControlRadius); border.Padding = BannerPadding;
     }
     public static Button PrimaryButton(string text) { var button = OutlinedButton(text); button.Classes.Add("primary"); return button; }
-    public static Button OutlinedButton(string text) => new()
+    public static Button OutlinedButton(string text)
     {
-        Content = text, HorizontalAlignment = HorizontalAlignment.Stretch,
-        RenderTransformOrigin = RelativePoint.Center,
-        Transitions = new Avalonia.Animation.Transitions
+        var button = new Button
         {
-            new Avalonia.Animation.TransformOperationsTransition { Property = Visual.RenderTransformProperty,
-                Duration = TimeSpan.FromMilliseconds(120), Easing = new Avalonia.Animation.Easings.CubicEaseOut() }
-        }
-    };
+            Content = text, HorizontalAlignment = HorizontalAlignment.Stretch,
+            RenderTransformOrigin = RelativePoint.Center
+        };
+        UiMotion.AttachPressFeedback(button);
+        return button;
+    }
     public static Button RoundIconButton(string icon, string label, string color = Primary)
     {
         var button = OutlinedButton(""); button.Classes.Add("round"); button.Content = Icons.Make(icon, color, IconSize);
@@ -180,10 +183,6 @@ internal static class UiTheme
             new Setter(Layoutable.MarginProperty, Zero));
         Add(new Style(x => x.OfType<Button>().Class("nav")), new(TemplatedControl.BorderThicknessProperty, Zero), new(TemplatedControl.PaddingProperty, Zero));
         Add(new Style(x => x.OfType<Button>().Class(":disabled")), new Setter(Visual.OpacityProperty, .4));
-        Add(new Style(x => x.OfType<Button>()),
-            new Setter(Visual.RenderTransformProperty, Avalonia.Media.Transformation.TransformOperations.Parse("scale(1)")));
-        Add(new Style(x => x.OfType<Button>().Class(":pressed")),
-            new Setter(Visual.RenderTransformProperty, Avalonia.Media.Transformation.TransformOperations.Parse("scale(0.97)")));
         // Target Fluent's presenter so local backgrounds do not suppress pointer states.
         foreach (var state in new[] { ":pointerover", ":pressed" })
         {

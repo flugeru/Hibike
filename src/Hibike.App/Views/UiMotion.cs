@@ -29,6 +29,7 @@ internal static class UiMotion
         Dispatcher.UIThread.Post(() =>
         {
             if (control.Transitions != transitions || !control.IsVisible || (!decorative && !control.IsHitTestVisible)) return;
+            if (Reduced) control.Transitions = null;
             control.Opacity = 1;
             control.RenderTransform = Reduced ? null : Translation(0);
         }, DispatcherPriority.Render);
@@ -69,11 +70,29 @@ internal static class UiMotion
 
     public static void AttachPressFeedback(Button button)
     {
+        void Update()
+        {
+            if (Reduced)
+            {
+                button.Transitions = null;
+                button.RenderTransform = null;
+                return;
+            }
+            var transform = TransformOperations.CreateBuilder(2);
+            transform.AppendScale(button.IsPressed ? .97 : 1, button.IsPressed ? .97 : 1);
+            transform.AppendTranslate(0, !button.IsPressed && button.IsPointerOver && button.Classes.Contains("cover") ? -3 : 0);
+            button.Transitions ??= new Transitions
+            {
+                new TransformOperationsTransition { Property = Visual.RenderTransformProperty,
+                    Duration = TimeSpan.FromMilliseconds(140), Easing = new CubicEaseOut() }
+            };
+            button.RenderTransform = transform.Build();
+        }
         button.PropertyChanged += (_, change) =>
         {
-            if (change.Property != Button.IsPressedProperty) return;
-            Move(button, button.IsPressed && !Reduced ? 1 : 0);
+            if (change.Property == Button.IsPressedProperty || change.Property == Button.IsPointerOverProperty) Update();
         };
+        button.AttachedToVisualTree += (_, _) => Update();
     }
 
     private static void Configure(Control control) => control.Transitions = new Transitions
@@ -97,6 +116,12 @@ internal static class UiMotion
         var ease = new CubicEaseOut();
         timer.Tick += (_, _) =>
         {
+            if (Reduced)
+            {
+                scroll.Offset = new Vector(Math.Clamp(target, 0, Math.Max(0, scroll.Extent.Width - scroll.Viewport.Width)), scroll.Offset.Y);
+                timer.Stop();
+                return;
+            }
             var progress = Math.Min(1, System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds / Duration.TotalMilliseconds);
             var max = Math.Max(0, scroll.Extent.Width - scroll.Viewport.Width);
             scroll.Offset = new Vector(Math.Clamp(start + (target - start) * ease.Ease(progress), 0, max), scroll.Offset.Y);

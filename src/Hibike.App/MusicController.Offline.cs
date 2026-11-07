@@ -101,6 +101,7 @@ public sealed partial class MusicController
     internal async Task RemoveOfflineTrackAsync(Track track)
     {
         await _offlineStoreGate.WaitAsync();
+        await _favoritesGate.WaitAsync();
         try
         {
             if (!CanRemoveOfflineTrack(track)) throw new InvalidOperationException("Aguarde a preparação do áudio para remover este arquivo.");
@@ -142,6 +143,6 @@ public sealed partial class MusicController
             await Task.WhenAll(_offlineStore.SaveAsync(OfflineTracks), _store.SaveAsync(Favorites));
             SetStatus("Arquivo removido do aparelho.");
         }
-        finally { _removingOfflinePath = null; _offlineStoreGate.Release(); }
+        finally { _removingOfflinePath = null; _favoritesGate.Release(); _offlineStoreGate.Release(); }
     }
 }

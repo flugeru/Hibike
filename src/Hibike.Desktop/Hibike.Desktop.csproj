@@ -20,8 +20,7 @@
    <EmbeddedResource Include="$(HibikeGoogleOAuthConfig)" LogicalName="Hibike.GoogleOAuth.Desktop.json" />
  </ItemGroup>
   <ItemGroup>
-   <PackageReference Include="DiscordRichPresence" />
-  <ProjectReference Include="../Hibike.App/Hibike.App.csproj" />
+   <ProjectReference Include="../Hibike.App/Hibike.App.csproj" />
   <PackageReference Include="Avalonia.Desktop" />
    <!-- Use platform-neutral binding; Windows-specific LibVLCSharp pulls WinUI packaging into Avalonia. -->
    <PackageReference Include="LibVLCSharp" ExcludeAssets="all" GeneratePathProperty="true" />

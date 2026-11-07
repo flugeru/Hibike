@@ -22,7 +22,7 @@ public sealed partial class MusicController
 
     private Personalization PersonalSnapshot() => new()
     {
-        Autoplay = _personal.Autoplay, ReduceMotion = _personal.ReduceMotion, OfflineMode = _personal.OfflineMode, Discovery = _personal.Discovery,
+        Autoplay = _personal.Autoplay, ReduceMotion = _personal.ReduceMotion, DiscordUseTrackTitleAsName = _personal.DiscordUseTrackTitleAsName, OfflineMode = _personal.OfflineMode, Discovery = _personal.Discovery,
         OnboardingCompleted = _personal.OnboardingCompleted, Region = _personal.Region, Weights = _personal.Weights,
         Pins = [.. _personal.Pins], Artists = [.. _personal.Artists], Genres = [.. _personal.Genres],
         Dismissed = new(_personal.Dismissed),
@@ -43,6 +43,7 @@ public sealed partial class MusicController
     private void WriteState(PersistedState snapshot)
     {
         if (snapshot.Session is { } session) _session.Save(session);
+        if (_personalizationUnreadable) throw new IOException("Personalização original ilegível; arquivo preservado. Restaure um backup antes de salvar preferências.");
         Directory.CreateDirectory(DataDirectory);
         var path = Path.Combine(DataDirectory, "personalization.json");
         var temporary = path + ".tmp";

@@ -21,6 +21,7 @@ internal sealed class DiscordAccountPresence : IDisposable
     private bool _updating;
     private string? _lastKey;
     private double _lastPosition;
+    private bool _lastTitleMode;
     private DateTimeOffset _lastUpdate;
     public bool IsClosed => Volatile.Read(ref _disposed) != 0;
     public bool CredentialsRejected { get; private set; }
@@ -91,18 +92,22 @@ internal sealed class DiscordAccountPresence : IDisposable
                 var now = DateTimeOffset.UtcNow;
                 var position = _music.Player.Position;
                 var cover = _music.CurrentSource?.Artwork ?? track.Thumbnail;
-                var key = track.Source + "\n" + track.Title + "\n" + track.Artist + "\n" + cover;
+                var titleAsName = _music.DiscordUseTrackTitleAsName;
+                var key = track.Source + "\n" + track.Title + "\n" + track.Artist + "\n" + track.Album + "\n" + cover + "\n" + titleAsName;
                 if (key == _lastKey && Math.Abs(position - _lastPosition - (now - _lastUpdate).TotalSeconds) < 3) return;
                 // Discord limits presence updates; coalesce rapid seeks on subsequent player ticks.
-                if ((now - _lastUpdate).TotalSeconds < 5) return;
+                if ((now - _lastUpdate).TotalSeconds < 5 && titleAsName == _lastTitleMode) return;
                 var image = await ResolveArtworkAsync(cover);
-                if (_stop.IsCancellationRequested || _music.Current != track || !_music.Player.IsPlaying) return;
+                // Discord Gateway needs the image asset id (mp:...), not a raw PNG URL.
+                var icon = await ResolveArtworkAsync(DiscordActivityDisplay.IconUrl);
+                if (_stop.IsCancellationRequested || _music.Current != track || !_music.Player.IsPlaying
+                    || _music.DiscordUseTrackTitleAsName != titleAsName) return;
                 now = DateTimeOffset.UtcNow; position = _music.Player.Position;
                 var duration = _music.Player.Duration > 0 ? _music.Player.Duration : track.DurationSeconds;
-                object[] activities = [BuildActivity(track, position, duration, image, now)];
+                object[] activities = [BuildActivity(track, position, duration, image, now, titleAsName, icon)];
                 await SendAsync(new { op = 3, d = Presence(activities) });
                 _activities = activities;
-                _lastKey = key; _lastPosition = position; _lastUpdate = now;
+                _lastKey = key; _lastTitleMode = titleAsName; _lastPosition = position; _lastUpdate = now;
                 PublishedTrack = track;
             }
             if (_stop.IsCancellationRequested) { PublishedTrack = null; return; }
@@ -120,34 +125,51 @@ internal sealed class DiscordAccountPresence : IDisposable
         finally { _updating = false; }
     }
 
-    internal static object BuildActivity(Track track, double position, double duration, string? image, DateTimeOffset now)
+    internal static object BuildActivity(Track track, double position, double duration, string? image,
+        DateTimeOffset now, bool titleAsName = false, string? icon = null)
     {
-        static string Limit(string value)
-        {
-            var text = new System.Text.StringBuilder(); var bytes = 0;
-            foreach (var rune in value.EnumerateRunes())
-            {
-                if (bytes + rune.Utf8SequenceLength > 128) break;
-                text.Append(rune); bytes += rune.Utf8SequenceLength;
-            }
-            return text.Length == 0 ? "—" : text.ToString();
-        }
-        position = double.IsFinite(position) ? Math.Max(0, position) : 0;
-        duration = double.IsFinite(duration) ? Math.Max(0, duration) : 0;
-        // ponytail: invalid multi-year media times omitted; support longer recordings if needed.
-        position = Math.Min(position, 31_536_000); duration = Math.Min(duration, 31_536_000);
-        var title = track.IsLocal ? track.Title : TrackTextFormatter.Title(track.Title, track.Artist);
+        position = double.IsFinite(position) ? Math.Clamp(position, 0, 31_536_000) : 0;
+        duration = double.IsFinite(duration) ? Math.Clamp(duration, 0, 31_536_000) : 0;
+        var info = DiscordActivityDisplay.Format(track, titleAsName);
         var youtube = !track.IsLocal && Uri.TryCreate(track.Source, UriKind.Absolute, out var source)
             && source.Scheme == "https" && source.Host is "www.youtube.com" or "youtube.com" or "youtu.be";
-        return new
+
+        // Do not send an unresolvable image or a made-up text field to Discord.
+        var assets = new Dictionary<string, object>();
+        var largeImage = image ?? icon;
+        if (largeImage is not null)
         {
-            application_id = "1566415890596241459", name = "Hibike", type = 2,
-            details = Limit(title), state = Limit(track.IsLocal ? track.Artist : TrackTextFormatter.Artist(track.Artist)),
-            timestamps = new { start = now.AddSeconds(-position).ToUnixTimeMilliseconds(), end = duration > position ? (long?)now.AddSeconds(duration - position).ToUnixTimeMilliseconds() : null },
-            assets = image is null ? null : new { large_image = image, large_text = Limit(track.Album ?? title) },
-            buttons = youtube ? new[] { "Ouvir no YouTube" } : null,
-            metadata = youtube ? new { button_urls = new[] { track.Source } } : null
+            assets["large_image"] = largeImage;
+            if (info.ArtworkText is not null) assets["large_text"] = info.ArtworkText;
+            if (image is not null && icon is not null)
+            {
+                assets["small_image"] = icon;
+                assets["small_text"] = "Hibike";
+            }
+        }
+
+        var activity = new Dictionary<string, object>
+        {
+            ["application_id"] = "1566415890596241459",
+            ["name"] = info.Name,
+            ["type"] = 2,
+            ["timestamps"] = new Dictionary<string, long>
+            {
+                ["start"] = now.AddSeconds(-position).ToUnixTimeMilliseconds()
+            }
         };
+        if (info.Details is not null) activity["details"] = info.Details;
+        if (info.State is not null) activity["state"] = info.State;
+        if (duration > position)
+            ((Dictionary<string, long>)activity["timestamps"])["end"] =
+                now.AddSeconds(duration - position).ToUnixTimeMilliseconds();
+        if (assets.Count > 0) activity["assets"] = assets;
+        if (youtube)
+        {
+            activity["buttons"] = new[] { "Ouvir no YouTube" };
+            activity["metadata"] = new { button_urls = new[] { track.Source } };
+        }
+        return activity;
     }
 
     private async Task<string?> ResolveArtworkAsync(string? url)
@@ -159,10 +181,12 @@ internal sealed class DiscordAccountPresence : IDisposable
         {
             using var body = new StringContent(JsonSerializer.Serialize(new { urls = new[] { url } }), System.Text.Encoding.UTF8, "application/json");
             using var response = await _http.PostAsync("https://discord.com/api/v10/applications/1566415890596241459/external-assets", body, _stop.Token);
-            if (!response.IsSuccessStatusCode) return _covers[url!] = null;
+            if (!response.IsSuccessStatusCode) return null;
             using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(_stop.Token));
             var path = json.RootElement[0].GetProperty("external_asset_path").GetString();
-            return _covers[url!] = string.IsNullOrEmpty(path) ? null : "mp:" + path;
+            // Transient failures must not be cached forever. Retry on a later snapshot.
+            if (string.IsNullOrWhiteSpace(path)) return null;
+            return _covers[url!] = "mp:" + path;
         }
         catch (Exception error) when (error is HttpRequestException or JsonException or InvalidOperationException or OperationCanceledException or IndexOutOfRangeException)
         { return null; }
