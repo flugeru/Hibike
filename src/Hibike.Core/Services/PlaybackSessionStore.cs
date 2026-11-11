@@ -29,7 +29,11 @@ public sealed class PlaybackSessionStore(string directory)
         var temp = PathName + ".tmp";
         try
         {
-            File.WriteAllText(temp, JsonSerializer.Serialize(session));
+            using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                JsonSerializer.Serialize(stream, session);
+                stream.Flush(flushToDisk: true);
+            }
             File.Move(temp, PathName, true);
         }
         finally { if (File.Exists(temp)) File.Delete(temp); }

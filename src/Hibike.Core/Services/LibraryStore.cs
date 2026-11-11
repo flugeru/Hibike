@@ -44,7 +44,12 @@ public sealed class LibraryStore(string directory, string fileName = "favorites.
             // Never replace unreadable user data with an empty or partial in-memory library.
             await ReadAsync();
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-            await File.WriteAllTextAsync(temp, JsonSerializer.Serialize(snapshot));
+            await using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                await JsonSerializer.SerializeAsync(stream, snapshot);
+                await stream.FlushAsync();
+                stream.Flush(flushToDisk: true);
+            }
             File.Move(temp, _path, true);
         }
         finally

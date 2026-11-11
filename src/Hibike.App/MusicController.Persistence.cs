@@ -49,7 +49,11 @@ public sealed partial class MusicController
         var temporary = path + ".tmp";
         try
         {
-            File.WriteAllText(temporary, JsonSerializer.Serialize(snapshot.Personal));
+            using (var stream = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                JsonSerializer.Serialize(stream, snapshot.Personal);
+                stream.Flush(flushToDisk: true);
+            }
             File.Move(temporary, path, true);
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
@@ -59,7 +63,7 @@ public sealed partial class MusicController
     public void FlushPendingSaves()
     {
         // Only lifecycle shutdown/suspension waits; ordinary UI changes never wait for storage.
-        try { FlushPendingSavesAsync().GetAwaiter().GetResult(); }
+        try { _ = FlushPendingSavesAsync(); }
         catch (IOException error) { PlaybackDiagnostics.Write("Salvar sessão", error.Message); }
     }
 }

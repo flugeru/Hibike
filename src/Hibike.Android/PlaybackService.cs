@@ -15,12 +15,12 @@ using AudioSource = Hibike.Core.Models.AudioSource;
 
 namespace Hibike.Android;
 
-[Service(Name = "com.flugel.hibike.PlaybackService", Exported = true,
+[Service(Name = "com.flugel.hibike.PlaybackService", Exported = false,
     ForegroundServiceType = ForegroundService.TypeMediaPlayback)]
 [IntentFilter(new[] { "androidx.media3.session.MediaSessionService" })]
 public sealed class PlaybackService : MediaSessionService
 {
-    public const string PrepareAction = "com.flugel.hibike.PREPARE";
+    internal const string PrepareAction = "com.flugel.hibike.PREPARE";
     public static PlaybackService? Instance { get; private set; }
     private IExoPlayer? _player;
     private MediaSession? _session;
@@ -79,7 +79,7 @@ public sealed class PlaybackService : MediaSessionService
     }
     public override StartCommandResult OnStartCommand(Intent? intent, StartCommandFlags flags, int startId)
     {
-        if (intent?.Action == PrepareAction)
+        if (intent?.Action == PrepareAction && IsOwnApp(intent))
         {
             if (Build.VERSION.SdkInt >= BuildVersionCodes.O)
                 ((NotificationManager)GetSystemService(NotificationService)!).CreateNotificationChannel(new NotificationChannel("hibike-playback", "Reprodução de música", NotificationImportance.Low));
@@ -93,7 +93,19 @@ public sealed class PlaybackService : MediaSessionService
         }
         return base.OnStartCommand(intent, flags, startId);
     }
-    public override MediaSession? OnGetSession(MediaSession.ControllerInfo controllerInfo) => _session;
+    public override MediaSession? OnGetSession(MediaSession.ControllerInfo controllerInfo) =>
+        IsTrustedController(controllerInfo) ? _session : null;
+    private bool IsOwnApp(Intent intent) =>
+        string.Equals(intent.Package, PackageName, StringComparison.Ordinal) ||
+        string.Equals(intent.Component?.PackageName, PackageName, StringComparison.Ordinal);
+    private bool IsTrustedController(MediaSession.ControllerInfo controller)
+    {
+        if (controller.PackageName == PackageName) return true;
+        var uid = controller.Uid;
+        if (uid == Process.MyUid()) return true;
+        var packages = PackageManager?.GetPackagesForUid(uid);
+        return packages?.Contains(PackageName) == true;
+    }
     public void Open(AudioSource source, double volume, byte[]? artwork = null)
     {
         Error = null; _lastError = null; State = 2;

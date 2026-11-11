@@ -91,27 +91,36 @@ public sealed class AndroidCommandRunner(Context context) : ICommandRunner
             env["SSL_CERT_FILE"] = Path.Combine(_pythonHome!, "etc/tls/cert.pem");
             env["TMPDIR"] = context.CacheDir!.AbsolutePath;
             using var process = builder.Start()!;
-            using var cancel = cancellationToken.Register(() =>
-            {
-                PlaybackDiagnostics.Write("YT-DLP", "Processo interrompido pelo cancelamento/limite de tempo.");
-                process.Destroy();
-            });
             using var stdout = new StreamReader(process.InputStream!);
             using var stderr = new StreamReader(process.ErrorStream!);
-            var output = stdout.ReadToEndAsync(cancellationToken);
+            var output = stdout.ReadToEndAsync();
             var error = Task.Run(async () =>
             {
                 var lines = new System.Text.StringBuilder();
-                while (await stderr.ReadLineAsync(cancellationToken) is { } line)
+                while (await stderr.ReadLineAsync() is { } line)
                 {
                     PlaybackDiagnostics.Write("YT-DLP", line);
                     if (lines.Length < 24000) lines.AppendLine(line);
                 }
                 return lines.ToString();
-            }, cancellationToken);
-            var exit = await Task.Run(() => process.WaitFor(), cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
-            return new ProcessResult(exit, await output, await error);
+            });
+            try
+            {
+                var exit = await Task.Run(() => process.WaitFor(), CancellationToken.None).WaitAsync(cancellationToken);
+                return new ProcessResult(exit, await output, await error);
+            }
+            catch (OperationCanceledException)
+            {
+                PlaybackDiagnostics.Write("YT-DLP", "Processo interrompido pelo cancelamento/limite de tempo.");
+                process.Destroy();
+                if (!process.WaitFor(500, Java.Util.Concurrent.TimeUnit.Milliseconds))
+                {
+                    process.DestroyForcibly();
+                    process.WaitFor();
+                }
+                await Task.WhenAll(output, error);
+                throw;
+            }
         }, cancellationToken);
     }
 }

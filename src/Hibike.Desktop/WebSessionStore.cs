@@ -15,8 +15,17 @@ internal static class WebSessionStore
         AppServices.SaveYouTubeAccount = account =>
         {
             Directory.CreateDirectory(directory);
-            var data = ProtectedData.Protect(Encoding.UTF8.GetBytes(account.ExportWebSession()), null, DataProtectionScope.CurrentUser);
-            File.WriteAllBytes(path + ".tmp", data); File.Move(path + ".tmp", path, true);
+            var bytes = Encoding.UTF8.GetBytes(account.ExportWebSession());
+            try
+            {
+                var data = ProtectedData.Protect(bytes, null, DataProtectionScope.CurrentUser);
+                File.WriteAllBytes(path + ".tmp", data); File.Move(path + ".tmp", path, true);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(bytes);
+                try { File.Delete(path + ".tmp"); } catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+            }
         };
         AppServices.RestoreYouTubeAccount = () =>
         {
