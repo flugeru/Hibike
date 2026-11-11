@@ -61,8 +61,9 @@ internal static class GoogleAccountLogin
             var request = await reader.ReadLineAsync().WaitAsync(token) ?? "";
             var target = request.Split(' ').ElementAtOrDefault(1);
             var requestUri = Uri.TryCreate("http://127.0.0.1" + target, UriKind.Absolute, out var parsed) ? parsed : null;
-            var query = requestUri is null ? null : System.Web.HttpUtility.ParseQueryString(requestUri.Query);
-            var valid = requestUri?.AbsolutePath == "/" && query?["state"] == state;
+            var query = requestUri?.Query;
+            var queryState = QueryValue(query, "state");
+            var valid = requestUri?.AbsolutePath == "/" && queryState == state;
             var body = Encoding.UTF8.GetBytes(valid ? "Volte ao Hibike. Esta janela pode ser fechada." : "Solicitacao invalida.");
             var header = Encoding.ASCII.GetBytes($"HTTP/1.1 {(valid ? "200 OK" : "400 Bad Request")}
 Content-Type: text/plain; charset=utf-8
@@ -72,7 +73,7 @@ Connection: close
 ");
             await stream.WriteAsync(header, token); await stream.WriteAsync(body, token);
             if (!valid) continue;
-            code = query!["code"];
+            code = QueryValue(query, "code");
             if (string.IsNullOrEmpty(code)) throw new InvalidOperationException("Autorização Google recusada.");
         }
         var fields = new Dictionary<string, string> { ["client_id"] = clientId, ["code"] = code,
@@ -100,6 +101,19 @@ Connection: close
             throw new InvalidOperationException("Permissão de leitura do YouTube não concedida.");
         // ponytail: access token only in memory; add OS credential storage and refresh for persistent login.
         return new YouTubeAccountLibrary(Client, result.RootElement.GetProperty("access_token").GetString()!);
+    }
+
+    private static string? QueryValue(string? query, string key)
+    {
+        if (string.IsNullOrEmpty(query)) return null;
+        foreach (var pair in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var split = pair.IndexOf('=');
+            var name = Uri.UnescapeDataString((split < 0 ? pair : pair[..split]).Replace('+', ' '));
+            if (!name.Equals(key, StringComparison.Ordinal)) continue;
+            return Uri.UnescapeDataString((split < 0 ? "" : pair[(split + 1)..]).Replace('+', ' '));
+        }
+        return null;
     }
 
     private static string Encode(Dictionary<string, string> values) => string.Join("&", values.Select(p => Uri.EscapeDataString(p.Key) + "=" + Uri.EscapeDataString(p.Value)));
