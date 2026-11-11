@@ -20,6 +20,7 @@ internal sealed class DownloadJob(Track track) : INotifyPropertyChanged
     public CancellationTokenSource? Timeout { get; internal set; }
     public bool CancelRequested { get; internal set; }
     public bool PauseRequested { get; internal set; }
+    public bool NetworkPaused { get; internal set; }
 
     public bool CanPause => Stage is TransferStage.Queued or TransferStage.Resolving or TransferStage.Transferring;
     public bool CanResume => (Stage is TransferStage.Paused or TransferStage.Failed) && Cancellation is null;
@@ -116,12 +117,27 @@ internal sealed class DownloadQueue(
     {
         if (!job.CanPause || job.Cancellation is not { } source) return;
         job.PauseRequested = true;
+        if (!job.NetworkPaused) job.NetworkPaused = false;
         source.Cancel();
     }
 
-    public void PauseAll()
+    public void PauseAll(bool network = false)
     {
-        foreach (var job in Jobs.ToArray()) Pause(job);
+        foreach (var job in Jobs.ToArray())
+        {
+            if (!job.CanPause || job.Cancellation is null) continue;
+            if (network) job.NetworkPaused = true;
+            Pause(job);
+        }
+    }
+
+    public void ResumeNetworkPaused()
+    {
+        foreach (var job in Jobs.Where(job => job.NetworkPaused && job.Stage == TransferStage.Paused && job.Cancellation is null).ToArray())
+        {
+            job.NetworkPaused = false;
+            Resume(job);
+        }
     }
 
     public void Cancel(DownloadJob job)
@@ -141,7 +157,7 @@ internal sealed class DownloadQueue(
     public void Resume(DownloadJob job)
     {
         if (!job.CanResume || job.Cancellation is not null) return;
-        job.CancelRequested = job.PauseRequested = false;
+        job.CancelRequested = job.PauseRequested = job.NetworkPaused = false;
         job.ChangeStage(TransferStage.Queued);
         _ = ExecuteAsync(job);
     }
@@ -226,6 +242,7 @@ internal sealed class DownloadQueue(
             }
             if (acquired) _slots.Release();
             job.Cancellation = job.Timeout = null;
+            if (final != TransferStage.Paused) job.NetworkPaused = false;
             job.ChangeStage(final, failure);
         }
     }
