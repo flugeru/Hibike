@@ -64,9 +64,9 @@ internal static class GoogleAccountLogin
             var query = requestUri?.Query;
             var queryState = QueryValue(query, "state");
             var valid = requestUri?.AbsolutePath == "/" && queryState == state;
-            var body = Encoding.UTF8.GetBytes(valid ? "Volte ao Hibike. Esta janela pode ser fechada." : "Solicitacao invalida.");
-            var header = Encoding.ASCII.GetBytes($"HTTP/1.1 {(valid ? "200 OK" : "400 Bad Request")}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n");
-            await stream.WriteAsync(header, token); await stream.WriteAsync(body, token);
+            var callbackBody = Encoding.UTF8.GetBytes(valid ? "Volte ao Hibike. Esta janela pode ser fechada." : "Solicitacao invalida.");
+            var header = Encoding.ASCII.GetBytes($"HTTP/1.1 {(valid ? "200 OK" : "400 Bad Request")}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {callbackBody.Length}\r\nConnection: close\r\n\r\n");
+            await stream.WriteAsync(header, token); await stream.WriteAsync(callbackBody, token);
             if (!valid) continue;
             code = QueryValue(query, "code");
             if (string.IsNullOrEmpty(code)) throw new InvalidOperationException("Autorização Google recusada.");
