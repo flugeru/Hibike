@@ -161,14 +161,18 @@ public sealed partial class MainView
                     CancelExploreSearch();
                     if (_music.Current is { IsLocal: false }) _music.PausePlayback();
                 }
-                _downloadQueue.PauseAll();
+                _downloadQueue.PauseAll(network: !network);
                 _accountNetworkRequest?.Cancel();
             }
             _connectionTitle.Text = offline ? "Modo offline" : network ? "Músicas neste aparelho" : "Sem conexão";
             _connectionAction.Content = offline ? "Usar online" : "Usar offline";
             _connectionAction.IsVisible = !offline || network;
             _connectionShortcut.Content = network ? "Modo offline · Ver opções" : "Sem conexão · Ver músicas offline";
-            if (reconnected) Dispatcher.UIThread.Post(async () => await RefreshHomeAsync(), DispatcherPriority.Background);
+            if (reconnected)
+            {
+                _downloadQueue.ResumeNetworkPaused();
+                Dispatcher.UIThread.Post(async () => await RefreshHomeAsync(), DispatcherPriority.Background);
+            }
         }
 
         var showBanner = !showDownloads && (!network && !offline || network && offline);
