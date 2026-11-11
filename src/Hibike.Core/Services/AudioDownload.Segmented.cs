@@ -20,8 +20,8 @@ public static partial class AudioDownload
             var request = new HttpRequestMessage(HttpMethod.Get, uri);
             foreach (var header in headers) request.Headers.TryAddWithoutValidation(header.Key, header.Value);
             request.Headers.Range = new RangeHeaderValue(from, to);
-            if (IsStrongTag(version?.ETag))
-                request.Headers.IfRange = new RangeConditionHeaderValue(new EntityTagHeaderValue(version!.ETag!));
+            if (TryGetStrongTag(version?.ETag, out var versionTag))
+                request.Headers.IfRange = new RangeConditionHeaderValue(versionTag);
             else if (version?.LastModified is { } modified)
                 request.Headers.IfRange = new RangeConditionHeaderValue(modified);
             return request;
@@ -39,7 +39,7 @@ public static partial class AudioDownload
         var range = probe.Content.Headers.ContentRange;
         if (range?.From != 0 || range.To != 0 || range.Length is not > SegmentSize) return false;
         var total = range.Length.Value;
-        var version = new PartialMetadata(probe.Headers.ETag is { IsWeak: false } tag ? tag.ToString() : null,
+        var version = new PartialMetadata(TryGetStrongTag(probe.Headers.ETag, out var strongTag) ? strongTag.ToString() : null,
             probe.Content.Headers.LastModified, total);
         if (!IsStrongTag(version.ETag) && !version.LastModified.HasValue) return false;
         var mediaType = probe.Content.Headers.ContentType?.MediaType ?? "";
@@ -97,7 +97,12 @@ public static partial class AudioDownload
             try { blocks = await Task.WhenAll(tasks).ConfigureAwait(false); }
             catch (Exception) when (!token.IsCancellationRequested
                 && tasks.Any(task => task.Exception?.GetBaseException() is NotSupportedException))
-            { return false; }
+            {
+                output.SetLength(0);
+                await output.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+                File.Delete(metadataPath);
+                return false;
+            }
             catch (OperationCanceledException error) when (!token.IsCancellationRequested)
             { throw new IOException("Tempo esgotado ao receber bloco de áudio.", error); }
 

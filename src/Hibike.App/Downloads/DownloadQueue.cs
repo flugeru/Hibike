@@ -17,6 +17,7 @@ internal sealed class DownloadJob(Track track) : INotifyPropertyChanged
     public double BytesPerSecond { get; private set; }
     public string? Error { get; private set; }
     public CancellationTokenSource? Cancellation { get; internal set; }
+    public CancellationTokenSource? Timeout { get; internal set; }
     public bool CancelRequested { get; internal set; }
     public bool PauseRequested { get; internal set; }
 
@@ -156,7 +157,10 @@ internal sealed class DownloadQueue(
     private async Task ExecuteAsync(DownloadJob job)
     {
         using var cancellation = new CancellationTokenSource();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(30));
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token, timeout.Token);
         job.Cancellation = cancellation;
+        job.Timeout = timeout;
         var acquired = false;
         string? destination = null;
         var final = TransferStage.Failed;
@@ -164,11 +168,10 @@ internal sealed class DownloadQueue(
 
         try
         {
-            await _slots.WaitAsync(cancellation.Token);
+            await _slots.WaitAsync(lifetime.Token);
             acquired = true;
-            cancellation.CancelAfter(TimeSpan.FromMinutes(30));
             job.ChangeStage(TransferStage.Resolving);
-            using var resolving = CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token);
+            using var resolving = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
             resolving.CancelAfter(TimeSpan.FromSeconds(35));
             var source = await resolve(job.Track, resolving.Token);
             cancellation.Token.ThrowIfCancellationRequested();
@@ -178,7 +181,7 @@ internal sealed class DownloadQueue(
             var progress = new Progress<AudioDownloadProgress>(update => job.UpdateProgress(update));
             job.ChangeStage(TransferStage.Transferring);
             destination = await AudioDownload.SaveAsync(source, directory, progress,
-                cancellation.Token, job.Track.Source);
+                lifetime.Token, job.Track.Source);
             cancellation.Token.ThrowIfCancellationRequested();
 
             job.ChangeStage(TransferStage.Finalizing);
@@ -222,7 +225,7 @@ internal sealed class DownloadQueue(
                 { PlaybackDiagnostics.WriteFailure(DiagnosticSector.Storage, "Descartar parcial", error); }
             }
             if (acquired) _slots.Release();
-            job.Cancellation = null;
+            job.Cancellation = job.Timeout = null;
             job.ChangeStage(final, failure);
         }
     }

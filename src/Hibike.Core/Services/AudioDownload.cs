@@ -49,6 +49,9 @@ public static partial class AudioDownload
         var destination = Path.Combine(directory, identity + "." + extension);
         var temporary = destination + ".part";
         var metadataPath = temporary + ".json";
+        // Completed files are immutable library assets. Registration may be retried without
+        // replacing an existing destination that a later failure would otherwise delete.
+        if (File.Exists(destination)) return destination;
 
         for (var attempt = 0; ; attempt++)
         {
@@ -105,8 +108,8 @@ public static partial class AudioDownload
         if (canResume)
         {
             request.Headers.Range = new RangeHeaderValue(saved, null);
-            if (IsStrongTag(previous!.ETag))
-                request.Headers.IfRange = new RangeConditionHeaderValue(new EntityTagHeaderValue(previous.ETag!));
+            if (TryGetStrongTag(previous!.ETag, out var previousTag))
+                request.Headers.IfRange = new RangeConditionHeaderValue(previousTag);
             else if (previous!.LastModified is { } lastModified)
                 request.Headers.IfRange = new RangeConditionHeaderValue(lastModified);
         }
@@ -154,17 +157,22 @@ public static partial class AudioDownload
         {
             // A 200 response to a Range request means that the server declined to resume.
             saved = 0;
+            if (File.Exists(temporary)) new FileInfo(temporary).Open(FileMode.Truncate).Dispose();
+            File.Delete(metadataPath);
         }
 
         var totalBytes = response.StatusCode == HttpStatusCode.PartialContent
             ? response.Content.Headers.ContentRange!.Length
             : response.Content.Headers.ContentLength;
         var metadata = new PartialMetadata(
-            response.Headers.ETag is { IsWeak: false } tag ? tag.ToString() : null,
+            TryGetStrongTag(response.Headers.ETag, out var strongTag) ? strongTag.ToString() : null,
             response.Content.Headers.LastModified, totalBytes);
-
-        // Persist the validator before writing chunks; every restart revalidates the range.
-        await File.WriteAllTextAsync(metadataPath, JsonSerializer.Serialize(metadata), token).ConfigureAwait(false);
+        var canPersist = response.StatusCode != HttpStatusCode.PartialContent
+            ? IsStrongTag(metadata.ETag) || metadata.LastModified.HasValue
+            : IsStrongTag(previous!.ETag) || previous!.LastModified.HasValue;
+        if (canPersist)
+            await File.WriteAllTextAsync(metadataPath, JsonSerializer.Serialize(metadata), token).ConfigureAwait(false);
+        else File.Delete(metadataPath);
         await using var input = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
         await using var output = new FileStream(temporary, saved == 0 ? FileMode.Create : FileMode.Open,
             FileAccess.Write, FileShare.None, BufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
@@ -188,7 +196,17 @@ public static partial class AudioDownload
                 { throw new IOException("Servidor não enviou áudio por 30 segundos.", error); }
                 idle.CancelAfter(Timeout.InfiniteTimeSpan);
                 if (count == 0) break;
-                await output.WriteAsync(buffer.AsMemory(0, count), token).ConfigureAwait(false);
+                var written = downloaded;
+                try
+                {
+                    await output.WriteAsync(buffer.AsMemory(0, count), token).ConfigureAwait(false);
+                    await output.FlushAsync(token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    output.SetLength(written);
+                    throw;
+                }
                 downloaded += count;
                 var elapsed = Stopwatch.GetElapsedTime(lastReport);
                 if (elapsed < ProgressInterval) continue;
@@ -196,7 +214,6 @@ public static partial class AudioDownload
                 lastBytes = downloaded;
                 lastReport = Stopwatch.GetTimestamp();
             }
-            await output.FlushAsync(token).ConfigureAwait(false);
         }
         finally
         {
@@ -222,8 +239,16 @@ public static partial class AudioDownload
         }
     }
 
-    private static bool IsStrongTag(string? etag) =>
-        !string.IsNullOrWhiteSpace(etag) && !etag.StartsWith("W/", StringComparison.OrdinalIgnoreCase);
+    private static bool IsStrongTag(string? etag) => TryGetStrongTag(etag, out _);
+
+    private static bool TryGetStrongTag(string? value, out EntityTagHeaderValue tag) =>
+        EntityTagHeaderValue.TryParse(value, out tag!) && !tag.IsWeak;
+
+    private static bool TryGetStrongTag(EntityTagHeaderValue? value, out EntityTagHeaderValue tag)
+    {
+        tag = value!;
+        return value is { IsWeak: false };
+    }
 
     private static PartialMetadata? ReadMetadata(string path)
     {

@@ -13,7 +13,12 @@ public sealed class LibraryStore(string directory, string fileName = "favorites.
         {
             return await ReadAsync();
         }
-        finally { _gate.Release(); }
+        finally
+        {
+            try { File.Delete(_path + ".tmp"); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+            _gate.Release();
+        }
     }
     private async Task<List<Track>> ReadAsync()
     {
@@ -33,15 +38,20 @@ public sealed class LibraryStore(string directory, string fileName = "favorites.
         var snapshot = tracks.ToArray();
         Validate(snapshot);
         await _gate.WaitAsync();
+        var temp = _path + ".tmp";
         try
         {
             // Never replace unreadable user data with an empty or partial in-memory library.
             await ReadAsync();
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-            var temp = _path + ".tmp";
             await File.WriteAllTextAsync(temp, JsonSerializer.Serialize(snapshot));
             File.Move(temp, _path, true);
         }
-        finally { _gate.Release(); }
+        finally
+        {
+            try { if (File.Exists(temp)) File.Delete(temp); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+            _gate.Release();
+        }
     }
 }
