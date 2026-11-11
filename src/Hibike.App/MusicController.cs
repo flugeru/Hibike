@@ -1,3 +1,4 @@
+successfully downloaded text file (SHA: fdf72bcc1590427661cafc8d7063b0c221403416)
 using System.Collections.ObjectModel;
 using Avalonia.Threading;
 using Hibike.Core.Models;
@@ -316,7 +317,7 @@ public sealed partial class MusicController
                 else _seekAfterLoad = recovery.Position;
                 _lastPlaybackPosition = recovery.Position;
             }
-            _playbackRecovery = null;
+            ClearRecovery();
             if (continuing) _listenTick = DateTime.UtcNow;
             else
             {
@@ -360,7 +361,7 @@ public sealed partial class MusicController
             if (ReferenceEquals(_play, request) && !request.IsCancellationRequested)
             {
                 if (!track.IsLocal && (recovery is not null || !AppServices.HasNetwork || ex is HttpRequestException or IOException))
-                    ScheduleRecovery(recovery ?? new(track, queueIndex, requestedSource, 0));
+                    HandlePlaybackFailure(ex, recovery ?? new(track, queueIndex, requestedSource, 0));
                 else Fail(ex.Message);
             }
         }
@@ -374,8 +375,7 @@ public sealed partial class MusicController
     }
     public void CancelPlayback()
     {
-        _playbackRecovery = null;
-        _bufferingSince = null;
+        ClearRecovery();
         if (_play is not null || !Player.IsPlaying) _wantsPlayback = false;
         _play?.Cancel();
     }
@@ -404,7 +404,7 @@ public sealed partial class MusicController
             return;
         }
         _advancing = true;
-        _playbackRecovery = null;
+        ClearRecovery();
         var session = _queueSession; var current = Current;
         try
         {

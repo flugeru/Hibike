@@ -1,3 +1,4 @@
+successfully downloaded text file (SHA: eceb37a97555167d958ba16e1426db12a63fff70)
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
@@ -155,7 +156,12 @@ public sealed partial class MainView
             if (modeChanged) UpdateDiscordOfflineMode();
             if (!network || offline)
             {
-                if (hadConnection) CancelExploreSearch();
+                if (hadConnection)
+                {
+                    CancelExploreSearch();
+                    if (_music.Current is { IsLocal: false } && !_music.CanPlayOffline(_music.Current))
+                        _music.PausePlayback();
+                }
                 _downloadQueue.PauseAll();
                 _accountNetworkRequest?.Cancel();
             }
