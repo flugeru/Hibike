@@ -159,8 +159,7 @@ public sealed partial class MainView
                 if (hadConnection)
                 {
                     CancelExploreSearch();
-                    if (_music.Current is { IsLocal: false } && !_music.CanPlayOffline(_music.Current))
-                        _music.PausePlayback();
+                    if (_music.Current is { IsLocal: false }) _music.PausePlayback();
                 }
                 _downloadQueue.PauseAll();
                 _accountNetworkRequest?.Cancel();
