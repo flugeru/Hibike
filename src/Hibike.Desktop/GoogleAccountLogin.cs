@@ -65,12 +65,7 @@ internal static class GoogleAccountLogin
             var queryState = QueryValue(query, "state");
             var valid = requestUri?.AbsolutePath == "/" && queryState == state;
             var body = Encoding.UTF8.GetBytes(valid ? "Volte ao Hibike. Esta janela pode ser fechada." : "Solicitacao invalida.");
-            var header = Encoding.ASCII.GetBytes($"HTTP/1.1 {(valid ? "200 OK" : "400 Bad Request")}
-Content-Type: text/plain; charset=utf-8
-Content-Length: {body.Length}
-Connection: close
-
-");
+            var header = Encoding.ASCII.GetBytes($"HTTP/1.1 {(valid ? "200 OK" : "400 Bad Request")}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n");
             await stream.WriteAsync(header, token); await stream.WriteAsync(body, token);
             if (!valid) continue;
             code = QueryValue(query, "code");
