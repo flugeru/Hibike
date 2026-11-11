@@ -153,11 +153,18 @@ public sealed class VlcAudioPlayer : IAudioPlayer
     public void Seek(double seconds) { if (double.IsFinite(seconds)) Send(() => { if (_player is not null) _player.Time = (long)(Math.Clamp(seconds, 0, Duration) * 1000); }); }
     public void Dispose()
     {
+        Task tail;
         lock (_commands)
         {
             if (_disposed) return;
-            Send(() => { _player?.Dispose(); _engine?.Dispose(); _isPlaying = false; });
             _disposed = true;
+            var previous = _tail;
+            tail = _tail = Task.Run(async () =>
+            {
+                try { await previous.ConfigureAwait(false); } catch { }
+                _player?.Dispose(); _engine?.Dispose(); _isPlaying = false;
+            });
         }
+        try { tail.Wait(TimeSpan.FromSeconds(5)); } catch (AggregateException) { }
     }
 }

@@ -4,6 +4,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing vMAJOR.MINOR.PATCH tag
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -48,14 +53,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
+          tag="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           mv release/linux/Hibike-x86_64.AppImage release/
           mv release/linux/README-Linux.md release/README-Linux.md
           rmdir release/linux
           (cd release && sha256sum *.exe *.zip *.apk *.tar.xz *.AppImage > SHA256SUMS.txt)
-          cat > notes.txt <<'EOF'
-          ## Hibike 0.2.0
+          cat > notes.txt <<EOF
+          ## Hibike ${tag#v}
 
           Atualização experimental para Windows x64 e Android ARM64.
 

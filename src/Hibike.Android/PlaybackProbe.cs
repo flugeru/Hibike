@@ -88,6 +88,7 @@ internal static class PlaybackProbe
         catch (Exception ex)
         {
             global::Android.Util.Log.Error("HibikeProbe", "HIBIKE_PROBE_LOCAL_FAILED " + ex);
+            global::Android.Util.Log.Info("HibikeProbe", "HIBIKE_PROBE_DONE_FAILED");
             return;
         }
         var runner = new AndroidCommandRunner(context);
@@ -101,6 +102,7 @@ internal static class PlaybackProbe
         catch (Exception ex)
         {
             global::Android.Util.Log.Error("HibikeProbe", "HIBIKE_PROBE_RUNTIME_FAILED " + ex.Message);
+            global::Android.Util.Log.Info("HibikeProbe", "HIBIKE_PROBE_DONE_FAILED");
             return;
         }
         try
@@ -148,7 +150,8 @@ internal static class PlaybackProbe
                     return title is not null && title.Bounds.Width > 40 && title.Bounds.Height > 5 && navigation.Length == 4
                         && navigation.All(b => b.IsEffectivelyVisible && b.Bounds.Width >= view.Bounds.Width / 4 - 2);
                 });
-                global::Android.Util.Log.Info("HibikeProbe", layoutOk ? "HIBIKE_PROBE_LAYOUT_OK titles/navigation/return" : "HIBIKE_PROBE_LAYOUT_FAILED titles/navigation/return");
+                if (!layoutOk) throw new IOException("titles/navigation/return");
+                global::Android.Util.Log.Info("HibikeProbe", "HIBIKE_PROBE_LAYOUT_OK titles/navigation/return");
                 await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => AppServices.OpenPlayerView?.Invoke());
             }
             catch (Exception ex) { global::Android.Util.Log.Error("HibikeProbe", "HIBIKE_PROBE_LAYOUT_FAILED " + ex.Message); }

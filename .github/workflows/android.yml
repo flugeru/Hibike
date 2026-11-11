@@ -2,7 +2,7 @@ name: Hibike • Android APK
 
 on:
   push:
-    branches: [main, work-next, feat/experimental-player-lab, queue-fix, android-player-features]
+    branches: [main, work-next, feat/experimental-player-lab, queue-fix, android-player-features, refactor-library-downloads]
     paths: ['src/**', 'tests/**', 'scripts/**', 'Directory.*', 'global.json', 'Hibike.slnx', '.github/**']
   pull_request:
     paths: ['src/**', 'tests/**', 'scripts/**', 'Directory.*', 'global.json', 'Hibike.slnx', '.github/**']
@@ -83,6 +83,7 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" | tee artifacts/pr-android/package-info.txt
           grep -q "package: name='com.flugel.hibike'" artifacts/pr-android/package-info.txt
+          grep -q "sdkVersion:'24'" artifacts/pr-android/package-info.txt
           python3 scripts/check_apk.py "$apk"
           mkdir -p artifacts/pr-release
           cp "$apk" artifacts/pr-release/Hibike-Android-arm64-TEST.apk

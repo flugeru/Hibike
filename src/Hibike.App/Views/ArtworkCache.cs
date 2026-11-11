@@ -1,4 +1,6 @@
 using Avalonia.Media.Imaging;
+using System.Net;
+using System.Net.Sockets;
 
 namespace Hibike.App.Views;
 
@@ -6,7 +8,7 @@ namespace Hibike.App.Views;
 internal static class ArtworkCache
 {
     private static readonly object Gate = new();
-    private static readonly HttpClient Client = new() { Timeout = TimeSpan.FromSeconds(12) };
+    private static readonly HttpClient Client = new(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(12) };
     private static readonly SemaphoreSlim Downloads = new(4), Decodes = new(2);
     private static readonly Dictionary<(string Source, string Fallback, int Pixels), Entry> Images = [];
     private static readonly Dictionary<string, BytesEntry> Bytes = [];
@@ -74,7 +76,18 @@ internal static class ArtworkCache
                         if (abandoned) { bitmap.Dispose(); throw new OperationCanceledException(entry.Cancel.Token); }
                         Dispose(expired); return bitmap;
                     }
-                    catch { lock (Gate) { if (Images.GetValueOrDefault(key) == entry) Images.Remove(key); } throw; }
+                    catch
+                    {
+                        lock (Gate)
+                        {
+                            if (Images.GetValueOrDefault(key) == entry)
+                            {
+                                Images.Remove(key);
+                                if (entry.Bitmap is not null) _imageBytes -= entry.Size;
+                            }
+                        }
+                        throw;
+                    }
                 });
             }
             cached = entry.Bitmap is not null;
@@ -93,7 +106,8 @@ internal static class ArtworkCache
         List<Bitmap> expired; bool cancel = false;
         lock (Gate)
         {
-            entry.Users--; entry.Used = ++_clock;
+            if (entry.Users > 0) entry.Users--;
+            entry.Used = ++_clock;
             if (entry.Users == 0 && entry.Bitmap is null && !entry.Loading.IsCompleted)
             {
                 entry.Abandoned = cancel = true;
@@ -102,6 +116,7 @@ internal static class ArtworkCache
             expired = TrimImages();
         }
         if (cancel) entry.Cancel.Cancel();
+        if (entry.Loading.IsCompleted && (entry.Abandoned || entry.Bitmap is not null && !Images.ContainsValue(entry))) entry.Cancel.Dispose();
         Dispose(expired);
     }
     private static List<Bitmap> TrimImages()
@@ -112,6 +127,7 @@ internal static class ArtworkCache
         {
             if (_imageBytes <= ImageBudget && Images.Count <= 128) break;
             Images.Remove(item.Key); _imageBytes -= item.Value.Size; expired.Add(item.Value.Bitmap!);
+            item.Value.Cancel.Dispose();
         }
         return expired;
     }
@@ -139,15 +155,22 @@ internal static class ArtworkCache
                         {
                             if (entry.Abandoned) throw new OperationCanceledException(entry.Cancel.Token);
                             entry.Size = data.Length; _encodedBytes += data.Length;
-                            foreach (var old in Bytes.Where(p => p.Value.Size > 0).OrderBy(p => p.Value.Used).ToArray())
-                            {
-                                if (_encodedBytes <= ByteBudget && Bytes.Count <= 128) break;
-                                Bytes.Remove(old.Key); _encodedBytes -= old.Value.Size;
-                            }
+                            TrimBytes();
                         }
                         return data;
                     }
-                    catch { lock (Gate) { if (Bytes.GetValueOrDefault(key) == entry) Bytes.Remove(key); } throw; }
+                    catch
+                    {
+                        lock (Gate)
+                        {
+                            if (Bytes.GetValueOrDefault(key) == entry)
+                            {
+                                Bytes.Remove(key);
+                                if (entry.Size > 0) _encodedBytes -= entry.Size;
+                            }
+                        }
+                        throw;
+                    }
                 });
             }
             entry.Users++; entry.Used = ++_clock;
@@ -158,13 +181,26 @@ internal static class ArtworkCache
             bool cancel = false;
             lock (Gate)
             {
-                if (--entry.Users == 0 && entry.Size == 0 && !entry.Loading.IsCompleted)
+                if (entry.Users > 0) entry.Users--;
+                entry.Used = ++_clock;
+                if (entry.Users == 0 && entry.Size == 0 && !entry.Loading.IsCompleted)
                 {
                     entry.Abandoned = cancel = true;
                     if (Bytes.GetValueOrDefault(key) == entry) Bytes.Remove(key);
                 }
+                TrimBytes();
             }
             if (cancel) entry.Cancel.Cancel();
+            if (entry.Loading.IsCompleted && (entry.Abandoned || entry.Size > 0 && !Bytes.ContainsValue(entry))) entry.Cancel.Dispose();
+        }
+    }
+
+    private static void TrimBytes()
+    {
+        foreach (var old in Bytes.Where(p => p.Value.Users == 0 && p.Value.Size > 0).OrderBy(p => p.Value.Used).ToArray())
+        {
+            if (_encodedBytes <= ByteBudget && Bytes.Count <= 128) break;
+            Bytes.Remove(old.Key); _encodedBytes -= old.Value.Size; old.Value.Cancel.Dispose();
         }
     }
 
@@ -201,11 +237,9 @@ internal static class ArtworkCache
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
             timeout.CancelAfter(TimeSpan.FromSeconds(12));
-            var fetched = await Client.GetAsync(source, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
-            if (!fetched.IsSuccessStatusCode && source != fallback)
-            { fetched.Dispose(); fetched = await Client.GetAsync(fallback, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false); }
-            using var response = fetched;
-            response.EnsureSuccessStatusCode();
+            var fetched = await FetchAsync(source, timeout.Token).ConfigureAwait(false);
+            if (fetched is null && source != fallback) fetched = await FetchAsync(fallback, timeout.Token).ConfigureAwait(false);
+            using var response = fetched ?? throw new HttpRequestException("Capa remota inválida.");
             if (response.Content.Headers.ContentLength is > 4_000_000) throw new IOException("Capa excede o limite de carregamento.");
             using var input = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
             using var memory = new MemoryStream(); var buffer = new byte[8192];
@@ -218,5 +252,41 @@ internal static class ArtworkCache
             return memory.ToArray();
         }
         finally { Downloads.Release(); }
+    }
+
+    private static async Task<HttpResponseMessage?> FetchAsync(string url, CancellationToken token)
+    {
+        if (!IsSafeRemote(url, out var current)) return null;
+        for (var hop = 0; hop < 5; hop++)
+        {
+            var response = await Client.GetAsync(current, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
+            if (response.StatusCode is HttpStatusCode.MovedPermanently or HttpStatusCode.Found or HttpStatusCode.SeeOther or HttpStatusCode.TemporaryRedirect or (HttpStatusCode)308)
+            {
+                var location = response.Headers.Location; response.Dispose();
+                if (location is null) return null;
+                current = location.IsAbsoluteUri ? location : new Uri(current, location);
+                if (!IsSafeRemote(current.AbsoluteUri, out current)) return null;
+                continue;
+            }
+            return response.IsSuccessStatusCode ? response : Dispose(response);
+        }
+        return null;
+    }
+    private static HttpResponseMessage? Dispose(HttpResponseMessage response) { response.Dispose(); return null; }
+    private static bool IsSafeRemote(string? url, out Uri uri)
+    {
+        uri = null!;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var parsed) || parsed.Scheme != Uri.UriSchemeHttps || (!parsed.IsDefaultPort && parsed.Port != 443)) return false;
+        if (parsed.HostNameType is UriHostNameType.IPv4 or UriHostNameType.IPv6 && (!IPAddress.TryParse(parsed.Host, out var ip) || IsPrivate(ip))) return false;
+        if (parsed.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) || parsed.Host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase) || parsed.Host.EndsWith(".local", StringComparison.OrdinalIgnoreCase)) return false;
+        uri = parsed; return true;
+    }
+    private static bool IsPrivate(IPAddress ip)
+    {
+        if (IPAddress.IsLoopback(ip)) return true;
+        if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
+        var b = ip.GetAddressBytes();
+        if (ip.AddressFamily == AddressFamily.InterNetwork) return b[0] is 0 or 10 or 127 || b[0] == 169 && b[1] == 254 || b[0] == 172 && b[1] is >= 16 and <= 31 || b[0] == 192 && b[1] == 168 || b[0] == 100 && b[1] is >= 64 and <= 127 || b[0] >= 224;
+        return ip.AddressFamily != AddressFamily.InterNetworkV6 || ip.IsIPv6LinkLocal || ip.IsIPv6SiteLocal || ip.IsIPv6Multicast || b[0] is 0xfc or 0xfd or 0xff;
     }
 }

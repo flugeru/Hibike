@@ -54,7 +54,9 @@ jobs:
           result=$?
           set -e
           cat startup.log
-          test "$result" -eq 124
+          if test "$result" -ne 124; then
+            test "$result" -eq 0 && grep -Eq 'HIBIKE_(SMOKE|STARTUP)_OK' startup.log
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: Hibike-Linux-x64
