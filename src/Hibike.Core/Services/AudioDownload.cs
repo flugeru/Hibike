@@ -157,7 +157,7 @@ public static partial class AudioDownload
         {
             // A 200 response to a Range request means that the server declined to resume.
             saved = 0;
-            if (File.Exists(temporary)) new FileInfo(temporary).Open(FileMode.Truncate).Dispose();
+            if (File.Exists(temporary)) File.Open(temporary, FileMode.Truncate, FileAccess.Write, FileShare.None).Dispose();
             File.Delete(metadataPath);
         }
 

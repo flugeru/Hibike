@@ -1,4 +1,3 @@
-successfully downloaded text file (SHA: eceb37a97555167d958ba16e1426db12a63fff70)
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;

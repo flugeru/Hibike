@@ -113,11 +113,8 @@ public sealed class AndroidCommandRunner(Context context) : ICommandRunner
             {
                 PlaybackDiagnostics.Write("YT-DLP", "Processo interrompido pelo cancelamento/limite de tempo.");
                 process.Destroy();
-                if (!process.WaitFor(500, Java.Util.Concurrent.TimeUnit.Milliseconds))
-                {
-                    process.DestroyForcibly();
-                    process.WaitFor();
-                }
+                process.DestroyForcibly();
+                await Task.Run(() => process.WaitFor(), CancellationToken.None);
                 await Task.WhenAll(output, error);
                 throw;
             }

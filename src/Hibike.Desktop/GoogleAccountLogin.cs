@@ -55,10 +55,10 @@ internal static class GoogleAccountLogin
         string? code = null;
         while (code is null)
         {
-            using var client = await socket.AcceptAsync(token);
+            using var client = await socket.AcceptAsync().WaitAsync(token);
             using var stream = new NetworkStream(client, ownsSocket: false);
             using var reader = new StreamReader(stream, Encoding.ASCII, false, 4096, leaveOpen: true);
-            var request = await reader.ReadLineAsync(token) ?? "";
+            var request = await reader.ReadLineAsync().WaitAsync(token) ?? "";
             var target = request.Split(' ').ElementAtOrDefault(1);
             var requestUri = Uri.TryCreate("http://127.0.0.1" + target, UriKind.Absolute, out var parsed) ? parsed : null;
             var query = requestUri is null ? null : System.Web.HttpUtility.ParseQueryString(requestUri.Query);

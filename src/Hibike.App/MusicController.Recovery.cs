@@ -1,4 +1,3 @@
-successfully downloaded text file (SHA: 2125f4605841db02228b7eaf81b7064dbf7834fc)
 using Hibike.Core.Models;
 using Hibike.Core.Services;
 

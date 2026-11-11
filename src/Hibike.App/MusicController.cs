@@ -1,4 +1,3 @@
-successfully downloaded text file (SHA: fdf72bcc1590427661cafc8d7063b0c221403416)
 using System.Collections.ObjectModel;
 using Avalonia.Threading;
 using Hibike.Core.Models;
