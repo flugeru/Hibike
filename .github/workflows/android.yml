@@ -54,7 +54,7 @@ jobs:
       - name: Prepare verified Python, QuickJS and YT-DLP
         run: python3 scripts/prepare_android_runtime.py --abi arm64-v8a
       # Pull requests must never access the production signing secrets.
-      # Create a temporary test key and publish a separately signed APK for device testing.
+      # Use a separate application ID so the temporary key cannot conflict with the release app.
       - name: Publish installable test APK for pull request
         if: github.event_name == 'pull_request'
         shell: bash
@@ -66,6 +66,7 @@ jobs:
           dotnet publish src/Hibike.Android/Hibike.Android.csproj \
             -f net10.0-android -c Release -r android-arm64 \
             -p:RuntimeIdentifiers=android-arm64 \
+            -p:ApplicationId=com.flugel.hibike.test \
             -p:AndroidSdkDirectory="$ANDROID_HOME" \
             -p:AndroidKeyStore=true \
             -p:AndroidSigningKeyStore="$RUNNER_TEMP/hibike-pr-test.jks" \
@@ -82,7 +83,7 @@ jobs:
           test -n "$apk"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" | tee artifacts/pr-android/package-info.txt
-          grep -q "package: name='com.flugel.hibike'" artifacts/pr-android/package-info.txt
+          grep -Fq "package: name='com.flugel.hibike.test'" artifacts/pr-android/package-info.txt
           grep -q "sdkVersion:'24'" artifacts/pr-android/package-info.txt
           python3 scripts/check_apk.py "$apk"
           mkdir -p artifacts/pr-release
@@ -95,6 +96,17 @@ jobs:
           path: artifacts/pr-release/Hibike-Android-arm64-TEST.apk
           if-no-files-found: error
           retention-days: 30
+      - name: Explain how to install the test APK
+        if: github.event_name == 'pull_request'
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          Extract `Hibike-Android-arm64-TEST.apk` from the artifact ZIP. It installs alongside
+          the official Hibike app. Each run uses a fresh test key, so uninstall any previous
+          `com.flugel.hibike.test` build before installing this one.
+
+          To update the official Hibike app in place, use `Hibike-Android-arm64.apk` from a
+          signed branch build or a GitHub release.
+          EOF
       - name: Restore signing key from Secrets
         if: github.event_name != 'pull_request'
         shell: bash
@@ -156,7 +168,7 @@ jobs:
           retention-days: 30
       - name: Remove temporary signing material
         if: always()
-        run: rm -f "$RUNNER_TEMP/hibike-signing.jks" "$RUNNER_TEMP/hibike-signing.der"
+        run: rm -f "$RUNNER_TEMP/hibike-signing.jks" "$RUNNER_TEMP/hibike-signing.der" "$RUNNER_TEMP/hibike-pr-test.jks"
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
