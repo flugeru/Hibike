@@ -8,7 +8,7 @@ namespace Hibike.App.Views;
 
 public sealed partial class MainView
 {
-    private readonly bool _androidLayout = OperatingSystem.IsAndroid();
+    private readonly bool _androidLayout;
     private Grid? _mobileLibrary;
     private Grid? _mobileQueue;
     private Grid? _mobileSearchPage;

@@ -55,7 +55,9 @@ public sealed partial class MainView
                 var distance = fling.Velocity * (decay - 1) / InertiaDecay;
                 var bottom = Math.Max(0, _homeScroll.Extent.Height - _homeScroll.Viewport.Height);
                 var position = Math.Clamp(fling.Offset + distance, 0, bottom);
+                var previous = _homeScroll.Offset.Y;
                 _homeScroll.SetCurrentValue(ScrollViewer.OffsetProperty, new Vector(_homeScroll.Offset.X, position));
+                if (_androidLayout && position != previous) FollowTopBarScroll(_homeScroll, position - previous);
                 if (position <= 0 || position >= bottom || Math.Abs(fling.Velocity * decay) < 5)
                     StopHomeInertia();
                 else

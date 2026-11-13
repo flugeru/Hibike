@@ -243,6 +243,7 @@ public sealed partial class MainView
 
     private void BackFromCollection()
     {
+        RevealMobileTopBars();
         if (!_collectionBack.TryPop(out var route))
         {
             _page = "home";
@@ -265,6 +266,7 @@ public sealed partial class MainView
         bool replace = false, bool artistPage = false, Button? footer = null)
     {
         ClosePlayer(); CloseTopMenu(); CloseSheet();
+        RevealMobileTopBars();
         var prior = _page == "collection" ? _collectionPage.Child : null;
         var scrollPositions = prior?.GetVisualDescendants().OfType<ScrollViewer>()
             .Select(scroll => (scroll, scroll.Offset)).ToArray() ?? [];
@@ -310,6 +312,7 @@ public sealed partial class MainView
         list.ItemsSource = footer is null ? tracks : tracks.Cast<object>().Append(footer).ToArray();
         Put(grid, tracks.Count > 0 ? UiTheme.FadingScroll(list)
             : EmptyState("library", message ?? "Nenhuma faixa disponível", "", retry is null ? null : "Tentar novamente", retry), 2, 0);
+        MakeTopRowsCollapsible(grid, 2);
         _collectionPage.Child = grid; _page = "collection"; CloseSheet(); Refresh();
     }
 }

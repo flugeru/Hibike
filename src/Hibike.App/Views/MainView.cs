@@ -66,8 +66,11 @@ public sealed partial class MainView : UserControl
     private string _page = "home";
     private const string Muted = UiTheme.TextSecondary, Accent = UiTheme.Primary;
 
-    public MainView(MusicController music)
+    public MainView(MusicController music) : this(music, OperatingSystem.IsAndroid()) { }
+
+    internal MainView(MusicController music, bool androidLayout)
     {
+        _androidLayout = androidLayout;
         _music = music; Background = UiTheme.Brush(UiTheme.Background);
         TopLevel.SetAutoSafeAreaPadding(this, true);
         _sidebar = BuildSidebar(); _root.Children.Add(_sidebar); Grid.SetRowSpan(_sidebar, 3);
@@ -115,6 +118,7 @@ public sealed partial class MainView : UserControl
         InitializeWorkspace(content);
         InitializeOfflineWorkspace(content, statusArea);
         InitializeTopMenu(content);
+        InitializeCollapsingTopBars(content);
         var navGrid = new Grid { ColumnDefinitions = new("*,*,*,*,*"), Height = OperatingSystem.IsAndroid() ? 60 : UiTheme.NavHeight, Background = UiTheme.Brush(UiTheme.Surface) };
         var tabs = new[] { ("home", "Início", "home"), ("explore", "Buscar", "search"), ("library", "Biblioteca", "library"), ("downloads", "Downloads", "download"), ("queue", "Fila", "queue") };
         for (var index = 0; index < tabs.Length; index++)
@@ -219,6 +223,7 @@ public sealed partial class MainView : UserControl
         {
             _queueOpenedFromPlayer = false;
             ClosePlayer(); CloseTopMenu(); CloseSheet();
+            RevealMobileTopBars();
             if (key == "library" && _page == "library") _mobileLibraryGroup = null;
             if (key == "queue") _queueOpen = false;
             _page = key;
@@ -438,6 +443,7 @@ public sealed partial class MainView : UserControl
         RefreshMiniPlayerInset();
         if (_animatedPage != visualPage)
         {
+            RevealMobileTopBars();
             var previous = _animatedPage;
             _animatedPage = visualPage;
             var page = visualPage switch

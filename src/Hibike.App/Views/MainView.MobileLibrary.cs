@@ -64,6 +64,7 @@ public sealed partial class MainView
             {
                 if (_mobileLibraryTab != tab)
                 {
+                    RevealMobileTopBars();
                     _mobileLibraryTab = tab;
                     _mobileLibraryScroll.Offset = default;
                     RefreshMobileLibrary();
@@ -140,6 +141,7 @@ public sealed partial class MainView
             if (_page != "library" || e.PreviousSize.Width == e.NewSize.Width) return;
             RefreshMobileLibrary();
         };
+        MakeTopRowsCollapsible(page, 5);
         return page;
     }
 
@@ -415,6 +417,7 @@ public sealed partial class MainView
     {
         if (group.OnlinePlaylist is { } playlist && _account is { } account)
             return ShowAccountTracksAsync(account, playlist.Id, playlist.Title);
+        RevealMobileTopBars();
         _mobileLibraryGroupOffset = _mobileLibraryScroll.Offset;
         _mobileLibraryGroup = group;
         _mobileLibraryScroll.Offset = default;
@@ -424,6 +427,7 @@ public sealed partial class MainView
 
     private void CloseMobileLibraryGroup()
     {
+        RevealMobileTopBars();
         _mobileLibraryGroup = null;
         RefreshMobileLibrary();
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>

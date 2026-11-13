@@ -25,6 +25,7 @@ public sealed partial class MainView
     private void OpenPreferencesPage(string page, params Control[] sections)
     {
         ClosePlayer(); CloseTopMenu(); CloseSheet();
+        RevealMobileTopBars();
         var content = (Grid)_main.Child!;
         if (_preferencesPage is not null) content.Children.Remove(_preferencesPage);
         var body = new StackPanel { Spacing = UiTheme.SectionGap, MaxWidth = 720,

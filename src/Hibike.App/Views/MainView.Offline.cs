@@ -147,8 +147,8 @@ public sealed partial class MainView
         _downloadLibrary.Children.Add(tools);
         Put(_downloadLibrary, new Grid { Children = { UiTheme.FadingScroll(_downloadItems), _downloadEmpty } }, 1, 0);
         var tabs = new Grid { ColumnDefinitions = new("*,*"), ColumnSpacing = 2 };
-        _deviceTab = ActionButton("No aparelho", () => { _showTransfers = false; RefreshDownloadQueue(); return Task.CompletedTask; });
-        _transfersTab = ActionButton("Transferências", () => { _showTransfers = true; RefreshDownloadQueue(); return Task.CompletedTask; });
+        _deviceTab = ActionButton("No aparelho", () => SelectDownloadsTab(false));
+        _transfersTab = ActionButton("Transferências", () => SelectDownloadsTab(true));
         foreach (var tab in new[] { _deviceTab, _transfersTab })
         {
             tab.Classes.Add("subtle");
@@ -177,8 +177,19 @@ public sealed partial class MainView
             Grid.SetRow(filterRail, compactRows ? 1 : 2);
             tools.RowDefinitions[2].Height = compactRows ? new GridLength(0) : GridLength.Auto;
         };
+        MakeTopRowsCollapsible(_downloadsPage, 2);
+        MakeTopRowsCollapsible(_downloadLibrary, 1);
+        MakeTopRowsCollapsible(activity, 1);
         RefreshDownloadQueue();
         Put(content, _downloadsPage, 2, 0);
+    }
+
+    private Task SelectDownloadsTab(bool showTransfers)
+    {
+        if (_showTransfers != showTransfers) RevealMobileTopBars();
+        _showTransfers = showTransfers;
+        RefreshDownloadQueue();
+        return Task.CompletedTask;
     }
 
     private void RefreshOfflineWorkspace()
@@ -302,6 +313,7 @@ public sealed partial class MainView
             return Task.CompletedTask;
         }
         _downloadQueue.Enqueue(track);
+        RevealMobileTopBars();
         _showTransfers = true;
         RefreshDownloadQueue();
         return Task.CompletedTask;

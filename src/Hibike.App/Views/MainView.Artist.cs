@@ -54,7 +54,7 @@ public sealed partial class MainView
                 "Nenhuma faixa salva deste artista.", replace: true, artistPage: true);
             if (candidates.Count == 0) return;
             var grid = (Grid)_collectionPage.Child!;
-            var actions = (WrapPanel)grid.Children.Single(control => Grid.GetRow(control) == 1);
+            var actions = CollectionActions(grid);
             actions.Children.Add(ActionButton("Perfis no YouTube Music", () =>
             {
                 var profiles = CollectionList<MusicArtist>(artist => SearchCatalogRow(
@@ -72,7 +72,7 @@ public sealed partial class MainView
                 () => OpenTrackArtistAsync(track, replace: true), replace: true, artistPage: true);
             if (saved.Length > 0 && _collectionPage.Child is Grid grid)
             {
-                var actions = (WrapPanel)grid.Children.Single(control => Grid.GetRow(control) == 1);
+                var actions = CollectionActions(grid);
                 actions.Children.Add(ActionButton("Tentar perfil online", () => OpenTrackArtistAsync(track, replace: true)));
             }
         }
@@ -122,9 +122,10 @@ public sealed partial class MainView
             body.Children.Add(Text("O catálogo não retornou faixas nem lançamentos para este perfil.", UiTheme.Caption, Muted));
         body.Children.Add(Text("Mais do artista", UiTheme.SectionTitle));
         body.Children.Add(navigation);
-        var previous = grid.Children.Single(c => Grid.GetRow(c) == 2);
+        var row = grid.RowDefinitions.Count - 1;
+        var previous = CollectionBody(grid);
         grid.Children.Remove(previous);
-        Put(grid, UiTheme.FadingScroll(body), 2, 0);
+        Put(grid, UiTheme.FadingScroll(body), row, 0);
     }
 
     private Control ArtistShelf(string title, IEnumerable<ArtistCollection> entries, Func<ArtistCollection, Task> open, Func<Task>? more = null)
@@ -179,7 +180,7 @@ public sealed partial class MainView
             }
             if (profile.Tracks.Count > 0)
             {
-                var actions = (WrapPanel)grid.Children.Single(control => Grid.GetRow(control) == 1);
+                var actions = CollectionActions(grid);
                 actions.Children.Add(ActionButton("Ver lançamentos", () =>
                 {
                     ShowSheet(section.Title, BuildReleases());
@@ -188,9 +189,10 @@ public sealed partial class MainView
             }
             else
             {
-                var previous = grid.Children.Single(control => Grid.GetRow(control) == 2);
+                var row = grid.RowDefinitions.Count - 1;
+                var previous = CollectionBody(grid);
                 grid.Children.Remove(previous);
-                Put(grid, UiTheme.FadingScroll(BuildReleases()), 2, 0);
+                Put(grid, UiTheme.FadingScroll(BuildReleases()), row, 0);
             }
         }
         catch (Exception e) when (e is not OutOfMemoryException)
@@ -363,8 +365,9 @@ public sealed partial class MainView
                 if (batch.Count >= 50 && next.Length > 0) rows.Add(more);
                 if (index != 1) return;
                 var grid = (Grid)page!;
-                foreach (var child in grid.Children.Where(c => Grid.GetRow(c) == 2).ToArray()) grid.Children.Remove(child);
-                Put(grid, playlists.Count == 0 ? Text("Nenhuma playlist pública neste canal.", UiTheme.Body) : scroll, 2, 0);
+                var row = grid.RowDefinitions.Count - 1;
+                grid.Children.Remove(CollectionBody(grid));
+                Put(grid, playlists.Count == 0 ? Text("Nenhuma playlist pública neste canal.", UiTheme.Body) : scroll, row, 0);
             }
             catch (Exception e) when (e is not OutOfMemoryException)
             {

@@ -110,6 +110,7 @@ public sealed partial class MainView
         _mobileQueueEmpty = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch,
             VerticalContentAlignment = VerticalAlignment.Stretch };
         Put(page, new Grid { Children = { _mobileQueueScroll, _mobileQueueEmpty } }, 5, 0);
+        MakeTopRowsCollapsible(page, 3);
         return page;
     }
 

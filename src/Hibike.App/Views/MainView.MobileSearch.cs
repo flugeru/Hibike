@@ -114,6 +114,7 @@ public sealed partial class MainView
             if (_searchScope == "Sua biblioteca" || !_music.CanUseOnline) await Task.Delay(120);
             if (version == filterVersion && _page == "explore") RefreshMobileSearch();
         };
+        MakeTopRowsCollapsible(page, 3);
         return page;
 
         Button ScopeButton(string name)

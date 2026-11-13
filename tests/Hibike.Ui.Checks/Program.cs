@@ -19,7 +19,8 @@ internal static partial class Program
     {
         var directory = Path.Combine(Path.GetTempPath(), "hibike-ui-check-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
-        if (args.Contains("--queue-only") || args.Contains("--performance-study") || args.Contains("--performance-checks"))
+        if (args.Contains("--queue-only") || args.Contains("--performance-study") || args.Contains("--performance-checks")
+            || args.Contains("--collapsing-top-bars"))
         {
             // Keep onboarding and home discovery offline before the view is attached.
             File.WriteAllText(Path.Combine(directory, "personalization.json"), "{\"OnboardingCompleted\":true}");
@@ -42,6 +43,13 @@ internal static partial class Program
             try
             {
                 var window = lifetime.MainWindow!; var view = (MainView)window.Content!;
+                if (args.Contains("--collapsing-top-bars"))
+                {
+                    await CheckCollapsingTopBarsAsync(window);
+                    Console.WriteLine("Android collapsing top bar checks passed.");
+                    result = 0;
+                    return;
+                }
                 if (args.Contains("--performance-checks"))
                 {
                     await RunPerformanceStudyAsync(view, window);
