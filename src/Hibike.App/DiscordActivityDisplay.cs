@@ -22,21 +22,21 @@ public static class DiscordActivityDisplay
             || string.Equals(album.Normalize(), artist?.Trim().Normalize(), StringComparison.OrdinalIgnoreCase))
             album = null;
 
-        // The card has one secondary text field. Reserve space for Hibike even on long albums.
-        var state = album is null ? AppName : Limit(album, 128 - Encoding.UTF8.GetByteCount(" · " + AppName)) + " · " + AppName;
-        return (title ?? AppName, Optional(artist), state, Optional(album));
+        // Discord renders the large image caption below state on listening cards.
+        var albumLine = Optional(album);
+        return (title ?? AppName, Optional(artist), albumLine ?? AppName, albumLine is null ? null : AppName);
     }
 
     private static string? Optional(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : Limit(value.Trim());
 
-    private static string Limit(string value, int maxBytes = 128)
+    private static string Limit(string value)
     {
         var result = new StringBuilder();
         var bytes = 0;
         foreach (var rune in value.EnumerateRunes())
         {
-            if (bytes + rune.Utf8SequenceLength > maxBytes) break;
+            if (bytes + rune.Utf8SequenceLength > 128) break;
             result.Append(rune);
             bytes += rune.Utf8SequenceLength;
         }
