@@ -29,6 +29,11 @@ public interface IAudioPlayer : IDisposable
     void Seek(double seconds);
 }
 
+public interface IAudioPlaybackStateNotifications
+{
+    event EventHandler? PlaybackStateChanged;
+}
+
 public interface IAudioPreparation
 {
     Task BeginPreparationAsync(Track track, CancellationToken cancellationToken);

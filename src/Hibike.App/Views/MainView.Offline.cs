@@ -228,7 +228,8 @@ public sealed partial class MainView
             }
         }
 
-        var showBanner = !showDownloads && (!network && !offline || network && offline);
+        var showBanner = !showDownloads && _page is not ("library" or "queue")
+            && (!network && !offline || network && offline);
         if (showBanner && !_connectionBanner.IsVisible) UiMotion.Enter(_connectionBanner, -4);
         _connectionBanner.IsVisible = showBanner;
         _downloadsPage.IsVisible = showDownloads;

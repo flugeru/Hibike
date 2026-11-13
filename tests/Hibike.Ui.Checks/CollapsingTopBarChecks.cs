@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Hibike.App;
 using Hibike.App.Views;
@@ -171,15 +172,12 @@ internal static partial class Program
             Check(header.Bounds.Height == expandedHeight, "Leaving a collapsed screen hid the next page toolbar");
 
             music.SetOfflineMode(true);
-            foreach (var (route, field) in new[] { ("library", "_mobileLibrary"), ("queue", "_mobileQueue") })
+            foreach (var route in new[] { "library", "queue" })
             {
                 Navigate(route);
                 view.UpdateLayout();
                 var banner = Field<Border>("_connectionBanner");
-                var page = Field<Grid>(field);
-                var bannerBottom = banner.TranslatePoint(new Point(0, banner.Bounds.Height), view)!.Value.Y;
-                var pageTop = page.TranslatePoint(default, view)!.Value.Y;
-                Check(banner.IsEffectivelyVisible && bannerBottom <= pageTop, $"Offline banner overlapped {route}");
+                Check(!banner.IsEffectivelyVisible, $"Offline banner occupied space in {route}");
             }
             music.SetOfflineMode(false);
 
@@ -207,6 +205,21 @@ internal static partial class Program
             Release(miniY - 150);
             view.UpdateLayout();
             Check(player.RenderTransform!.Value.M32 == 0, "Upward drag did not expand the player");
+            music.SetReduceMotion(false);
+            music.StopObserving();
+            foreach (var playing in new[] { true, false })
+            {
+                if (playing) music.Player.Resume();
+                else music.Player.Pause();
+                await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+                foreach (var name in new[] { "_play", "_detailPlay" })
+                {
+                    var icon = (Control)Field<Button>(name).Content!;
+                    Check(Equals(icon.Tag, playing ? "pause" : "play") && icon.Opacity == 1 && icon.Transitions is null,
+                        "Play/pause icon did not update immediately from the player event");
+                }
+            }
+            music.SetReduceMotion(true);
             Press(player, 75);
             Move(120);
             Release(120);

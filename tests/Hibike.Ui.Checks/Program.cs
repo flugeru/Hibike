@@ -961,7 +961,7 @@ internal static partial class Program
         }
         public Task<AudioSource> ResolveAsync(Track track, CancellationToken token) => Task.FromResult(new AudioSource("test", new Dictionary<string, string>()));
     }
-    private sealed class Player : IAudioPlayer
+    private sealed class Player : IAudioPlayer, IAudioPlaybackStateNotifications
     {
         public bool IsPlaying { get; private set; }
         public double Position { get; set; }
@@ -970,8 +970,14 @@ internal static partial class Program
         public event EventHandler? Ended { add { } remove { } }
         public event EventHandler<string>? Failed { add { } remove { } }
         public Task PlayAsync(AudioSource source, CancellationToken cancellationToken) { IsPlaying = true; return Task.CompletedTask; }
-        public void Pause() => IsPlaying = false;
-        public void Resume() => IsPlaying = true;
+        public event EventHandler? PlaybackStateChanged;
+        public void Pause() => SetPlaying(false);
+        public void Resume() => SetPlaying(true);
+        private void SetPlaying(bool playing)
+        {
+            IsPlaying = playing;
+            PlaybackStateChanged?.Invoke(this, EventArgs.Empty);
+        }
         public void Seek(double seconds) { }
         public void Dispose() { }
     }

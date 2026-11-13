@@ -5,12 +5,13 @@ using Hibike.Core.Services;
 
 namespace Hibike.Android;
 
-public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPreparation
+public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPreparation, IAudioPlaybackStateNotifications
 {
     private PlaybackService? _service;
     private double _volume = 0.8;
     public event EventHandler? Ended;
     public event EventHandler<string>? Failed;
+    public event EventHandler? PlaybackStateChanged;
     public bool IsPlaying => PlaybackService.Instance?.Playing ?? false;
     public bool IsBuffering => PlaybackService.Instance?.Buffering == true;
     public double Position => PlaybackService.Instance?.Position ?? 0;
@@ -31,8 +32,12 @@ public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPr
         var service = PlaybackService.Instance;
         if (!ReferenceEquals(_service, service))
         {
-            if (_service is not null) { _service.Ended -= OnEnded; _service.Failed -= OnFailed; }
-            _service = service; _service!.Ended += OnEnded; _service.Failed += OnFailed;
+            UnsubscribeFromService();
+            _service = service;
+            if (_service is null) return;
+            _service.Ended += OnEnded;
+            _service.Failed += OnFailed;
+            _service.PlaybackStateChanged += OnPlaybackStateChanged;
         }
     }
     public async Task PlayAsync(AudioSource source, CancellationToken cancellationToken)
@@ -64,6 +69,7 @@ public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPr
     public void CancelPreparation() => Main(() => PlaybackService.Instance?.CancelPreparation());
     private void OnEnded(object? sender, EventArgs args) => Ended?.Invoke(this, args);
     private void OnFailed(object? sender, string error) => Failed?.Invoke(this, error);
+    private void OnPlaybackStateChanged(object? sender, EventArgs args) => PlaybackStateChanged?.Invoke(this, args);
     private static Task MainAsync(Action action)
     {
         var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -74,5 +80,14 @@ public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPr
     {
         if (Looper.MyLooper() == Looper.MainLooper) action(); else new Handler(Looper.MainLooper!).Post(action);
     }
-    public void Dispose() { if (_service is not null) { _service.Ended -= OnEnded; _service.Failed -= OnFailed; } }
+    public void Dispose() => UnsubscribeFromService();
+
+    private void UnsubscribeFromService()
+    {
+        if (_service is null) return;
+        _service.Ended -= OnEnded;
+        _service.Failed -= OnFailed;
+        _service.PlaybackStateChanged -= OnPlaybackStateChanged;
+        _service = null;
+    }
 }

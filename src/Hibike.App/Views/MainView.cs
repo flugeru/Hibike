@@ -175,6 +175,11 @@ public sealed partial class MainView : UserControl
             if (TopLevel.GetTopLevel(this) is Window desktopWindow) { desktopWindow.Deactivated -= ResetPlaybackKey; desktopWindow.Deactivated += ResetPlaybackKey; }
             _music.Changed -= Refresh; _music.Tick -= RefreshPlayback; _music.Tick -= RefreshDock;
             _music.Changed += Refresh; _music.Tick += RefreshPlayback; _music.Tick += RefreshDock;
+            if (_music.Player is IAudioPlaybackStateNotifications notifications)
+            {
+                notifications.PlaybackStateChanged -= OnPlaybackStateChanged;
+                notifications.PlaybackStateChanged += OnPlaybackStateChanged;
+            }
             _music.StartObserving(); Refresh();
             StartDiscordRecovery();
             await _music.InitializeAsync();
@@ -184,7 +189,17 @@ public sealed partial class MainView : UserControl
             if (!_music.OnboardingCompleted && _music.CanUseOnline) ShowGoogleWelcome(firstRun: true);
             if (_music.OnboardingCompleted) _ = _music.RefreshRecommendationsAsync();
         };
-        DetachedFromVisualTree += (_, _) => { StopDiscordRecovery(); _accountRefreshTimer.Stop(); _music.Changed -= Refresh; _music.Tick -= RefreshPlayback; _music.Tick -= RefreshDock; _music.StopObserving(); };
+        DetachedFromVisualTree += (_, _) =>
+        {
+            StopDiscordRecovery();
+            _accountRefreshTimer.Stop();
+            _music.Changed -= Refresh;
+            _music.Tick -= RefreshPlayback;
+            _music.Tick -= RefreshDock;
+            if (_music.Player is IAudioPlaybackStateNotifications notifications)
+                notifications.PlaybackStateChanged -= OnPlaybackStateChanged;
+            _music.StopObserving();
+        };
         Refresh();
     }
     private Border BuildSidebar()
@@ -1142,9 +1157,8 @@ public sealed partial class MainView : UserControl
     private void RefreshPlayback()
     {
         RefreshPlaybackActions();
-        if ((_page == "queue" || _queuePane.IsVisible) && _mobileQueuePlay is not null) RefreshPlayButton(_mobileQueuePlay);
         UpdateRows(_music.Pending ?? _music.Current);
-        RefreshPlayButton(_play);
+        RefreshTransportButtons();
         var recovery = _music.PlaybackRecoveryMessage;
         _miniRecoveryNotice.Text = recovery;
         _miniRecoveryNotice.IsVisible = recovery is not null;
@@ -1153,7 +1167,6 @@ public sealed partial class MainView : UserControl
             notice.Text = recovery;
             notice.IsVisible = recovery is not null;
         }
-        if (_detailPlay is not null) RefreshPlayButton(_detailPlay);
         var duration = PlaybackDuration;
         _progress.Maximum = Math.Max(1, duration); _progress.Value = Math.Min(_music.Position, _progress.Maximum);
         if (_detailSeek is not null)
@@ -1164,6 +1177,22 @@ public sealed partial class MainView : UserControl
         if (_detailTime is not null) _detailTime.Text = Time(_music.Position);
         if (_detailDuration is not null) _detailDuration.Text = Time(duration);
     }
+    private void OnPlaybackStateChanged(object? sender, EventArgs args)
+    {
+        // Run after Media3's callback so no UI work can interrupt its state update.
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (this.IsAttachedToVisualTree()) RefreshTransportButtons();
+        }, DispatcherPriority.Input);
+    }
+
+    private void RefreshTransportButtons()
+    {
+        RefreshPlayButton(_play);
+        if (_detailPlay is not null) RefreshPlayButton(_detailPlay);
+        if ((_page == "queue" || _queuePane.IsVisible) && _mobileQueuePlay is not null) RefreshPlayButton(_mobileQueuePlay);
+    }
+
     private void RefreshPlayButton(Button button)
     {
         var state = _music.LoadingAudio ? "loading" : _music.Player.IsPlaying ? "pause" : "play";
@@ -1172,9 +1201,7 @@ public sealed partial class MainView : UserControl
         if (state == "loading")
             content = LoadingRing(22, UiTheme.OnPrimary);
         else content = Icons.Make(state, UiTheme.OnPrimary, UiTheme.TransportIconSize);
-        var hadIcon = button.Content is Control { Tag: string };
         content.Tag = state; button.Content = content;
-        if (state != "loading" && hadIcon && button.IsEffectivelyVisible) Animate(content);
         Avalonia.Automation.AutomationProperties.SetName(button, state == "loading" ? "Carregando áudio; cancelar" : "Reproduzir ou pausar");
     }
     private static Control LoadingRing(double size, string color, bool? animate = null)

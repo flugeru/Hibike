@@ -25,6 +25,7 @@ public sealed class PlaybackService : MediaSessionService
     private IExoPlayer? _player;
     private MediaSession? _session;
     private SessionPlayer? _sessionPlayer;
+    private PlaybackListener? _playbackListener;
     private Handler? _handler;
     private Action? _poll;
     private int _state;
@@ -39,6 +40,7 @@ public sealed class PlaybackService : MediaSessionService
     public string? Error { get; private set; }
     public event EventHandler? Ended;
     public event EventHandler<string>? Failed;
+    internal event EventHandler? PlaybackStateChanged;
 
     public override void OnCreate()
     {
@@ -48,6 +50,8 @@ public sealed class PlaybackService : MediaSessionService
         var attributes = new AndroidX.Media3.Common.AudioAttributes.Builder().SetUsage(C.UsageMedia)!.SetContentType(C.AudioContentTypeMusic)!.Build();
         _player = new ExoPlayerBuilder(this).SetLooper(Looper.MainLooper)!.SetLoadControl(control)!
             .SetAudioAttributes(attributes, true)!.SetHandleAudioBecomingNoisy(true)!.SetWakeMode(2)!.Build()!;
+        _playbackListener = new PlaybackListener(this);
+        _player.AddListener(_playbackListener);
         _sessionPlayer = new SessionPlayer(_player);
         var launch = PackageManager!.GetLaunchIntentForPackage(PackageName!)!.PutExtra("open_player", true);
         var pending = PendingIntent.GetActivity(this, 0, launch, PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent);
@@ -62,10 +66,9 @@ public sealed class PlaybackService : MediaSessionService
             if (_player is null) return;
             try
             {
-            Playing = _player.IsPlaying; Position = Math.Max(0, _player.CurrentPosition) / 1000d;
+            Position = Math.Max(0, _player.CurrentPosition) / 1000d;
             BufferedPosition = Math.Max(0, _player.BufferedPosition) / 1000d;
             Duration = Math.Max(0, _player.Duration) / 1000d; State = _player.PlaybackState;
-            Buffering = State == 2 && _player.PlayWhenReady;
             Error = _player.PlayerError?.Message;
             if (Error is not null && Error != _lastError) { _lastError = Error; Failed?.Invoke(this, Error); }
             if (State == 4 && _state != 4) Ended?.Invoke(this, EventArgs.Empty);
@@ -140,9 +143,28 @@ public sealed class PlaybackService : MediaSessionService
     {
         Instance = null;
         if (_poll is not null) _handler?.RemoveCallbacks(_poll);
+        if (_playbackListener is { } listener)
+        {
+            _player?.RemoveListener(listener);
+            listener.Dispose();
+            _playbackListener = null;
+        }
         _session?.Release(); _sessionPlayer?.Dispose(); _player?.Release(); _player?.Dispose(); _player = null;
         base.OnDestroy();
     }
+
+    private sealed class PlaybackListener(PlaybackService service) : Java.Lang.Object, IPlayerListener
+    {
+        public void OnEvents(IPlayer player, PlayerEvents events)
+        {
+            var playing = player.IsPlaying;
+            service.Buffering = player.PlaybackState == 2 && player.PlayWhenReady;
+            if (service.Playing == playing) return;
+            service.Playing = playing;
+            service.PlaybackStateChanged?.Invoke(service, EventArgs.Empty);
+        }
+    }
+
     private sealed class SessionPlayer(IPlayer player) : ForwardingPlayer(player)
     {
         public override bool IsCommandAvailable(int command) => AvailableCommands?.Contains(command) ?? false;
