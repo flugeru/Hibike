@@ -41,6 +41,14 @@ internal static partial class Program
             await Task.Delay(160);
             music.SetReduceMotion(false);
             var home = Field<ScrollViewer>("_homeScroll");
+            var refreshHost = Field<RefreshContainer>("_homeRefreshContainer");
+            view.UpdateLayout();
+            var viewport = Presenter(home);
+            Check(viewport.TranslatePoint(default, view) is { } left && Math.Abs(left.X) < 1
+                && Math.Abs(left.X + viewport.Bounds.Width - view.Bounds.Width) < 1,
+                "Home artwork carousel is clipped inside the Android page gutters");
+            Check(Math.Abs(refreshHost.Bounds.Width - view.Bounds.Width) < 1,
+                "Pull-to-refresh host did not reach both screen edges");
             home.Content = new Border { Height = 4000 };
             view.UpdateLayout();
             var header = Bars(home).Single();

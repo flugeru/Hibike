@@ -138,6 +138,7 @@ public sealed partial class MainView
         var header = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.CompactGap };
         header.Children.Add(Text(title, UiTheme.DialogTitle));
         var scroll = UiTheme.FadingScroll(horizontal: true);
+        if (_androidLayout) scroll.Margin = new Thickness(-UiTheme.MobileGutter, 0);
         var actions = new StackPanel { Orientation = Orientation.Horizontal };
         if (more is not null) actions.Children.Add(ActionButton("Mostrar tudo", more));
         if (!_androidLayout)
@@ -150,10 +151,11 @@ public sealed partial class MainView
         {
             var card = CoverCard(new(c.Id, c.Title, title, "", Thumbnail: c.Image), c.Artist?.Name ?? c.Kind, () => open(c), songActions: false,
                 cardSize: _androidLayout ? MobileHomeCardSize : 196, roundArtwork: c.Kind == "Artista");
-            card.Margin = new Thickness(0, 0, UiTheme.PageGap, 0);
+            card.Margin = new Thickness(0, 0, _androidLayout ? UiTheme.CompactGap : UiTheme.PageGap, 0);
             return card;
         });
         cards.ItemsPanel = new Avalonia.Controls.Templates.FuncTemplate<Panel?>(() => new VirtualizingStackPanel { Orientation = Orientation.Horizontal });
+        if (_androidLayout) cards.Margin = new Thickness(UiTheme.MobileGutter, 0, UiTheme.MobileGutter - UiTheme.CompactGap, 0);
         cards.ItemsSource = entries.ToArray(); scroll.Content = cards; section.Children.Add(scroll);
         return section;
     }

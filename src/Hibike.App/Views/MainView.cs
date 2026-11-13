@@ -109,6 +109,8 @@ public sealed partial class MainView : UserControl
         _home.ItemsSource = _homeSections;
         _homeScroll = UiTheme.FadingScroll(_home);
         InitializeAccountRefresh();
+        // Expand the refresh host itself so its presenter clips at the screen edge.
+        if (_androidLayout) _homeRefreshContainer!.Margin = new Thickness(-UiTheme.MobileGutter, 0);
         Put(content, _homeRefreshContainer!, 2, 0);
         var statusRow = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.CompactGap };
         _status.TextWrapping = TextWrapping.Wrap; _status.MaxLines = 2; _status.VerticalAlignment = VerticalAlignment.Center; statusRow.Children.Add(_status);
@@ -142,7 +144,6 @@ public sealed partial class MainView : UserControl
             _bottom.IsVisible = compact && (!_showingPlayer || _androidLayout);
             _main.Padding = _androidLayout ? UiTheme.MobileContentPadding
                 : compact ? new Thickness(12, 0, 12, 4) : new Thickness(32, 4, 32, 12);
-            _homeScroll.Margin = _androidLayout ? new Thickness(-UiTheme.MobileGutter, 0) : UiTheme.Zero;
             if (_androidLayout) _mini.Margin = UiTheme.MobileMiniMargin;
             if (_page == "home" && !ShowOfflineHome) RefreshHome();
             RefreshWorkspace();
@@ -623,7 +624,7 @@ public sealed partial class MainView : UserControl
             var row = new ItemsControl
             {
                 ItemsSource = cardList,
-                Margin = _androidLayout ? new Thickness(UiTheme.MobileGutter, 0, 0, 0) : UiTheme.Zero,
+                Margin = _androidLayout ? new Thickness(UiTheme.MobileGutter, 0, UiTheme.MobileGutter - UiTheme.CompactGap, 0) : UiTheme.Zero,
                 ItemsPanel = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel
                 { Orientation = Orientation.Horizontal, CacheLength = .5 }),
                 ItemTemplate = new FuncDataTemplate<HomeCard>((card, _) =>
