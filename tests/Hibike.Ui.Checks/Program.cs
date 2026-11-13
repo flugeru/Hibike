@@ -774,7 +774,9 @@ internal static partial class Program
                 }
                 transferJobs.Clear();
                 await music.ToggleFavoriteAsync(music.Results[0]);
-                await music.ToggleFavoriteAsync(new("local-filter", "Local favorite", "Local artist", "test", IsLocal: true));
+                var localFilterTrack = new Track("local-filter", "Local favorite", "Local artist", Path.Combine(directory, "local-filter.mp3"), IsLocal: true);
+                File.WriteAllBytes(localFilterTrack.Source, [0]);
+                await (Task)typeof(MusicController).GetMethod("SaveOfflineTrackAsync", hidden)!.Invoke(music, [localFilterTrack])!;
                 foreach (var width in new[] { 360, 1260 })
                 {
                     window.Width = width;
@@ -782,7 +784,8 @@ internal static partial class Program
                     libraryNav.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)); await Task.Delay(150);
                     var filter = view.GetVisualDescendants().OfType<TextBox>().Single(t => Avalonia.Automation.AutomationProperties.GetName(t) == "Buscar na biblioteca");
                     filter.Text = "Local favorite"; await Task.Delay(100);
-                    var filtered = view.GetVisualDescendants().OfType<ItemsControl>().Single(c => c.IsEffectivelyVisible);
+                    var filtered = (ItemsControl)typeof(MainView).GetField("_mobileLibraryTracks", hidden)!.GetValue(view)!;
+                    Check(filtered.IsEffectivelyVisible, "Filtered song list is hidden");
                     Check(filtered.ItemsSource!.Cast<Track>().Single().Id == "local-filter", "Library filter did not isolate local favorite");
                     Check(filtered.GetVisualAncestors().OfType<ScrollViewer>().First().OpacityMask is null, "Non-scrolling content faded");
                     Capture(view, $"library-{width}"); filter.Text = "";
@@ -878,23 +881,19 @@ internal static partial class Program
                 await Task.Delay(100);
                 ItemsControl PlaylistRows() => detailHost.GetVisualDescendants().OfType<ItemsControl>().Single();
                 var pageRows = PlaylistRows();
-                var loadMore = pageRows.Items.OfType<Button>().Single();
-                Check(pageRows.ItemCount == 51 && !pageRows.GetRealizedContainers().Contains(loadMore),
-                    "Load more appeared before the end of the playlist");
-                pageRows.ScrollIntoView(50);
-                await Task.Delay(100);
-                Check(pageRows.GetRealizedContainers().Contains(loadMore), "Load more did not appear at the end");
-                loadMore.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
-                await Task.Delay(100);
-                Check(ReferenceEquals(pageRows, PlaylistRows()) && Equals(loadMore.Content, "Tentar carregar mais") && loadMore.IsEnabled,
-                    "Failed page lost playlist rows or the retry button");
-                loadMore.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
-                await Task.Delay(100);
-                pageRows = PlaylistRows();
-                Check(pageRows.Items.OfType<Track>().Count() == 52 && !pageRows.Items.OfType<Button>().Any(),
-                    "Retry skipped the page, duplicated tracks or kept a button after the end");
-                Check(pageRows.GetVisualAncestors().OfType<ScrollViewer>().First().Offset.Y > 0,
-                    "Loading more reset the playlist to the top");
+                Check(pageRows.ItemCount == 50, "Playlist did not load its first page");
+                var playlistScroll = pageRows.GetVisualAncestors().OfType<ScrollViewer>().First();
+                playlistScroll.ScrollToEnd();
+                await Task.Delay(150);
+                var retryPage = detailHost.GetVisualDescendants().OfType<Button>().Single(b =>
+                    b.IsEffectivelyVisible && Equals(b.Content, "Tentar novamente"));
+                Check(ReferenceEquals(pageRows, PlaylistRows()) && pageRows.ItemCount == 50,
+                    "Failed page lost playlist rows");
+                retryPage.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                await Task.Delay(150);
+                Check(ReferenceEquals(pageRows, PlaylistRows()) && pageRows.ItemCount == 52
+                    && pageRows.Items.OfType<Track>().Count() == 52 && playlistScroll.Offset.Y > 0,
+                    "Retry skipped or duplicated tracks, replaced the list, or reset its position");
                 Check(AppServices.BackHandler!(), "Paged playlist cannot return to its origin");
                 music.SaveSession(); await music.FlushPendingSavesAsync();
                 var restored = new MusicController(new Catalog(), new Player(), new LibraryStore(directory), directory);
