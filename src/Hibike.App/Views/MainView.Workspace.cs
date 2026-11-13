@@ -244,6 +244,7 @@ public sealed partial class MainView
 
     private void BackFromCollection()
     {
+        EndTrackSelection();
         RevealMobileTopBars();
         if (!_collectionBack.TryPop(out var route))
         {
@@ -266,6 +267,7 @@ public sealed partial class MainView
     private void OpenCollection(string title, IReadOnlyList<Track> tracks, string kind = "Playlist", Track? artwork = null, string? message = null, Func<Task>? retry = null,
         bool replace = false, bool artistPage = false, Button? footer = null)
     {
+        EndTrackSelection();
         ClosePlayer(); CloseTopMenu(); CloseSheet();
         RevealMobileTopBars();
         var prior = _page == "collection" ? _collectionPage.Child : null;

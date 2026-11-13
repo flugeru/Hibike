@@ -200,19 +200,32 @@ internal static partial class Program
                 new Hibike.Core.Models.Track("select-1", "First", "Artist", "https://example.test/1"),
                 new Hibike.Core.Models.Track("select-2", "Second", "Artist", "https://example.test/2")
             };
-            typeof(MainView).GetMethod("ShowTrackSelection", hidden)!.Invoke(view, [selectionTracks[1], selectionTracks]);
+            var list = Field<ItemsControl>("_mobileLibraryTracks");
+            Click(tabs[0]);
             view.UpdateLayout();
-            var selectionSheet = Field<Border>("_overlay");
-            var selectionList = selectionSheet.GetVisualDescendants().OfType<ListBox>().Single();
-            Check(selectionList.SelectedItems!.Count == 1 && Equals(selectionList.SelectedItem, selectionTracks[1]),
-                "Track selection did not start with the held track");
-            Click(selectionSheet.GetVisualDescendants().OfType<Button>().Single(button => Equals(button.Content, "Selecionar todas")));
-            Check(selectionList.SelectedItems!.Count == 2, "Select all skipped tracks");
-            Click(selectionSheet.GetVisualDescendants().OfType<Button>().Single(button => Equals(button.Content, "Limpar seleção")));
-            Check(selectionList.SelectedItems!.Count == 0, "Clear selection left tracks selected");
+            list.ItemsSource = selectionTracks;
+            view.UpdateLayout();
+            var anchor = list.GetVisualDescendants().OfType<Button>().Single(button =>
+                Avalonia.Automation.AutomationProperties.GetName(button) == "Second — Artist");
+            typeof(MainView).GetMethod("StartTrackSelection", hidden)!.Invoke(view,
+                [selectionTracks[1], anchor, (Func<IEnumerable<Hibike.Core.Models.Track>>)(() => selectionTracks)]);
+            view.UpdateLayout();
+            Check(Field<Border?>("_overlay") is null && anchor.IsEffectivelyVisible,
+                "Selecting a track replaced the original list with a dialog");
+            var selectionBar = Field<Border>("_trackSelectionBar");
+            var selectedSources = Field<HashSet<string>>("_selectedTrackSources");
+            Button SelectionAction(string label) => selectionBar.GetVisualDescendants().OfType<Button>()
+                .Single(button => Avalonia.Automation.AutomationProperties.GetName(button) == label);
+            Check(selectedSources.SetEquals([selectionTracks[1].Source]), "Selection did not start with the held track");
+            var firstRow = list.GetVisualDescendants().OfType<Button>().Single(button =>
+                Avalonia.Automation.AutomationProperties.GetName(button) == "First — Artist");
+            Click(firstRow);
+            Check(selectedSources.Count == 2, "Tapping the original row did not select it");
+            Click(SelectionAction("Limpar seleção"));
+            Check(selectedSources.Count == 0, "Clear selection left tracks selected");
             music.CreatePlaylist("Batch selection check");
-            Click(selectionSheet.GetVisualDescendants().OfType<Button>().Single(button => Equals(button.Content, "Selecionar todas")));
-            Click(selectionSheet.GetVisualDescendants().OfType<Button>().Single(button => Equals(button.Content, "Salvar em playlist")));
+            Click(SelectionAction("Selecionar todas"));
+            Click(SelectionAction("Salvar em playlist"));
             view.UpdateLayout();
             Click(Field<Border>("_overlay").GetVisualDescendants().OfType<Button>()
                 .Single(button => Equals(button.Content, "Batch selection check")));

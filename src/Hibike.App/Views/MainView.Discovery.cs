@@ -25,7 +25,7 @@ public sealed partial class MainView
             if (e.HoldingState != HoldingState.Started) return;
             held = true; e.Handled = true;
             if (selectionTracks is null) openMenu(control);
-            else ShowTrackSelection(track, selectionTracks());
+            else StartTrackSelection(track, control, selectionTracks);
         };
         control.AddHandler(PointerPressedEvent, (_, _) => held = false, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         control.AddHandler(PointerReleasedEvent, (_, e) => { if (held) { e.Handled = true; held = false; } }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
@@ -40,7 +40,7 @@ public sealed partial class MainView
         _songPopup?.SetCurrentValue(Popup.IsOpenProperty, false);
         var actions = (StackPanel)SongActions(track); actions.Spacing = 0;
         if (selectionTracks is not null)
-            actions.Children.Insert(0, SelectTracksAction(track, selectionTracks));
+            actions.Children.Insert(0, SelectTracksAction(track, anchor, selectionTracks));
         foreach (var button in actions.Children.OfType<Button>())
         {
             var label = button.Content as string ?? "";

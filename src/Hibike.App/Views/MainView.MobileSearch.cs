@@ -110,6 +110,7 @@ public sealed partial class MainView
         {
             var version = ++filterVersion;
             if (_page != "explore") return;
+            EndTrackSelection();
             if (_mobileSearchAttempt != _search.Text?.Trim()) CancelExploreSearch();
             if (_searchScope == "Sua biblioteca" || !_music.CanUseOnline) await Task.Delay(120);
             if (version == filterVersion && _page == "explore") RefreshMobileSearch();
@@ -123,6 +124,7 @@ public sealed partial class MainView
             {
                 if (_searchScope == name || name == "Online" && !_music.CanUseOnline) return Task.CompletedTask;
                 if (name == "Sua biblioteca") CancelExploreSearch();
+                EndTrackSelection();
                 _searchScope = name;
                 _mobileSearchScroll.Offset = default;
                 RefreshMobileSearch();
@@ -153,6 +155,7 @@ public sealed partial class MainView
     private void SelectSearchKind(string kind)
     {
         if (_searchKind == kind) return;
+        EndTrackSelection();
         _searchKind = kind;
         _mobileSearchScroll.Offset = default;
         RefreshMobileSearch();

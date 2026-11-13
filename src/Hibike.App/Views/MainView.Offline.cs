@@ -71,7 +71,7 @@ public sealed partial class MainView
         _downloadFilter = UiTheme.Field("Buscar músicas no aparelho");
         AddSearchIcon(_downloadFilter);
         AutomationProperties.SetName(_downloadFilter, "Buscar músicas no aparelho");
-        _downloadFilter.TextChanged += (_, _) => RefreshDownloads();
+        _downloadFilter.TextChanged += (_, _) => { EndTrackSelection(); RefreshDownloads(); };
         _downloadSummary = Text("", UiTheme.Caption, Muted);
         _downloadEmpty = UiTheme.FadingScroll();
         _playDownloads = ActionButton("Tocar todas", () => PlayCollectionAsync(_shownDownloads));
@@ -94,6 +94,7 @@ public sealed partial class MainView
         {
             var filter = ActionButton(label, () =>
             {
+                EndTrackSelection();
                 _downloadOrigin = origin;
                 foreach (var item in filters.Children.OfType<Button>()) item.Classes.Set("primary", Equals(item.Tag, origin));
                 RefreshDownloads();
@@ -134,7 +135,7 @@ public sealed partial class MainView
         _downloadActivity.IsVisible = false;
 
         _downloadItems = CollectionList<Track>(track => TrackRow(track, showMenu: true,
-            openMenu: _ => ShowOfflineTrackOptions(track),
+            openMenu: anchor => ShowOfflineTrackOptions(track, anchor),
             subtitle: TrackTextFormatter.Artist(track.Artist) + " · " + _music.OfflineOrigin(track),
             selectionTracks: () => _shownDownloads));
         var tools = new Grid { RowDefinitions = new("Auto,Auto,Auto"), ColumnDefinitions = new("*,Auto"),
@@ -187,6 +188,7 @@ public sealed partial class MainView
 
     private Task SelectDownloadsTab(bool showTransfers)
     {
+        EndTrackSelection();
         if (_showTransfers != showTransfers) RevealMobileTopBars();
         _showTransfers = showTransfers;
         RefreshDownloadQueue();
@@ -268,14 +270,14 @@ public sealed partial class MainView
         }
     }
 
-    private void ShowOfflineTrackOptions(Track track)
+    private void ShowOfflineTrackOptions(Track track, Control anchor)
     {
         var details = new StackPanel { Spacing = UiTheme.CompactGap };
         string size;
         try { size = $"{new FileInfo(track.Source).Length / 1048576d:0.0} MB"; }
         catch (IOException) { size = "Arquivo indisponível"; }
         catch (UnauthorizedAccessException) { size = "Arquivo indisponível"; }
-        details.Children.Add(SelectTracksAction(track, () => _shownDownloads));
+        details.Children.Add(SelectTracksAction(track, anchor, () => _shownDownloads));
         details.Children.Add(Text(_music.OfflineOrigin(track) + " · " + size, UiTheme.Caption, Muted));
         details.Children.Add(ActionButton("Tocar a seguir", () => { _music.PlayNext(track); CloseSheet(); return Task.CompletedTask; }));
         details.Children.Add(ActionButton("Adicionar à fila", () => { _music.Enqueue(track); CloseSheet(); return Task.CompletedTask; }));

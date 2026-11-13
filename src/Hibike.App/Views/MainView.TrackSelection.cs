@@ -1,90 +1,155 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
-using Avalonia.Controls.Templates;
 using Avalonia.Layout;
+using Avalonia.VisualTree;
 using Hibike.Core.Models;
 
 namespace Hibike.App.Views;
 
 public sealed partial class MainView
 {
-    private Button SelectTracksAction(Track track, Func<IEnumerable<Track>> candidates) =>
+    private readonly HashSet<string> _selectedTrackSources = new(StringComparer.Ordinal);
+    private ScrollViewer? _trackSelectionList;
+    private Func<IEnumerable<Track>>? _trackSelectionCandidates;
+    private DockPanel? _trackSelectionHost;
+    private Border? _trackSelectionBar;
+    private Action? _updateTrackSelectionBar;
+    private event Action? TrackSelectionChanged;
+
+    private DockPanel CreateTrackSelectionHost(Control content)
+    {
+        var host = new DockPanel { LastChildFill = true };
+        host.Classes.Add("trackSelectionHost");
+        host.Children.Add(content);
+        return host;
+    }
+
+    private Button SelectTracksAction(Track track, Control anchor, Func<IEnumerable<Track>> candidates) =>
         ActionButton("Selecionar músicas", () =>
         {
             _songPopup?.SetCurrentValue(Avalonia.Controls.Primitives.Popup.IsOpenProperty, false);
-            ShowTrackSelection(track, candidates());
+            if (_overlay is { } sheet && !sheet.IsVisualAncestorOf(anchor)) CloseSheet();
+            StartTrackSelection(track, anchor, candidates);
             return Task.CompletedTask;
         });
 
-    private void ShowTrackSelection(Track initial, IEnumerable<Track> candidates)
+    private bool IsSelectingTracks(Control row) => _trackSelectionList is not null
+        && ReferenceEquals(row.FindAncestorOfType<ScrollViewer>(), _trackSelectionList);
+
+    private void ToggleSelectedTrack(Track track)
     {
-        var tracks = candidates.Where(track => !track.IsArtist).DistinctBy(track => track.Source).ToArray();
-        var initialIndex = Array.FindIndex(tracks, track => track.Source == initial.Source);
-        if (initialIndex < 0) return;
+        if (!_selectedTrackSources.Add(track.Source)) _selectedTrackSources.Remove(track.Source);
+        TrackSelectionChanged?.Invoke();
+    }
 
-        var list = new ListBox
+    private void StartTrackSelection(Track initial, Control anchor, Func<IEnumerable<Track>> candidates)
+    {
+        if (anchor.FindAncestorOfType<ScrollViewer>() is not { } list
+            || anchor.GetVisualAncestors().OfType<DockPanel>().FirstOrDefault(panel => panel.Classes.Contains("trackSelectionHost")) is not { } host)
+            return;
+        if (ReferenceEquals(list, _trackSelectionList))
         {
-            SelectionMode = SelectionMode.Multiple | SelectionMode.Toggle,
-            ItemsSource = tracks,
-            SelectedIndex = initialIndex,
-            ItemTemplate = new FuncDataTemplate<Track>((track, _) =>
-            {
-                if (track is null) return new Border();
-                var title = CollectionText(TrackTextFormatter.Title(track.Title, track.Artist), UiTheme.Body);
-                var artist = CollectionText(TrackTextFormatter.Artist(track.Artist), UiTheme.Caption, Muted);
-                return new StackPanel
-                {
-                    MinHeight = UiTheme.TouchSize,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Children = { title, artist }
-                };
-            })
-        };
-        Avalonia.Automation.AutomationProperties.SetName(list, "Músicas para selecionar");
-        var layout = new Grid { RowDefinitions = new("Auto,*,Auto"), RowSpacing = UiTheme.CompactGap };
-        var toolbar = new WrapPanel { ItemSpacing = UiTheme.CompactGap, LineSpacing = UiTheme.CompactGap };
-        var count = CollectionText("", UiTheme.Caption, Muted);
-        var selectAll = ActionButton("Selecionar todas", () =>
-        {
-            if (list.Selection.Count == tracks.Length) list.Selection.Clear();
-            else list.Selection.SelectAll();
-            return Task.CompletedTask;
-        });
-        toolbar.Children.Add(selectAll);
-        toolbar.Children.Add(count);
-        layout.Children.Add(toolbar);
-        Put(layout, list, 1, 0);
-
-        Track[] SelectedTracks()
-        {
-            var selected = list.SelectedItems!.Cast<Track>().ToHashSet();
-            return tracks.Where(selected.Contains).ToArray();
+            ToggleSelectedTrack(initial);
+            return;
         }
 
-        var actions = new WrapPanel { ItemSpacing = UiTheme.CompactGap, LineSpacing = UiTheme.CompactGap };
-        var save = ActionButton("Salvar em playlist", () =>
+        EndTrackSelection();
+        _trackSelectionList = list;
+        _trackSelectionCandidates = candidates;
+        _trackSelectionHost = host;
+        list.DetachedFromVisualTree += OnSelectionListDetached;
+        list.PropertyChanged += OnSelectionListPropertyChanged;
+        _selectedTrackSources.Add(initial.Source);
+
+        var actions = new Grid { ColumnDefinitions = new("Auto,*,Auto,Auto,Auto") };
+        actions.Children.Add(CollectionIcon("close", "Sair da seleção", () =>
         {
-            ShowPlaylistPicker(SelectedTracks());
+            EndTrackSelection();
+            return Task.CompletedTask;
+        }));
+        var count = CollectionText("", UiTheme.Body, weight: Avalonia.Media.FontWeight.SemiBold);
+        count.VerticalAlignment = VerticalAlignment.Center;
+        Put(actions, count, 0, 1);
+        var all = CollectionIcon("select-all", "Selecionar todas", () =>
+        {
+            var available = AvailableSelectionTracks();
+            if (available.All(track => _selectedTrackSources.Contains(track.Source))) _selectedTrackSources.Clear();
+            else _selectedTrackSources.UnionWith(available.Select(track => track.Source));
+            TrackSelectionChanged?.Invoke();
             return Task.CompletedTask;
         });
-        var download = ActionButton("Adicionar aos downloads", () => DownloadTracksAsync(SelectedTracks()));
-        var downloadable = DownloadableTracks(tracks).ToHashSet();
-        download.IsVisible = _music.CanUseOnline && downloadable.Count > 0;
-        actions.Children.Add(save);
-        actions.Children.Add(download);
-        Put(layout, actions, 2, 0);
-
-        void UpdateSelection()
+        Put(actions, all, 0, 2);
+        var save = CollectionIcon("playlist-add", "Salvar em playlist", () =>
         {
-            var selected = list.Selection.Count;
-            count.Text = $"{selected} de {tracks.Length}";
-            selectAll.Content = selected == tracks.Length ? "Limpar seleção" : "Selecionar todas";
-            save.IsEnabled = selected > 0;
-            download.IsEnabled = list.SelectedItems!.Cast<Track>().Any(downloadable.Contains);
+            var tracks = SelectedTracks();
+            if (tracks.Length == 0) return Task.CompletedTask;
+            EndTrackSelection();
+            ShowPlaylistPicker(tracks);
+            return Task.CompletedTask;
+        });
+        Put(actions, save, 0, 3);
+        var download = CollectionIcon("download", "Adicionar aos downloads", () =>
+        {
+            var tracks = SelectedTracks();
+            EndTrackSelection();
+            return DownloadTracksAsync(tracks);
+        });
+        Put(actions, download, 0, 4);
+
+        void Update()
+        {
+            var available = AvailableSelectionTracks();
+            var tracks = available.Where(track => _selectedTrackSources.Contains(track.Source)).ToArray();
+            var allSelected = tracks.Length > 0 && tracks.Length == available.Length;
+            count.Text = tracks.Length.ToString(System.Globalization.CultureInfo.CurrentCulture);
+            AutomationProperties.SetName(count, $"{tracks.Length} músicas selecionadas");
+            var allLabel = allSelected ? "Limpar seleção" : "Selecionar todas";
+            all.Content = Icons.Make(allSelected ? "clear-selection" : "select-all");
+            AutomationProperties.SetName(all, allLabel);
+            ToolTip.SetTip(all, allLabel);
+            save.IsEnabled = tracks.Length > 0;
+            download.IsVisible = _music.CanUseOnline && available.Any(track => !track.IsLocal);
+            download.IsEnabled = download.IsVisible && DownloadableTracks(tracks).Length > 0;
         }
-        list.SelectionChanged += (_, _) => UpdateSelection();
-        UpdateSelection();
-        ShowSheet("Selecionar músicas", layout, preservePlayer: true, scrollContent: false);
-        list.ScrollIntoView(initialIndex);
+
+        var bar = UiTheme.Card(actions, padding: 0);
+        bar.Margin = new Thickness(0, 0, 0, UiTheme.CompactGap);
+        _trackSelectionBar = bar;
+        DockPanel.SetDock(bar, Dock.Top);
+        host.Children.Insert(0, bar);
+        _updateTrackSelectionBar = Update;
+        TrackSelectionChanged += Update;
+        TrackSelectionChanged?.Invoke();
+    }
+
+    private Track[] AvailableSelectionTracks() => _trackSelectionCandidates?.Invoke()
+        .Where(track => !track.IsArtist).DistinctBy(track => track.Source).ToArray() ?? [];
+
+    private Track[] SelectedTracks() => AvailableSelectionTracks()
+        .Where(track => _selectedTrackSources.Contains(track.Source)).ToArray();
+
+    private void OnSelectionListDetached(object? sender, VisualTreeAttachmentEventArgs args) => EndTrackSelection();
+
+    private void OnSelectionListPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs args)
+    {
+        if (args.Property == Visual.IsVisibleProperty && _trackSelectionList?.IsVisible == false)
+            EndTrackSelection();
+    }
+
+    private void EndTrackSelection()
+    {
+        if (_trackSelectionList is null) return;
+        _trackSelectionList.DetachedFromVisualTree -= OnSelectionListDetached;
+        _trackSelectionList.PropertyChanged -= OnSelectionListPropertyChanged;
+        TrackSelectionChanged -= _updateTrackSelectionBar;
+        _updateTrackSelectionBar = null;
+        _trackSelectionList = null;
+        _trackSelectionCandidates = null;
+        _selectedTrackSources.Clear();
+        if (_trackSelectionBar is { } bar) _trackSelectionHost?.Children.Remove(bar);
+        _trackSelectionHost = null;
+        _trackSelectionBar = null;
+        TrackSelectionChanged?.Invoke();
     }
 }

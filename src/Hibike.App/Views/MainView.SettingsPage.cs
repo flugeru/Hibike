@@ -26,7 +26,7 @@ public sealed partial class MainView
     {
         ClosePlayer(); CloseTopMenu(); CloseSheet();
         RevealMobileTopBars();
-        var content = (Grid)_main.Child!;
+        var content = _pageContent;
         if (_preferencesPage is not null) content.Children.Remove(_preferencesPage);
         var body = new StackPanel { Spacing = UiTheme.SectionGap, MaxWidth = 720,
             HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, UiTheme.CompactGap, 0, UiTheme.PageGap) };

@@ -24,6 +24,7 @@ public sealed partial class MainView : UserControl
     private readonly Grid _root = new() { ColumnDefinitions = new($"{UiTheme.SidebarWidth},*"), RowDefinitions = new("*,Auto,Auto") };
     private readonly Border _sidebar;
     private readonly Border _main;
+    private readonly Grid _pageContent;
     private readonly System.Collections.ObjectModel.ObservableCollection<Control> _homeSections = [];
     private readonly ItemsControl _home = new()
     {
@@ -75,7 +76,8 @@ public sealed partial class MainView : UserControl
         TopLevel.SetAutoSafeAreaPadding(this, true);
         _sidebar = BuildSidebar(); _root.Children.Add(_sidebar); Grid.SetRowSpan(_sidebar, 3);
         _main = new Border { Padding = UiTheme.ContentPadding, HorizontalAlignment = HorizontalAlignment.Stretch }; Put(_root, _main, 0, 1);
-        var content = new Grid { RowDefinitions = new("Auto,Auto,*"), RowSpacing = 4 }; _main.Child = content;
+        var content = _pageContent = new Grid { RowDefinitions = new("Auto,Auto,*"), RowSpacing = 4 };
+        _main.Child = CreateTrackSelectionHost(content);
         var header = new Grid { Name = "AppHeader", RowDefinitions = new("Auto,20"), ColumnDefinitions = new("Auto,*,Auto") };
         header.RowDefinitions[0].MinHeight = 28;
         var brandIcon = _brandIcon = new Image { Source = new Avalonia.Media.Imaging.Bitmap(Avalonia.Platform.AssetLoader.Open(new Uri("avares://Hibike.App/Assets/hibike-desktop.png"))), Width = 22, Height = 22, VerticalAlignment = VerticalAlignment.Center };
@@ -237,6 +239,7 @@ public sealed partial class MainView : UserControl
     {
         var button = ActionButton("", () =>
         {
+            EndTrackSelection();
             _queueOpenedFromPlayer = false;
             ClosePlayer(); CloseTopMenu(); CloseSheet();
             RevealMobileTopBars();
@@ -459,6 +462,7 @@ public sealed partial class MainView : UserControl
         RefreshMiniPlayerInset();
         if (_animatedPage != visualPage)
         {
+            EndTrackSelection();
             RevealMobileTopBars();
             var previous = _animatedPage;
             _animatedPage = visualPage;
@@ -795,7 +799,13 @@ public sealed partial class MainView : UserControl
             selectionTracks = null;
         }
         var grid = new Grid { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = UiTheme.CompactGap, Height = UiTheme.ThumbnailSize };
-        var play = ActionButton("", playTrack ?? (() => _music.PlayAsync(track, _music.Queue.Contains(track) ? _music.Queue.IndexOf(track) : null))); play.Classes.Add("subtle"); play.Padding = UiTheme.Zero; play.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+        var playAction = playTrack ?? (() => _music.PlayAsync(track, _music.Queue.Contains(track) ? _music.Queue.IndexOf(track) : null));
+        var play = ActionButton("", () =>
+        {
+            if (selectionTracks is null || !IsSelectingTracks(grid)) return playAction();
+            ToggleSelectedTrack(track);
+            return Task.CompletedTask;
+        }); play.Classes.Add("subtle"); play.Padding = UiTheme.Zero; play.HorizontalContentAlignment = HorizontalAlignment.Stretch;
         Avalonia.Automation.AutomationProperties.SetName(play, track.Title + " — " + track.Artist);
         var metadata = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = UiTheme.CompactGap };
         var thumbnail = new Grid(); thumbnail.Children.Add(new Artwork(track, UiTheme.ThumbnailSize));
@@ -812,8 +822,35 @@ public sealed partial class MainView : UserControl
         Put(grid, more, 0, 2);
         more.Classes.Add("subtle");
         AttachSongHold(play, track, openMenu, selectionTracks);
-        more.IsVisible = showMenu || !OperatingSystem.IsAndroid();
         var border = new Border { Child = grid, Padding = UiTheme.RowPadding, Height = OperatingSystem.IsAndroid() || showMenu ? 64 : UiTheme.TrackRowHeight };
+        var showOptions = showMenu || !OperatingSystem.IsAndroid();
+        more.IsVisible = showOptions;
+        if (selectionTracks is not null)
+        {
+            var marker = CollectionIcon("unselected-track", "Marcar " + track.Title, () =>
+            {
+                ToggleSelectedTrack(track);
+                return Task.CompletedTask;
+            });
+            Put(grid, marker, 0, 2);
+            marker.IsVisible = false;
+            bool? lastSelected = null;
+            void UpdateSelection()
+            {
+                var selecting = IsSelectingTracks(grid);
+                var selected = selecting && _selectedTrackSources.Contains(track.Source);
+                marker.IsVisible = selecting;
+                more.IsVisible = !selecting && showOptions;
+                if (!selecting || lastSelected == selected) return;
+                lastSelected = selected;
+                marker.Content = Icons.Make(selected ? "selected-track" : "unselected-track");
+                var label = (selected ? "Desmarcar " : "Marcar ") + track.Title;
+                Avalonia.Automation.AutomationProperties.SetName(marker, label);
+                ToolTip.SetTip(marker, label);
+            }
+            border.AttachedToVisualTree += (_, _) => { TrackSelectionChanged += UpdateSelection; UpdateSelection(); };
+            border.DetachedFromVisualTree += (_, _) => TrackSelectionChanged -= UpdateSelection;
+        }
         if (showMenu)
         {
             void Update()
@@ -863,6 +900,7 @@ public sealed partial class MainView : UserControl
     {
         if (_showingPlayer) return;
         var track = _music.Pending ?? _music.Current; if (track is null) return;
+        EndTrackSelection();
         if (_overlay is not null) CloseSheet();
         if (_slidingOutPlayer is { } closing)
         {
@@ -1083,9 +1121,9 @@ public sealed partial class MainView : UserControl
         }
         // Detach initial mobile composition before responsive host takes ownership.
         panel.Children.Clear();
-        host.SizeChanged += (_, _) => { if (_playerPage?.Child == host) ArrangePlayer(); };
-        transport.LayoutUpdated += (_, _) => { if (_playerPage?.Child == host) ArrangeTransport(); };
-        _playerPage = new Border { Background = UiTheme.Brush(UiTheme.Background), Child = host, ClipToBounds = true };
+        host.SizeChanged += (_, _) => { if (_playerPage is not null && _playerPage.IsVisualAncestorOf(host)) ArrangePlayer(); };
+        transport.LayoutUpdated += (_, _) => { if (_playerPage is not null && _playerPage.IsVisualAncestorOf(host)) ArrangeTransport(); };
+        _playerPage = new Border { Background = UiTheme.Brush(UiTheme.Background), Child = CreateTrackSelectionHost(host), ClipToBounds = true };
         Grid.SetColumn(_playerPage, 1); Grid.SetColumnSpan(_playerPage, 2); Grid.SetRowSpan(_playerPage, 3); _root.Children.Add(_playerPage);
         if (_androidLayout)
         {
@@ -1106,6 +1144,7 @@ public sealed partial class MainView : UserControl
     private void ClosePlayer()
     {
         if (!_showingPlayer && _playerPage is null) return;
+        EndTrackSelection();
         if (_playerPage is { } closingPlayer)
         {
             if (_androidLayout) SlidePlayerOut(closingPlayer);
@@ -1123,6 +1162,7 @@ public sealed partial class MainView : UserControl
         if (_googleWelcome is not null) { if (!_googleWelcomeBusy) DismissGoogleWelcome(); return true; }
         if (_topMenuOpen) { CloseTopMenu(); return true; }
         if (_songPopup is { IsOpen: true }) { _songPopup.IsOpen = false; return true; }
+        if (_trackSelectionList is not null) { EndTrackSelection(); return true; }
         if (_overlay is not null) { CloseSheet(); return true; }
         if (_showingPlayer) { ClosePlayer(); return true; }
         if (_page is "settings" or "account") { BackFromPreferences(); return true; }
@@ -1647,7 +1687,7 @@ public sealed partial class MainView : UserControl
         var label = UiTheme.Text(title, UiTheme.DialogTitle, weight: FontWeight.SemiBold); label.TextWrapping = TextWrapping.Wrap; layout.Children.Add(label);
         Put(layout, scrollContent ? UiTheme.FadingScroll(content) : content, 1, 0);
         Put(layout, ActionButton("Fechar", () => { CloseSheet(); return Task.CompletedTask; }), 2, 0);
-        var sheet = UiTheme.Card(layout); sheet.MaxWidth = UiTheme.DialogMaxWidth; sheet.Margin = UiTheme.DialogMargin;
+        var sheet = UiTheme.Card(CreateTrackSelectionHost(layout)); sheet.MaxWidth = UiTheme.DialogMaxWidth; sheet.Margin = UiTheme.DialogMargin;
         sheet.HorizontalAlignment = HorizontalAlignment.Stretch; sheet.VerticalAlignment = VerticalAlignment.Center;
         sheet.MaxHeight = Math.Max(UiTheme.TouchSize, Bounds.Height - UiTheme.DialogMargin.Top - UiTheme.DialogMargin.Bottom);
         _overlay = new Border { Background = UiTheme.Brush(UiTheme.Scrim), Child = sheet };

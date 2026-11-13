@@ -65,6 +65,7 @@ public sealed partial class MainView
                 if (_mobileLibraryTab != tab)
                 {
                     RevealMobileTopBars();
+                    EndTrackSelection();
                     _mobileLibraryTab = tab;
                     _mobileLibraryScroll.Offset = default;
                     RefreshMobileLibrary();
@@ -84,7 +85,7 @@ public sealed partial class MainView
         _mobileLibraryTools = new Grid { ColumnDefinitions = new("*,Auto,Auto"), RowDefinitions = new("Auto,Auto"), ColumnSpacing = 8 };
         AddSearchIcon(_mobileLibrarySearch);
         AutomationProperties.SetName(_mobileLibrarySearch, "Buscar na biblioteca");
-        _mobileLibrarySearch.TextChanged += (_, _) => RefreshMobileLibrary();
+        _mobileLibrarySearch.TextChanged += (_, _) => { EndTrackSelection(); RefreshMobileLibrary(); };
         _mobileLibraryTools.Children.Add(_mobileLibrarySearch);
         Grid.SetColumnSpan(_mobileLibrarySearch, 3);
         var clearSearch = CollectionIcon("close", "Limpar busca da biblioteca", () =>
@@ -420,6 +421,7 @@ public sealed partial class MainView
 
     private Task OpenMobileLibraryGroupAsync(LibraryGroup group)
     {
+        EndTrackSelection();
         if (group.OnlinePlaylist is { } playlist && _account is { } account)
             return ShowAccountTracksAsync(account, playlist.Id, playlist.Title);
         RevealMobileTopBars();
@@ -432,6 +434,7 @@ public sealed partial class MainView
 
     private void CloseMobileLibraryGroup()
     {
+        EndTrackSelection();
         RevealMobileTopBars();
         _mobileLibraryGroup = null;
         RefreshMobileLibrary();
@@ -463,6 +466,7 @@ public sealed partial class MainView
         panel.Children.Add(order);
         panel.Children.Add(CollectionAction("Aplicar", () =>
         {
+            EndTrackSelection();
             _mobileLibrarySource = (LibrarySource)Math.Max(0, source.SelectedIndex);
             _mobileLibraryOrder = (LibraryOrder)Math.Max(0, order.SelectedIndex);
             CloseSheet();
