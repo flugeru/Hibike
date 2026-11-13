@@ -131,11 +131,13 @@ jobs:
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
         run: |
+          # A renamed workflow gets a new run counter. Keep upgrades monotonic across build and release workflows.
+          version_code=$(date -u +%s)
           dotnet publish src/Hibike.Android/Hibike.Android.csproj \
             -f net10.0-android -c Release -r android-arm64 \
             -p:RuntimeIdentifiers=android-arm64 \
             -p:AndroidSdkDirectory="$ANDROID_HOME" \
-            -p:ApplicationVersion=$((20261181 + GITHUB_RUN_NUMBER)) \
+            -p:ApplicationVersion="$version_code" \
             -p:AndroidKeyStore=true \
             -p:AndroidSigningKeyStore="$RUNNER_TEMP/hibike-signing.jks" \
             -p:AndroidSigningKeyAlias="$KEY_ALIAS" \
@@ -151,6 +153,7 @@ jobs:
           test -n "$apk"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$apk" | tee artifacts/android/signing-certificate.txt
+          grep -Fxq "Signer #1 certificate SHA-256 digest: 8dd0de091c98a3d8d969ac88dddf9fe6c2afa23edccb1df4d737d91d0480f98c" artifacts/android/signing-certificate.txt
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" | tee artifacts/android/package-info.txt
           grep -q "package: name='com.flugel.hibike'" artifacts/android/package-info.txt
           grep -q "sdkVersion:'24'" artifacts/android/package-info.txt

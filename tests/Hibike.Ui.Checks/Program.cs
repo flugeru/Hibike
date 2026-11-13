@@ -90,14 +90,14 @@ internal static partial class Program
                 welcome.GetVisualDescendants().OfType<Button>().Single(b => b.Content as string == "Continuar sem conta").RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
                 await Task.Delay(50);
                 welcome = (Border)welcomeField.GetValue(view)!;
-                var artistCards = welcome.GetVisualDescendants().OfType<WrapPanel>().Single(p => p.ItemSpacing == 18 && p.IsVisible);
-                for (var i = 0; i < 8; i++) artistCards.Children.Add(new Button { BorderThickness = new Thickness(i == 0 ? 2 : 0) });
+                var artistCards = welcome.GetVisualDescendants().OfType<WrapPanel>().Single(p => p.ItemHeight == 132 && p.IsVisible);
+                for (var i = 0; i < 8; i++) artistCards.Children.Add(new Button { BorderThickness = new Thickness(i == 0 ? 2 : 0), HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Stretch });
                 foreach (var width in new[] { 320, 360, 390, 430 })
                 {
                     window.Width = width; await Task.Delay(100);
                     Check(Math.Abs(artistCards.Children[0].Bounds.Y - artistCards.Children[1].Bounds.Y) < 1, "Onboarding lost two columns");
                     Check(artistCards.Children[2].Bounds.Y > artistCards.Children[0].Bounds.Y, "Onboarding did not wrap after two tiles");
-                    Check(artistCards.Children.All(c => Math.Abs(c.Bounds.Width - c.Bounds.Height) < 1 && c.Bounds.Right <= artistCards.Bounds.Width + 1), "Onboarding tile overflows or is not square");
+                    Check(artistCards.Children.All(c => Math.Abs(c.Bounds.Height - artistCards.ItemHeight) < 1 && c.Bounds.Right <= artistCards.Bounds.Width + 1), "Onboarding tile overflows or has the wrong height");
                 }
                 artistCards.Children.Clear(); window.Width = 360;
                 Check(!view.GetVisualDescendants().OfType<Button>().Any(b => b.IsEffectivelyVisible && (b.Content as string)?.Contains("Google") == true), "Google login visible");
@@ -225,23 +225,14 @@ internal static partial class Program
                 }
                 window.MinWidth = 320;
                 window.Width = 320;
-                var tokenStorage = AppServices.DiscordTokenStorage;
-                AppServices.DiscordTokenStorage = (() => null, _ => { }, () => { }, () => true);
                 var showDiscord = typeof(MainView).GetMethod("ShowDiscordAccountAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
                 await (Task)showDiscord.Invoke(view, null)!;
                 await Task.Delay(200);
                 var discordSheet = (Border)typeof(MainView).GetField("_overlay", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
-                var discordControls = discordSheet.GetVisualDescendants().OfType<Button>().ToArray();
-                var connectDiscord = discordControls.Single(button => Equals(button.Content, "Conectar"));
-                var savedDiscord = discordControls.Single(button => Avalonia.Automation.AutomationProperties.GetName(button) == "Usar token salvo");
-                var disconnectDiscord = discordControls.Single(button => Equals(button.Content, "Desconectar e remover token"));
+                Check(discordSheet.GetVisualDescendants().OfType<TextBlock>().Any(label =>
+                    label.Text?.Contains("Rich Presence do Discord instalado") == true), "Desktop Discord setup instructions missing");
                 Capture(view, "discord-320");
-                Check(Math.Abs(connectDiscord.Bounds.Width - savedDiscord.Bounds.Width) < 2 && connectDiscord.Bounds.Y == savedDiscord.Bounds.Y
-                    && Math.Abs(connectDiscord.Bounds.Height - savedDiscord.Bounds.Height) < 2 && Math.Abs(disconnectDiscord.Bounds.Width
-                        - connectDiscord.Bounds.Width - savedDiscord.Bounds.Width - 8) < 2,
-                    $"Discord action grid: connect {connectDiscord.Bounds}, saved {savedDiscord.Bounds}, disconnect {disconnectDiscord.Bounds}");
                 Check(AppServices.BackHandler!(), "Discord sheet cannot close");
-                AppServices.DiscordTokenStorage = tokenStorage;
                 window.MinWidth = minimumWindowWidth;
                 window.Width = 1260;
                 await Task.Delay(200);

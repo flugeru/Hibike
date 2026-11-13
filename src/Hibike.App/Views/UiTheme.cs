@@ -86,7 +86,7 @@ internal static class UiTheme
         return scroll;
     }
     public static readonly FontFamily Inter = new("avares://Avalonia.Fonts.Inter/Assets#Inter");
-    public static readonly FontFamily Mono = new("Cascadia Mono, Consolas, monospace");
+    public static readonly FontFamily Mono = new(OperatingSystem.IsLinux() ? "DejaVu Sans Mono" : "Cascadia Mono, Consolas, monospace");
     public static IBrush Brush(string color) => new SolidColorBrush(Color.Parse(color)).ToImmutable();
     public static TextBlock Text(string? text, double size = Body, string color = TextPrimary,
         FontWeight weight = FontWeight.Normal) => new()
@@ -165,6 +165,10 @@ internal static class UiTheme
             new Setter(ContentPresenter.ForegroundProperty, Brush(Primary)));
         Add(new Style(x => x.OfType<Button>().Class("primary").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
             new Setter(ContentPresenter.ForegroundProperty, Brush(OnPrimary)));
+        Add(new Style(x => x.OfType<Button>().Class("onboardingContinue").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
+            new Setter(ContentPresenter.ForegroundProperty, Brush("#151019")));
+        Add(new Style(x => x.OfType<Button>().Class("onboardingContinue").Class(":disabled").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
+            new Setter(ContentPresenter.ForegroundProperty, Brush("#AAAAAA")));
         Add(new Style(x => x.OfType<Button>().Class("subtle")), new Setter(TemplatedControl.BorderThicknessProperty, Zero));
         Add(new Style(x => x.OfType<Button>().Class("cover")), new(TemplatedControl.BorderThicknessProperty, Zero),
             new(TemplatedControl.CornerRadiusProperty, new CornerRadius(CardRadius)), new(TemplatedControl.PaddingProperty, new Thickness(8)));

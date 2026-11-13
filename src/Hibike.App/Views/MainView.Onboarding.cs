@@ -24,9 +24,10 @@ public sealed partial class MainView
         _selectedArtists.Clear(); _selectedArtists.AddRange(_music.FavoriteArtists);
         _selectedGenres.Clear(); _selectedGenres.UnionWith(_music.FavoriteGenres);
         var genreStage = false;
-        var layout = new Grid { RowDefinitions = new("Auto,*,Auto"), MaxWidth = 1000, Margin = new Thickness(20, 24) };
+        var layout = new Grid { RowDefinitions = new("Auto,Auto,*,Auto"), MaxWidth = 960, Margin = new Thickness(_androidLayout ? 16 : 24), RowSpacing = 14 };
         var top = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.CompactGap };
-        var heading = Text("Hibike · Seu som, seu espaço", UiTheme.Body);
+        var heading = Text("Hibike", 18);
+        heading.FontWeight = FontWeight.SemiBold;
         heading.TextWrapping = TextWrapping.Wrap;
         heading.VerticalAlignment = VerticalAlignment.Center;
         top.Children.Add(heading);
@@ -41,26 +42,32 @@ public sealed partial class MainView
             return Task.CompletedTask;
         });
         Put(top, dismiss, 0, 1); layout.Children.Add(top);
-        var body = new StackPanel { Spacing = 18, Margin = new Thickness(0, 24) };
-        var title = Text("Quais artistas você mais gosta?", UiTheme.DialogTitle); title.TextWrapping = TextWrapping.Wrap; body.Children.Add(title);
-        var description = Text("Escolha pelo menos 3 artistas para personalizarmos suas recomendações.", UiTheme.Body, Muted); description.TextWrapping = TextWrapping.Wrap; body.Children.Add(description);
-        var search = UiTheme.Field("Buscar artistas"); body.Children.Add(search);
-        var selected = new WrapPanel { ItemSpacing = 8, LineSpacing = 8 }; body.Children.Add(selected);
-        var state = Text("Busque artistas no catálogo YouTube Music. Conta opcional.", UiTheme.Caption, Muted); state.TextWrapping = TextWrapping.Wrap; body.Children.Add(state);
-        var cards = new WrapPanel { ItemWidth = 112, ItemHeight = 112, ItemSpacing = 18, LineSpacing = 18 }; body.Children.Add(cards);
-        var genres = new WrapPanel { ItemSpacing = 18, LineSpacing = 18, IsVisible = false }; body.Children.Add(genres);
+        var intro = new StackPanel { Spacing = 14 };
+        var headline = new StackPanel { Spacing = 6 };
+        var title = Text("Escolha seus artistas", 27); title.FontWeight = FontWeight.SemiBold;
+        title.TextWrapping = TextWrapping.Wrap; headline.Children.Add(title);
+        var description = Text("Selecione pelo menos 3 para personalizar seu Início.", 14, Muted);
+        description.TextWrapping = TextWrapping.Wrap; headline.Children.Add(description);
+        intro.Children.Add(headline);
+        var search = UiTheme.Field("Buscar artistas"); AddSearchIcon(search); intro.Children.Add(search);
+        var selected = new WrapPanel { ItemSpacing = 8, LineSpacing = 8 };
+        var choices = UiTheme.FadingScroll(selected, horizontal: true);
+        intro.Children.Add(choices);
+        var body = new StackPanel { Spacing = 12 };
+        var state = Text("Artistas", 16, Muted); state.FontWeight = FontWeight.SemiBold; state.TextWrapping = TextWrapping.Wrap; body.Children.Add(state);
+        var cards = new WrapPanel { ItemWidth = 112, ItemHeight = 132, ItemSpacing = 12, LineSpacing = 12 }; body.Children.Add(cards);
+        var genres = new WrapPanel { ItemSpacing = 12, LineSpacing = 12, IsVisible = false }; body.Children.Add(genres);
         cards.SizeChanged += (_, e) =>
         {
-            if (e.NewSize.Width == e.PreviousSize.Width || e.NewSize.Width <= 0) return;
             var width = e.NewSize.Width;
+            if (e.PreviousSize.Width == width || width <= 0) return;
             var columns = width < 500 ? 2 : width < 750 ? 3 : 4;
-            // Size the whole tile, including the selection border, inside the scroll viewport.
             var scaling = TopLevel.GetTopLevel(cards)?.RenderScaling ?? 1;
-            var size = Math.Floor((width - (columns - 1) * cards.ItemSpacing) * scaling / columns) / scaling;
-            cards.ItemWidth = cards.ItemHeight = Math.Clamp(size, 1, 220);
+            cards.ItemWidth = Math.Max(1, Math.Floor((width - (columns - 1) * cards.ItemSpacing) * scaling / columns) / scaling);
         };
-        var content = new StackPanel(); content.Children.Add(body);
-        var scroll = new ScrollViewer { Content = content, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled }; Put(layout, scroll, 1, 0);
+        var scroll = UiTheme.FadingScroll(body);
+        Put(layout, intro, 1, 0);
+        Put(layout, scroll, 2, 0);
         var footer = new StackPanel { Spacing = 8 }; var count = Text("", UiTheme.Caption, Muted); footer.Children.Add(count);
         Button? continueButton = null;
         var updateCards = new List<Action>();
@@ -69,24 +76,45 @@ public sealed partial class MainView
             if (genreStage) { await FinishOnboardingAsync(false); return; }
             genreStage = true; _artistSearch?.Cancel();
             title.Text = "Quais estilos musicais combinam com você?"; description.Text = "Etapa opcional. Seus estilos complementam seus artistas favoritos.";
-            search.IsVisible = selected.IsVisible = cards.IsVisible = false; cards.Children.Clear(); updateCards.Clear(); genres.IsVisible = true;
+            search.IsVisible = choices.IsVisible = cards.IsVisible = false; cards.Children.Clear(); updateCards.Clear(); genres.IsVisible = true;
             state.Text = "Escolha quantos estilos quiser, ou continue sem selecionar.";
             foreach (var genre in Genres)
             {
                 var button = ActionButton(genre, () => Task.CompletedTask);
-                void Style() { button.BorderBrush = UiTheme.Brush(_selectedGenres.Contains(genre) ? OnboardingAccent : UiTheme.Outline); button.BorderThickness = new Thickness(2); }
+                void Style() { button.BorderBrush = UiTheme.Brush(_selectedGenres.Contains(genre) ? OnboardingAccent : UiTheme.Outline); button.BorderThickness = UiTheme.One; }
                 button.Click += (_, _) => { if (!_selectedGenres.Add(genre)) _selectedGenres.Remove(genre); Style(); };
                 Style(); genres.Children.Add(button);
             }
-            count.Text = "Gêneros opcionais"; continueButton!.Content = "Começar a ouvir"; continueButton.IsEnabled = true;
+            count.Text = "Gêneros opcionais"; continueButton!.Content = "Começar a ouvir"; SetContinueState(true);
             scroll.Offset = default;
         });
-        continueButton.Classes.Add("primary"); continueButton.Background = UiTheme.Brush(OnboardingAccent); continueButton.Foreground = Brushes.Black; continueButton.HorizontalAlignment = HorizontalAlignment.Stretch; footer.Children.Add(continueButton); Put(layout, footer, 2, 0);
+        continueButton.HorizontalAlignment = HorizontalAlignment.Stretch;
+        continueButton.Classes.Add("onboardingContinue");
+        continueButton.CornerRadius = new CornerRadius(12);
+        footer.Children.Add(continueButton);
+        Put(layout, footer, 3, 0);
+        void SetContinueState(bool ready)
+        {
+            continueButton.IsEnabled = ready;
+            continueButton.Opacity = 1;
+            continueButton.Background = UiTheme.Brush(ready ? OnboardingAccent : "#262626");
+            continueButton.Foreground = UiTheme.Brush(ready ? "#151019" : "#AAAAAA");
+        }
         void UpdateSelection()
         {
-            count.Text = $"{_selectedArtists.Count} de 20 artistas selecionados"; continueButton.IsEnabled = _selectedArtists.Count >= 3;
+            var remaining = Math.Max(0, 3 - _selectedArtists.Count);
+            count.Text = $"{_selectedArtists.Count} de 20 selecionados" +
+                (remaining > 0 ? $" · {(remaining == 1 ? "Falta" : "Faltam")} {remaining}" : "");
+            SetContinueState(remaining == 0);
             selected.Children.Clear();
-            foreach (var artist in _selectedArtists.ToArray()) selected.Children.Add(ActionButton(artist.Name + " ×", () => { _selectedArtists.RemoveAll(a => a.Id == artist.Id); UpdateSelection(); return Task.CompletedTask; }));
+            foreach (var artist in _selectedArtists)
+            {
+                var chip = ActionButton(artist.Name + " ×", () => { _selectedArtists.RemoveAll(a => a.Id == artist.Id); UpdateSelection(); return Task.CompletedTask; });
+                chip.Background = UiTheme.Brush("#24182E");
+                chip.Foreground = UiTheme.Brush("#DFC4FF");
+                selected.Children.Add(chip);
+            }
+            choices.IsVisible = selected.Children.Count > 0;
             foreach (var update in updateCards) update();
         }
         IReadOnlyList<MusicArtist> results = [];
@@ -97,11 +125,17 @@ public sealed partial class MainView
             foreach (var artist in results)
             {
                 var art = new Track(artist.Id, artist.Name, artist.Name, "https://music.youtube.com/channel/" + artist.Id, Thumbnail: artist.Image);
-                var image = new Artwork(art, 220, highQuality: true) { Width = double.NaN, Height = double.NaN, CornerRadius = new(16) };
-                var overlay = new Grid(); overlay.Children.Add(image);
-                var label = Text(artist.Name, UiTheme.Body); label.FontWeight = FontWeight.SemiBold; label.TextWrapping = TextWrapping.Wrap; label.MaxLines = 2;
-                overlay.Children.Add(new Border { Background = new SolidColorBrush(Color.FromArgb(190, 0, 0, 0)), Padding = new Thickness(10), VerticalAlignment = VerticalAlignment.Bottom, Child = label });
-                var check = Text("○", UiTheme.DialogTitle, UiTheme.OnPrimary); check.HorizontalAlignment = HorizontalAlignment.Right; check.Margin = new Thickness(8); overlay.Children.Add(check);
+                var image = new Artwork(art, 70, highQuality: true) { CornerRadius = new(35), HorizontalAlignment = HorizontalAlignment.Center };
+                var tile = new StackPanel { Spacing = 6 };
+                tile.Children.Add(image);
+                var label = Text(artist.Name, 13);
+                label.FontWeight = FontWeight.SemiBold;
+                label.TextAlignment = TextAlignment.Center;
+                label.TextTrimming = TextTrimming.CharacterEllipsis;
+                tile.Children.Add(label);
+                var check = Text("", 12, Muted);
+                check.TextAlignment = TextAlignment.Center;
+                tile.Children.Add(check);
                 var button = ActionButton("", () =>
                 {
                     if (_selectedArtists.Any(a => a.Id == artist.Id)) _selectedArtists.RemoveAll(a => a.Id == artist.Id);
@@ -109,9 +143,9 @@ public sealed partial class MainView
                     else state.Text = "Limite de 20 artistas. Remova um para escolher outro.";
                     UpdateSelection(); return Task.CompletedTask;
                 });
-                button.Content = overlay; button.Padding = new Thickness(0); button.CornerRadius = new(16); button.ClipToBounds = true;
+                button.Content = tile; button.Padding = new Thickness(10); button.CornerRadius = new(14); button.ClipToBounds = true;
                 button.HorizontalAlignment = HorizontalAlignment.Stretch; button.VerticalAlignment = VerticalAlignment.Stretch;
-                button.HorizontalContentAlignment = HorizontalAlignment.Stretch; button.VerticalContentAlignment = VerticalAlignment.Stretch;
+                button.HorizontalContentAlignment = HorizontalAlignment.Stretch; button.VerticalContentAlignment = VerticalAlignment.Center;
                 button.BorderThickness = new Thickness(2);
                 bool? wasChosen = null;
                 void UpdateCard()
@@ -119,8 +153,9 @@ public sealed partial class MainView
                     var chosen = _selectedArtists.Any(a => a.Id == artist.Id);
                     if (chosen == wasChosen) return;
                     wasChosen = chosen;
-                    check.Text = chosen ? "✓" : "○";
-                    check.Foreground = UiTheme.Brush(chosen ? OnboardingAccent : UiTheme.OnPrimary);
+                    check.Text = chosen ? "✓ Selecionado" : "+ Selecionar";
+                    button.Background = UiTheme.Brush(chosen ? "#24182E" : "#151515");
+                    check.Foreground = UiTheme.Brush(chosen ? "#DFC4FF" : Muted);
                     button.BorderBrush = UiTheme.Brush(chosen ? OnboardingAccent : UiTheme.Outline);
                     Avalonia.Automation.AutomationProperties.SetName(button, artist.Name + (chosen ? ", selecionado" : ", selecionar"));
                 }
@@ -139,7 +174,8 @@ public sealed partial class MainView
                 await Task.Delay(400, request.Token); state.Text = "Buscando artistas…";
                 var found = await _music.SearchArtistsAsync(query, request.Token);
                 if (!ReferenceEquals(_artistSearch, request) || genreStage) return;
-                results = found; Render(); state.Text = found.Count == 0 ? "Nenhum artista encontrado. Tente outro nome." : "Toque para selecionar. Suas escolhas permanecem ao buscar novamente.";
+                results = found; Render(); scroll.Offset = default;
+                state.Text = found.Count == 0 ? "Nenhum artista encontrado. Tente outro nome." : "Resultados";
             }
             catch (OperationCanceledException) { }
             catch (Exception) { if (ReferenceEquals(_artistSearch, request)) state.Text = "Não foi possível buscar. Verifique conexão ou pule por enquanto."; }
@@ -163,9 +199,16 @@ public sealed partial class MainView
             var request = new CancellationTokenSource(TimeSpan.FromSeconds(20)); _artistSearch = request;
             try
             {
-                var found = await _music.SearchArtistsAsync("Brasil", request.Token);
+                var seeds = new[] { "Aimer", "YOASOBI", "Linkin Park", "Marília Mendonça", "Anitta", "Djavan", "Billie Eilish", "Daft Punk" };
+                var matches = await Task.WhenAll(seeds.Select(async name =>
+                {
+                    var artists = await _music.SearchArtistsAsync(name, request.Token);
+                    return artists.FirstOrDefault(artist => string.Equals(artist.Name, name, StringComparison.OrdinalIgnoreCase));
+                }));
+                var found = matches.OfType<MusicArtist>().DistinctBy(artist => artist.Id).ToArray();
                 if (!ReferenceEquals(_artistSearch, request) || genreStage || _onboarding is null) return;
                 results = found; Render();
+                if (found.Length == 0) state.Text = "Busque um artista pelo nome.";
             }
             catch (OperationCanceledException) { }
             catch (Exception) { if (ReferenceEquals(_artistSearch, request)) state.Text = "Sugestões indisponíveis. Busque um artista ou pule por enquanto."; }
