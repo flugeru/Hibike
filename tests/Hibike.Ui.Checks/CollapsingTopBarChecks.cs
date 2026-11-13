@@ -29,6 +29,7 @@ internal static partial class Program
             scroll.GetVisualDescendants().OfType<ScrollContentPresenter>().First();
         static void Swipe(ScrollViewer scroll, double x, double y) =>
             Presenter(scroll).RaiseEvent(new ScrollGestureEventArgs(71, new Vector(x, y)));
+        static void EndSwipe(ScrollViewer scroll) => Presenter(scroll).RaiseEvent(new ScrollGestureEndedEventArgs(71));
         static Control[] Bars(ScrollViewer scroll) => scroll.GetVisualAncestors().OfType<Grid>()
             .SelectMany(grid => grid.Children).Where(child => child.GetType().Name == "CollapsibleTopBar" && child.IsEffectivelyVisible).ToArray();
 
@@ -43,13 +44,21 @@ internal static partial class Program
             var expandedHeight = header.Bounds.Height;
             var expandedViewport = home.Viewport.Height;
             Check(expandedHeight > 0, "Home toolbar failed to measure");
-            Swipe(home, 0, 35);
-            await Task.Delay(250);
+            Swipe(home, 0, 24);
+            view.UpdateLayout();
+            Check(Math.Abs(header.Bounds.Height - (expandedHeight - 24)) < 1, "Toolbar did not follow the drag distance");
+            EndSwipe(home);
+            await Task.Delay(340);
             Check(header.Bounds.Height < 1 && !header.IsHitTestVisible && home.Viewport.Height >= expandedViewport + expandedHeight - 1,
                 "Collapsed home toolbar did not release its layout space");
             Swipe(home, 0, 300);
-            Swipe(home, 0, -32);
-            await Task.Delay(250);
+            var offsetBeforeReveal = home.Offset.Y;
+            Swipe(home, 0, -16);
+            view.UpdateLayout();
+            Check(Math.Abs(header.Bounds.Height - 16) < 1, "Reverse drag jumped straight to the expanded state");
+            Check(Math.Abs(home.Offset.Y - offsetBeforeReveal) < 1, "Reverse drag moved both the toolbar and the list");
+            EndSwipe(home);
+            await Task.Delay(340);
             Check(header.Bounds.Height == expandedHeight && home.Offset.Y > 0, "Reverse scrolling did not reveal the toolbar away from the top");
 
             music.SetReduceMotion(true);
@@ -71,7 +80,7 @@ internal static partial class Program
             Check(libraryBar.Bounds.Height == libraryHeight, "Nested horizontal carousel collapsed the page toolbar");
             library.Content = libraryContent;
             view.UpdateLayout();
-            Swipe(library, 0, 45);
+            Swipe(library, 0, 500);
             view.UpdateLayout();
             Check(libraryBar.Bounds.Height < 1, "Library tabs and filters did not collapse");
             Click(Field<List<Button>>("_nav").First(button => button.Tag is ValueTuple<string, string, string, bool> tab
@@ -88,11 +97,15 @@ internal static partial class Program
             view.UpdateLayout();
             var downloadBars = Bars(downloads);
             Check(downloadBars.Length == 3, "Downloads did not link the app bar, tabs, and filters");
-            Swipe(downloads, 0, 60);
+            Swipe(downloads, 0, 500);
             view.UpdateLayout();
             Check(downloadBars.All(bar => bar.Bounds.Height < 1), "Downloads left fixed controls above its list");
             Swipe(downloads, 0, -40);
             view.UpdateLayout();
+            Check(downloadBars.Sum(bar => bar.Bounds.Height) is > 39 and < 41
+                && downloadBars.Count(bar => bar.Bounds.Height > 0) == 1, "Download controls did not slide back as a single stack");
+            EndSwipe(downloads);
+            await Task.Delay(200);
             Check(downloadBars.All(bar => bar.Bounds.Height > 0), "Downloads did not restore its toolbar groups");
 
             Click(Field<Button>("_transfersTab"));
@@ -102,7 +115,7 @@ internal static partial class Program
             transfers.Content = new Border { Height = 4000 };
             view.UpdateLayout();
             var transferBars = Bars(transfers);
-            Swipe(transfers, 0, 60);
+            Swipe(transfers, 0, 500);
             view.UpdateLayout();
             Check(transferBars.Length == 3 && transferBars.All(bar => bar.Bounds.Height < 1),
                 "Transfer tabs or queue header did not collapse");
@@ -114,7 +127,7 @@ internal static partial class Program
             Field<ContentControl>("_mobileSearchState").IsVisible = false;
             view.UpdateLayout();
             var searchBars = Bars(search);
-            Swipe(search, 0, 60);
+            Swipe(search, 0, 500);
             view.UpdateLayout();
             Check(searchBars.Length == 2 && searchBars.All(bar => bar.Bounds.Height < 1),
                 "Search left its field or filters fixed above results");
@@ -126,7 +139,7 @@ internal static partial class Program
             Field<ContentControl>("_mobileQueueEmpty").IsVisible = false;
             view.UpdateLayout();
             var queueBars = Bars(queue);
-            Swipe(queue, 0, 60);
+            Swipe(queue, 0, 500);
             view.UpdateLayout();
             Check(queueBars.Length == 1 && queueBars[0].Bounds.Height < 1, "Queue toolbar did not collapse");
 
@@ -136,7 +149,7 @@ internal static partial class Program
                     "Playlist", null, null, null, false, false, null]);
             await Task.Delay(100);
             var collection = Field<Border>("_collectionPage").GetVisualDescendants().OfType<ScrollViewer>().Single();
-            Swipe(collection, 0, 55);
+            Swipe(collection, 0, 500);
             view.UpdateLayout();
             Check(Bars(collection).Length == 2 && Bars(collection).All(bar => bar.Bounds.Height < 1),
                 "Collection toolbar and artwork header did not collapse");
@@ -145,10 +158,10 @@ internal static partial class Program
                 ["settings", new Control[] { new Border { Height = 4000 } }]);
             view.UpdateLayout();
             var preferences = Field<ScrollViewer>("_preferencesPage");
-            Swipe(preferences, 0, 50);
+            Swipe(preferences, 0, 500);
             view.UpdateLayout();
             Check(header.Bounds.Height < 1, "Settings did not use the shared toolbar");
-            Swipe(preferences, 0, -40);
+            Swipe(preferences, 0, -500);
             view.UpdateLayout();
             Check(header.Bounds.Height == expandedHeight, "Settings did not restore its toolbar");
 
