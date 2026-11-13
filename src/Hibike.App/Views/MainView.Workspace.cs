@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Collections;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
@@ -265,7 +266,7 @@ public sealed partial class MainView
     }
 
     private void OpenCollection(string title, IReadOnlyList<Track> tracks, string kind = "Playlist", Track? artwork = null, string? message = null, Func<Task>? retry = null,
-        bool replace = false, bool artistPage = false, Button? footer = null)
+        bool replace = false, bool artistPage = false, Func<ScrollViewer, Control>? pagedBody = null)
     {
         EndTrackSelection();
         ClosePlayer(); CloseTopMenu(); CloseSheet();
@@ -281,17 +282,13 @@ public sealed partial class MainView
         var hero = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = UiTheme.PageGap };
         var coverSize = Bounds.Width >= UiTheme.DesktopWidth ? 128 : 88;
         var imageTrack = artwork is { IsArtist: true, Thumbnail: not null } ? artwork with { Source = "" } : artwork;
-        var cover = new Artwork(imageTrack ?? tracks.FirstOrDefault(), coverSize, highQuality: true);
-        if (artistPage) cover.CornerRadius = new CornerRadius(coverSize / 2d);
-        hero.Children.Add(cover);
+        var coverSlot = new Border();
+        hero.Children.Add(coverSlot);
         var labels = new StackPanel { Spacing = UiTheme.CompactGap, VerticalAlignment = VerticalAlignment.Center };
         labels.Children.Add(Text(kind, UiTheme.Label, Muted));
         var heading = Text(title, UiTheme.PageTitle); heading.TextWrapping = TextWrapping.Wrap; heading.MaxLines = 3; labels.Children.Add(heading);
-        if (tracks.Count > 0)
-        {
-            var duration = tracks.Sum(t => Math.Max(0, t.DurationSeconds));
-            labels.Children.Add(Text(TrackCount(tracks.Count) + (duration > 0 && !artistPage ? $" · {Time(duration)}" : ""), UiTheme.Caption, Muted));
-        }
+        var summary = Text("", UiTheme.Caption, Muted);
+        labels.Children.Add(summary);
         Put(hero, labels, 0, 1); grid.Children.Add(UiTheme.Card(hero));
         if (replace && prior?.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is { } previous)
         {
@@ -305,16 +302,42 @@ public sealed partial class MainView
         }
         var actions = new WrapPanel { ItemSpacing = 8, LineSpacing = 8 };
         actions.Children.Add(CollectionIcon("back", "Voltar", () => { BackFromCollection(); return Task.CompletedTask; }));
-        var play = ActionButton(artistPage ? "Tocar destaques" : "Tocar tudo", () => PlayCollectionAsync(tracks)); play.IsVisible = tracks.Count > 0; play.Classes.Add("primary"); actions.Children.Add(play);
+        var play = ActionButton(artistPage ? "Tocar destaques" : "Tocar tudo", () => PlayCollectionAsync(tracks));
+        play.Classes.Add("primary"); actions.Children.Add(play);
         var enqueue = ActionButton("Adicionar à fila", () => { foreach (var track in tracks) _music.Enqueue(track); _music.SetStatus("Faixas adicionadas à fila."); return Task.CompletedTask; });
-        enqueue.IsVisible = tracks.Count > 0; actions.Children.Add(enqueue);
+        actions.Children.Add(enqueue);
         if (!artistPage && artwork is { IsArtist: true } && !string.Equals(artwork.Title, title, StringComparison.OrdinalIgnoreCase))
             actions.Children.Add(ActionButton("Ver artista", () => ShowChannelAsync(artwork)));
         Put(grid, actions, 1, 0);
-        var list = CollectionList<object>(item => item is Track track ? TrackRow(track, showMenu: true, selectionTracks: () => tracks) : new Border());
-        list.ItemsSource = footer is null ? tracks : tracks.Cast<object>().Append(footer).ToArray();
-        Put(grid, tracks.Count > 0 ? UiTheme.FadingScroll(list)
-            : EmptyState("library", message ?? "Nenhuma faixa disponível", "", retry is null ? null : "Tentar novamente", retry), 2, 0);
+
+        Track? displayedCover = null;
+        void UpdateHeader()
+        {
+            var nextCover = imageTrack ?? tracks.FirstOrDefault();
+            if (coverSlot.Child is null || !Equals(displayedCover, nextCover))
+            {
+                var cover = new Artwork(nextCover, coverSize, highQuality: true);
+                if (artistPage) cover.CornerRadius = new CornerRadius(coverSize / 2d);
+                coverSlot.Child = cover;
+                displayedCover = nextCover;
+            }
+            play.IsVisible = enqueue.IsVisible = summary.IsVisible = tracks.Count > 0;
+            var duration = tracks.Sum(t => Math.Max(0, t.DurationSeconds));
+            summary.Text = TrackCount(tracks.Count) + (duration > 0 && !artistPage ? $" · {Time(duration)}" : "");
+        }
+        UpdateHeader();
+        var list = CollectionList<Track>(track => TrackRow(track, showMenu: true, selectionTracks: () => tracks));
+        list.ItemsSource = tracks;
+        if (tracks is AvaloniaList<Track> changingTracks)
+            changingTracks.CollectionChanged += (_, _) =>
+            {
+                UpdateHeader();
+                if (ReferenceEquals(_trackSelectionList?.Content, list)) TrackSelectionChanged?.Invoke();
+            };
+
+        var scroll = UiTheme.FadingScroll(list);
+        Put(grid, pagedBody?.Invoke(scroll) ?? (tracks.Count > 0 ? scroll
+            : EmptyState("library", message ?? "Nenhuma faixa disponível", "", retry is null ? null : "Tentar novamente", retry)), 2, 0);
         MakeTopRowsCollapsible(grid, 2);
         _collectionPage.Child = grid; _page = "collection"; CloseSheet(); Refresh();
     }

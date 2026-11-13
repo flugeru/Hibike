@@ -38,6 +38,16 @@ public class WebAccountTests
         Assert.Equal(2, handler.TrackPages);
     }
 
+    [Fact]
+    public async Task ShortPlaylistIgnoresSuggestionsContinuation()
+    {
+        using var client = new HttpClient(new Handler(hasTrackContinuation: false));
+        using var library = YouTubeAccountLibrary.FromWebSession(client, "SAPISID=test-secret; SID=other");
+        var page = await library.TrackPageAsync("PLtest", null, default);
+        Assert.Single(page.Tracks);
+        Assert.Null(page.Continuation);
+    }
+
     private sealed class StatusHandler(HttpStatusCode status) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
@@ -81,7 +91,7 @@ public class WebAccountTests
     [InlineData("SAPISID=secret\r\nInjected: true")]
     public void RejectsInvalidCookies(string cookies) => Assert.Throws<InvalidOperationException>(() => YouTubeAccountLibrary.FromWebSession(new HttpClient(), cookies));
 
-    private sealed class Handler : HttpMessageHandler
+    private sealed class Handler(bool hasTrackContinuation = true) : HttpMessageHandler
     {
         public int TrackPages;
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
@@ -106,10 +116,12 @@ public class WebAccountTests
                     TrackPages++;
                     Assert.Equal(TrackPages == 1 ? null : "next", json.RootElement.GetProperty("continuation").GetString());
                     body = TrackPages == 1
-                        ? """{"musicResponsiveListItemRenderer":{"thumbnail":{"thumbnails":[{"url":"https://lh3.googleusercontent.com/music=w1000-h1000","width":1000},{"url":"https://lh3.googleusercontent.com/music=w60-h60","width":60}]},"flexColumns":[{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Música"}]}}},{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Artista"}]}}}],"playlistItemData":{"videoId":"abcdefghijk"}},"nextContinuationData":{"continuation":"next"}}"""
-                        : "{}";
+                        ? """{"musicPlaylistShelfRenderer":{"contents":[{"musicResponsiveListItemRenderer":{"thumbnail":{"thumbnails":[{"url":"https://lh3.googleusercontent.com/music=w1000-h1000","width":1000},{"url":"https://lh3.googleusercontent.com/music=w60-h60","width":60}]},"flexColumns":[{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Música"}]}}},{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Artista"}]}}}],"playlistItemData":{"videoId":"abcdefghijk"} }},{"continuationItemRenderer":{"continuationEndpoint":{"continuationCommand":{"token":"next"}}}}]},"nextContinuationData":{"continuation":"suggestions"}}"""
+                        : """{"musicShelfContinuation":{"contents":[{"musicResponsiveListItemRenderer":{"playlistItemData":{"videoId":"suggestion1"}}}],"continuations":[{"nextContinuationData":{"continuation":"suggestions"}}]}}""";
                 }
             }
+            if (!hasTrackContinuation)
+                body = body.Replace(""",{"continuationItemRenderer":{"continuationEndpoint":{"continuationCommand":{"token":"next"}}}}""", "");
             return new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
         }
     }

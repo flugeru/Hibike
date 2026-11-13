@@ -15,8 +15,10 @@ public sealed partial class MainView
     private enum LibraryTab { Songs, Playlists, Albums, Artists }
     private enum LibrarySource { All, Local, Online }
     private enum LibraryOrder { Recent, Title, Artist }
+    private enum BuiltInLibraryGroup { Favorites, Downloads }
     private sealed record LibraryGroup(string Title, string Subtitle, Track? Artwork, IReadOnlyList<Track> Tracks,
-        MusicController.LocalPlaylist? Playlist = null, AccountPlaylist? OnlinePlaylist = null);
+        MusicController.LocalPlaylist? Playlist = null, AccountPlaylist? OnlinePlaylist = null,
+        BuiltInLibraryGroup? BuiltIn = null);
 
     private static readonly string[] LibraryTabLabels = ["Músicas", "Playlists", "Álbuns", "Artistas"];
     private LibraryTab _mobileLibraryTab;
@@ -198,10 +200,14 @@ public sealed partial class MainView
 
         var query = _mobileLibrarySearch.Text?.Trim() ?? "";
         var seed = detail?.Tracks.FirstOrDefault();
-        var tracks = detail is null
-            ? _mobileLibraryTab == LibraryTab.Playlists ? [] : FilterMobileLibraryTracks().ToArray()
-            : detail.Playlist?.Tracks.ToArray() ?? FilterMobileLibraryTracks().Where(track => seed is not null
-                && track.Artist == seed.Artist && (_mobileLibraryTab == LibraryTab.Artists || track.Album == seed.Album)).ToArray();
+        var tracks = detail?.BuiltIn switch
+        {
+            BuiltInLibraryGroup.Favorites => _music.Favorites.ToArray(),
+            BuiltInLibraryGroup.Downloads => FilterMobileLibraryTracks().Where(IsDownloadWithoutAlbum).ToArray(),
+            _ when detail is null => _mobileLibraryTab == LibraryTab.Playlists ? [] : FilterMobileLibraryTracks().ToArray(),
+            _ => detail!.Playlist?.Tracks.ToArray() ?? FilterMobileLibraryTracks().Where(track => seed is not null
+                && track.Artist == seed.Artist && (_mobileLibraryTab == LibraryTab.Artists || track.Album == seed.Album)).ToArray()
+        };
         var showingTracks = detail is not null || _mobileLibraryTab == LibraryTab.Songs;
         _mobileLibrarySection.IsVisible = !showingTracks;
         _mobileLibrarySection.Text = _mobileLibraryTab switch
@@ -231,7 +237,7 @@ public sealed partial class MainView
         {
             var groups = MobileLibraryGroups(tracks, query).ToArray();
             count = groups.Length;
-            var key = _mobileLibraryTab + ":" + _mobileLibraryListMode + ":" + LibraryColumns + ":" + MobileLibraryCardSize + ":" + string.Join("|", groups.Select(group => $"{group.Title}\n{group.Subtitle}\n{group.Artwork?.Thumbnail}\n{group.OnlinePlaylist?.Id}\n{string.Join(",", group.Tracks.Select(track => track.Source))}"));
+            var key = _mobileLibraryTab + ":" + _mobileLibraryListMode + ":" + LibraryColumns + ":" + MobileLibraryCardSize + ":" + string.Join("|", groups.Select(group => $"{group.Title}\n{group.Subtitle}\n{group.Artwork?.Thumbnail}\n{group.OnlinePlaylist?.Id}\n{group.BuiltIn}\n{string.Join(",", group.Tracks.Select(track => track.Source))}"));
             if (_mobileLibraryGroupKey != key)
             {
                 _mobileLibraryGroupKey = key;
@@ -276,6 +282,7 @@ public sealed partial class MainView
 
     private object GroupIdentity(LibraryGroup group)
     {
+        if (group.BuiltIn is { } builtIn) return builtIn;
         if (group.Playlist is { } playlist) return playlist;
         if (group.OnlinePlaylist is { } online) return online.Id;
         var track = group.Tracks.FirstOrDefault();
@@ -347,22 +354,39 @@ public sealed partial class MainView
             var local = _music.Playlists.Where(playlist => _mobileLibrarySource != LibrarySource.Online && MatchesLibraryQuery(playlist.Name, query))
                 .Select(playlist => new LibraryGroup(playlist.Name, (playlist.Pinned ? "Fixada · " : "Local · ") + TrackCount(playlist.Tracks.Count),
                     playlist.Tracks.FirstOrDefault(track => track.Thumbnail is not null), playlist.Tracks, playlist));
+            if (_mobileLibrarySource != LibrarySource.Online && MatchesLibraryQuery("Favoritos", query))
+            {
+                var favorites = _music.Favorites.ToArray();
+                local = local.Prepend(new("Favoritos", "Local · " + TrackCount(favorites.Length),
+                    favorites.FirstOrDefault(track => track.Thumbnail is not null), favorites, BuiltIn: BuiltInLibraryGroup.Favorites));
+            }
             var online = (_music.CanUseOnline ? _accountPlaylists : []).Where(playlist => _mobileLibrarySource != LibrarySource.Local && MatchesLibraryQuery(playlist.Title, query))
                 .Select(playlist => new LibraryGroup(playlist.Title, "YouTube",
                     new Track(playlist.Id, playlist.Title, "YouTube", playlist.Id, Thumbnail: playlist.Thumbnail), [], OnlinePlaylist: playlist));
-            return local.Concat(online).OrderByDescending(group => group.Playlist?.Pinned == true)
+            return local.Concat(online).OrderByDescending(group => group.BuiltIn == BuiltInLibraryGroup.Favorites)
+                .ThenByDescending(group => group.Playlist?.Pinned == true)
                 .ThenBy(group => group.Title, StringComparer.CurrentCultureIgnoreCase);
         }
 
         var byArtist = _mobileLibraryTab == LibraryTab.Artists;
-        return tracks.Where(track => byArtist || !string.IsNullOrWhiteSpace(track.Album))
+        var groups = tracks.Where(track => byArtist || !string.IsNullOrWhiteSpace(track.Album))
             .GroupBy(track => (Artist: track.Artist, Album: byArtist ? null : track.Album))
             .Where(group => MatchesLibraryQuery($"{group.Key.Artist} {group.Key.Album}", query))
             .Select(group => new LibraryGroup(byArtist ? TrackTextFormatter.Artist(group.Key.Artist) : group.Key.Album!,
                 byArtist ? TrackCount(group.Count()) : TrackTextFormatter.Artist(group.Key.Artist),
-                group.FirstOrDefault(track => track.Thumbnail is not null), group.ToArray()))
-            .OrderBy(group => group.Title, StringComparer.CurrentCultureIgnoreCase);
+                group.FirstOrDefault(track => track.Thumbnail is not null), group.ToArray()));
+        if (!byArtist && MatchesLibraryQuery("Downloads", query))
+        {
+            var downloads = tracks.Where(IsDownloadWithoutAlbum).ToArray();
+            if (downloads.Length > 0)
+                groups = groups.Append(new("Downloads", TrackCount(downloads.Length),
+                    downloads.FirstOrDefault(track => track.Thumbnail is not null), downloads, BuiltIn: BuiltInLibraryGroup.Downloads));
+        }
+        return groups.OrderBy(group => group.Title, StringComparer.CurrentCultureIgnoreCase);
     }
+
+    private bool IsDownloadWithoutAlbum(Track track) => string.IsNullOrWhiteSpace(track.Album)
+        && _music.OfflineOrigin(track) == "Download";
 
     // One column at very narrow widths; additional columns only when cards stay readable.
     private int LibraryColumns => _mobileLibraryListMode ? 1
@@ -405,14 +429,16 @@ public sealed partial class MainView
         if (_mobileLibraryTab == LibraryTab.Artists) art.CornerRadius = new CornerRadius(UiTheme.RowHeight / 2d);
         hero.Children.Add(art);
         var labels = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
-        var kind = group.Playlist is not null ? "Playlist" : _mobileLibraryTab == LibraryTab.Albums ? "Álbum" : "Artista";
+        var isPlaylist = group.Playlist is not null || group.BuiltIn == BuiltInLibraryGroup.Favorites;
+        var kind = isPlaylist ? "Playlist" : _mobileLibraryTab == LibraryTab.Albums ? "Álbum" : "Artista";
         labels.Children.Add(CollectionText(kind, UiTheme.Caption, Muted));
-        var subtitle = CollectionText(group.Playlist is not null ? "Sua coleção" : "Faixas na sua biblioteca · " + group.Subtitle, UiTheme.Body, Muted);
+        var subtitle = CollectionText(isPlaylist ? "Sua coleção" : group.BuiltIn == BuiltInLibraryGroup.Downloads
+            ? "Faixas baixadas sem álbum" : "Faixas na sua biblioteca · " + group.Subtitle, UiTheme.Body, Muted);
         subtitle.TextWrapping = TextWrapping.Wrap;
         subtitle.MaxLines = 2;
         subtitle.TextTrimming = TextTrimming.CharacterEllipsis;
         labels.Children.Add(subtitle);
-        if (group.Playlist is null && group.Tracks.FirstOrDefault() is { } track)
+        if (!isPlaylist && group.BuiltIn is null && group.Tracks.FirstOrDefault() is { } track)
             labels.Children.Add(CollectionAction(_mobileLibraryTab == LibraryTab.Artists ? "Ver perfil online" : "Ver artista",
                 () => OpenTrackArtistAsync(track)));
         Put(hero, labels, 0, 1);

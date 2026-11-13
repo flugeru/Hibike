@@ -9,6 +9,7 @@ using Avalonia.VisualTree;
 using Hibike.App;
 using Hibike.App.Views;
 using Hibike.Core.Services;
+using Hibike.Core.Models;
 
 internal static partial class Program
 {
@@ -194,6 +195,62 @@ internal static partial class Program
                     .Any(label => label.IsEffectivelyVisible && label.Text == title),
                     "Downloaded track missing from an online library group");
             }
+
+            var downloadsPath = Path.Combine(music.DataDirectory, "downloads");
+            Directory.CreateDirectory(downloadsPath);
+            var albumless = new Track("albumless", "Without album", "Another artist", Path.Combine(downloadsPath, "track.m4a"), IsLocal: true);
+            File.WriteAllText(albumless.Source, "download fixture");
+            await (Task)typeof(MusicController).GetMethod("SaveOfflineTrackAsync", hidden)!.Invoke(music, [albumless])!;
+            var libraryPage = Field<Grid>("_mobileLibrary");
+            Button OpenGroup(string name) => libraryPage.GetVisualDescendants().OfType<Button>().First(button =>
+                button.IsEffectivelyVisible && button.GetVisualDescendants().OfType<TextBlock>().Any(label => label.Text == name));
+            Click(tabs[2]);
+            view.UpdateLayout();
+            Click(OpenGroup("Downloads"));
+            Check(Field<Track[]>("_mobileLibraryShownTracks").SequenceEqual([albumless]), "Downloads grouped the wrong albumless tracks");
+            Click(Field<Button>("_mobileLibraryBack"));
+
+            await music.ToggleFavoriteAsync(albumless);
+            Click(tabs[1]);
+            view.UpdateLayout();
+            Click(OpenGroup("Favoritos"));
+            Check(Field<Track[]>("_mobileLibraryShownTracks").Contains(albumless), "Favorites playlist omitted a saved favorite");
+            await music.ToggleFavoriteAsync(albumless);
+            Check(!Field<Track[]>("_mobileLibraryShownTracks").Contains(albumless), "Favorites playlist retained an unfavorited track");
+            Click(Field<Button>("_mobileLibraryBack"));
+
+            var originalNetwork = AppServices.IsNetworkAvailable;
+            try
+            {
+                AppServices.IsNetworkAvailable = () => true;
+                var pageCalls = 0;
+                var pagingMethod = typeof(MainView).GetMethods(hidden).Single(method =>
+                    method.Name == "ShowPagedCollectionAsync" && method.GetParameters().Length == 6);
+                Task<(IReadOnlyList<Track>, bool, Action?)> LoadPage(int index, CancellationToken token)
+                {
+                    pageCalls++;
+                    IReadOnlyList<Track> page = Enumerable.Range(index * 50, index == 0 ? 50 : 1)
+                        .Select(i => new Track("paged" + i, "Paged " + i, "Artist", "https://example.test/paged/" + i)).ToArray();
+                    return Task.FromResult((page, index == 0, (Action?)null));
+                }
+                await (Task)pagingMethod.Invoke(view, ["Paged playlist", null, "Playlist",
+                    (Func<int, CancellationToken, Task<(IReadOnlyList<Track>, bool, Action?)>>)LoadPage,
+                    false, DiagnosticSector.Catalog])!;
+                var pagedCollection = Field<Border>("_collectionPage");
+                await Task.Delay(140);
+                var scroller = pagedCollection.GetVisualDescendants().OfType<ScrollViewer>().Single();
+                var pagedList = (ItemsControl)scroller.Content!;
+                Check(pageCalls == 1 && pagedList.ItemCount == 50, "Pagination fetched beyond the first page while the list was at the top");
+                scroller.ScrollToEnd();
+                await Task.Delay(140);
+                Check(pageCalls == 2 && pagedList.ItemCount == 51 && scroller.Offset.Y > 0
+                    && pagedCollection.GetVisualDescendants().Contains(pagedList), "Pagination failed to append tracks in place");
+                scroller.ScrollToEnd();
+                await Task.Delay(80);
+                Check(pageCalls == 2, "Pagination continued after the last page");
+                Navigate("library");
+            }
+            finally { AppServices.IsNetworkAvailable = originalNetwork; }
 
             var selectionTracks = new[]
             {

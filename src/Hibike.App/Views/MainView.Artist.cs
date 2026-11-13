@@ -1,7 +1,9 @@
 using Avalonia;
+using Avalonia.Collections;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
 using Hibike.Core.Models;
 using Hibike.Core.Services;
 
@@ -238,82 +240,116 @@ public sealed partial class MainView
             return (tracks, tracks.Count >= 50, null);
         }, replace);
 
-    private async Task ShowPagedCollectionAsync(string title, Track? artwork, string kind,
+    private Task ShowPagedCollectionAsync(string title, Track? artwork, string kind,
         Func<int, CancellationToken, Task<(IReadOnlyList<Track> Tracks, bool HasMore, Action? Advance)>> load, bool replace = false, DiagnosticSector sector = DiagnosticSector.Catalog)
     {
-        var tracks = new List<Track>();
+        var tracks = new AvaloniaList<Track>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var pageIndex = 0;
-        OpenCollection(title, [], kind, artwork, "Buscando conteúdo…", replace: replace);
-        var page = _collectionPage.Child;
-        Button? more = null;
+        OpenCollection(title, tracks, kind, artwork, replace: replace, pagedBody: scroll =>
+            BuildPagedCollectionBody(scroll, () => tracks.Count > 0, async token =>
+            {
+                var (batch, hasMore, advance) = await load(pageIndex, token);
+                token.ThrowIfCancellationRequested();
+                var next = batch.Where(t => !t.IsArtist && seen.Add(t.Source))
+                    .Select(t => t.Artist == "YouTube" && artwork is not null ? t with { Artist = artwork.Artist } : t).ToArray();
+                advance?.Invoke();
+                pageIndex++;
+                tracks.AddRange(next);
+                // A continuation can point to a page of tracks already seen. Offset-based sources cannot recover
+                // from a provider returning the same page indefinitely.
+                return hasMore && (advance is not null || next.Length > 0);
+            }, sector, "Nenhuma faixa disponível"));
+        return Task.CompletedTask;
+    }
+
+    private Control BuildPagedCollectionBody(ScrollViewer scroll, Func<bool> hasItems,
+        Func<CancellationToken, Task<bool>> load, DiagnosticSector sector, string emptyMessage)
+    {
+        var message = new ContentControl { VerticalContentAlignment = VerticalAlignment.Center };
+        var body = new Grid { RowDefinitions = new("Auto,*") };
+        body.Children.Add(message);
+        Put(body, scroll, 1, 0);
+        var hasMore = true;
+        var needsRetry = false;
         var loading = false;
-        await LoadAsync();
+        CancellationTokenSource? request = null;
+
+        void CheckRemaining()
+        {
+            if (!hasMore || needsRetry || loading || TopLevel.GetTopLevel(scroll) is null || !scroll.IsEffectivelyVisible) return;
+            if (!hasItems() || scroll.Viewport.Height > 0
+                && scroll.Extent.Height - scroll.Offset.Y - scroll.Viewport.Height <= scroll.Viewport.Height * .6)
+                _ = LoadAsync();
+        }
 
         async Task LoadAsync()
         {
-            if (loading || _page != "collection" || !ReferenceEquals(page, _collectionPage.Child)) return;
+            if (!hasMore || loading || TopLevel.GetTopLevel(scroll) is null || !scroll.IsEffectivelyVisible) return;
             if (!_music.CanUseOnline)
             {
-                if (tracks.Count == 0)
-                {
-                    OpenCollection(title, [], kind, artwork, "Disponível no modo online", LoadAsync, replace: true);
-                    page = _collectionPage.Child;
-                }
+                ShowRetry("Disponível no modo online");
                 return;
             }
+
+            needsRetry = false;
             loading = true;
-            var trigger = more;
-            if (trigger is not null)
-            {
-                trigger.Content = "Carregando…";
-                trigger.IsEnabled = false;
-            }
+            using var cancellation = new CancellationTokenSource();
+            request = cancellation;
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token);
+            timeout.CancelAfter(TimeSpan.FromSeconds(60));
+            message.Content = hasItems() ? null : Text("Carregando…", UiTheme.Caption, Muted);
             try
             {
-                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-                var (batch, hasMore, advance) = await load(pageIndex, timeout.Token);
-                if (_page != "collection" || !ReferenceEquals(page, _collectionPage.Child)) return;
-                var next = batch.Where(t => !t.IsArtist && seen.Add(t.Source))
-                    .Select(t => t.Artist == "YouTube" && artwork is not null ? t with { Artist = artwork.Artist } : t).ToArray();
-                tracks.AddRange(next);
-                pageIndex++;
-                more = hasMore && tracks.Count > 0 ? CollectionAction("Carregar mais", LoadAsync) : null;
-                OpenCollection(title, tracks.ToArray(), kind, artwork, replace: true, footer: more);
-                page = _collectionPage.Child;
-                advance?.Invoke();
+                hasMore = await load(timeout.Token);
+                if (!hasMore && !hasItems()) message.Content = Text(emptyMessage, UiTheme.Body, Muted);
+                else message.Content = null;
             }
-            catch (Exception e) when (e is not OutOfMemoryException)
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+            catch (Exception error) when (error is not OutOfMemoryException)
             {
-                PlaybackDiagnostics.WriteFailure(sector, "Carregar página da coleção", e);
-                if (_page != "collection" || !ReferenceEquals(page, _collectionPage.Child)) return;
-                if (tracks.Count == 0)
-                {
-                    OpenCollection(title, [], kind, artwork, "Conteúdo indisponível", LoadAsync, replace: true);
-                    page = _collectionPage.Child;
-                }
-                else if (trigger is not null) trigger.Content = "Tentar carregar mais";
+                PlaybackDiagnostics.WriteFailure(sector, "Carregar página da coleção", error);
+                if (TopLevel.GetTopLevel(scroll) is not null) ShowRetry("Conteúdo indisponível");
             }
             finally
             {
+                request = null;
                 loading = false;
-                if (trigger is not null) trigger.IsEnabled = true;
+                // Recheck after layout, including when a short or duplicate-only page didn't fill the viewport.
+                Dispatcher.UIThread.Post(CheckRemaining, DispatcherPriority.Loaded);
             }
         }
+
+        void ShowRetry(string label)
+        {
+            needsRetry = true;
+            var retry = CollectionAction("Tentar novamente", LoadAsync);
+            message.Content = new WrapPanel
+            {
+                ItemSpacing = UiTheme.CompactGap,
+                Children = { Text(label, UiTheme.Caption, Muted), retry }
+            };
+        }
+
+        scroll.ScrollChanged += (_, e) =>
+        {
+            if (ReferenceEquals(e.Source, scroll)) CheckRemaining();
+        };
+        scroll.AttachedToVisualTree += (_, _) => Dispatcher.UIThread.Post(CheckRemaining, DispatcherPriority.Loaded);
+        scroll.DetachedFromVisualTree += (_, _) => request?.Cancel();
+        return body;
     }
 
-    private async Task ShowChannelPlaylistsAsync(Track artist)
+    private Task ShowChannelPlaylistsAsync(Track artist)
     {
-        OpenCollection(artist.Title, [], "Playlists do canal", artist, "Buscando playlists…");
-        var page = _collectionPage.Child;
         var index = 0;
         var playlists = new List<Track>();
-        var rows = new System.Collections.ObjectModel.ObservableCollection<object>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var rows = new AvaloniaList<Track[]>();
         var columns = 1;
         var cardSize = _androidLayout ? MobileHomeCardSize : 196;
-        var cards = CollectionList<object>(entry =>
+        var cards = CollectionList<Track[]>(items =>
         {
-            if (entry is not Track[] items) return new Border();
             var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = UiTheme.PageGap,
                 Margin = new Thickness(0, 0, 0, UiTheme.PageGap) };
             foreach (var item in items)
@@ -324,67 +360,36 @@ public sealed partial class MainView
             return row;
         });
         cards.ItemsSource = rows;
-        var scroll = UiTheme.FadingScroll(cards);
-        var more = ActionButton("Carregar mais playlists", () => Task.CompletedTask);
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        more.Click += async (_, _) => await LoadAsync();
-        scroll.SizeChanged += (_, e) =>
+
+        OpenCollection(artist.Title, [], "Playlists do canal", artist, pagedBody: scroll =>
         {
-            var width = e.NewSize.Width;
-            if (width <= 0 || width == e.PreviousSize.Width) return;
-            var size = Math.Min(_androidLayout ? MobileHomeCardSize : 196, width);
-            var count = Math.Max(1, (int)((width + UiTheme.PageGap) / (size + UiTheme.PageGap)));
-            if (count == columns && size == cardSize) return;
-            cardSize = size;
-            columns = count;
-            var hasMore = rows.Contains(more);
-            rows.Clear();
-            AppendRows(0);
-            if (hasMore) rows.Add(more);
-        };
-        void AppendRows(int first)
-        {
-            foreach (var row in playlists.Skip(first).Chunk(columns)) rows.Add(row);
-        }
-        await LoadAsync();
-        async Task LoadAsync()
-        {
-            if (!more.IsEnabled) return;
-            more.IsEnabled = false;
-            try
+            scroll.Content = cards;
+            scroll.SizeChanged += (_, e) =>
             {
-                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-                var batch = await _music.BrowsePageAsync(artist.Source + "/playlists", index, timeout.Token);
-                if (_page != "collection" || !ReferenceEquals(page, _collectionPage.Child)) return;
-                rows.Remove(more);
+                var width = e.NewSize.Width;
+                if (width <= 0 || width == e.PreviousSize.Width) return;
+                var size = Math.Min(_androidLayout ? MobileHomeCardSize : 196, width);
+                var count = Math.Max(1, (int)((width + UiTheme.PageGap) / (size + UiTheme.PageGap)));
+                if (count == columns && size == cardSize) return;
+                cardSize = size;
+                columns = count;
+                rows.Clear();
+                rows.AddRange(playlists.Chunk(columns));
+            };
+            return BuildPagedCollectionBody(scroll, () => playlists.Count > 0, async token =>
+            {
+                var batch = await _music.BrowsePageAsync(artist.Source + "/playlists", index, token);
+                token.ThrowIfCancellationRequested();
+                var next = batch.Where(track => seen.Add(track.Id)).ToArray();
+                if (next.Length == 0) return false;
                 var first = playlists.Count / columns * columns;
                 if (first < playlists.Count) rows.RemoveAt(rows.Count - 1);
-                var next = batch.Where(track => seen.Add(track.Id)).ToArray();
                 playlists.AddRange(next);
-                AppendRows(first);
+                rows.AddRange(playlists.Skip(first).Chunk(columns));
                 index++;
-                more.Content = "Carregar mais playlists";
-                if (batch.Count >= 50 && next.Length > 0) rows.Add(more);
-                if (index != 1) return;
-                var grid = (Grid)page!;
-                var row = grid.RowDefinitions.Count - 1;
-                grid.Children.Remove(CollectionBody(grid));
-                Put(grid, playlists.Count == 0 ? Text("Nenhuma playlist pública neste canal.", UiTheme.Body) : scroll, row, 0);
-            }
-            catch (Exception e) when (e is not OutOfMemoryException)
-            {
-                PlaybackDiagnostics.Write("Playlists do canal", e.Message);
-                if (_page == "collection" && ReferenceEquals(page, _collectionPage.Child))
-                {
-                    if (playlists.Count == 0)
-                    {
-                        OpenCollection(artist.Title, [], "Playlists do canal", artist, "Playlists indisponíveis", LoadAsync, replace: true);
-                        page = _collectionPage.Child;
-                    }
-                    else more.Content = "Falha ao carregar · tentar novamente";
-                }
-            }
-            finally { more.IsEnabled = true; }
-        }
+                return batch.Count >= 50;
+            }, DiagnosticSector.Catalog, "Nenhuma playlist pública neste canal.");
+        });
+        return Task.CompletedTask;
     }
 }

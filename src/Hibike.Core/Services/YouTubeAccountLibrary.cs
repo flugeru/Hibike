@@ -84,8 +84,15 @@ public sealed class YouTubeAccountLibrary(HttpClient client, string accessToken)
             using var json = await WebRequestAsync("browse", playlistId is null ? "VLLM" : "VL" + playlistId, continuation, token);
             var root = json.RootElement;
             if (Nodes(root, "error").Any()) throw new InvalidOperationException("Biblioteca indisponível. Reconecte sua conta.");
-            foreach (var item in Nodes(root, "musicResponsiveListItemRenderer"))
+            var shelf = Nodes(root, "musicPlaylistShelfRenderer").Concat(Nodes(root, "musicPlaylistShelfContinuation"))
+                .FirstOrDefault();
+            var contents = shelf.ValueKind != JsonValueKind.Undefined && shelf.TryGetProperty("contents", out var shelfItems)
+                ? shelfItems : continuation is null ? default
+                : Nodes(root, "appendContinuationItemsAction").SelectMany(action => Nodes(action, "continuationItems")).FirstOrDefault();
+            var items = contents.ValueKind == JsonValueKind.Array ? contents.EnumerateArray().ToArray() : [];
+            foreach (var row in items)
             {
+                if (!row.TryGetProperty("musicResponsiveListItemRenderer", out var item)) continue;
                 var id = Nodes(item, "videoId").Select(node => node.GetString()).FirstOrDefault();
                 var columns = Columns(item).ToArray();
                 if (id is null || !System.Text.RegularExpressions.Regex.IsMatch(id, "^[A-Za-z0-9_-]{11}$") || columns.Length == 0) continue;
@@ -98,7 +105,12 @@ public sealed class YouTubeAccountLibrary(HttpClient client, string accessToken)
                 tracks.Add(new(id, columns[0], columns.ElementAtOrDefault(1) ?? "YouTube Music",
                     "https://www.youtube.com/watch?v=" + id, Thumbnail: WebImage(item), Album: album));
             }
-            return (tracks, WebContinuation(root));
+            var last = items.LastOrDefault();
+            var nextPage = last.ValueKind == JsonValueKind.Object && last.TryGetProperty("continuationItemRenderer", out var itemContinuation)
+                ? WebContinuation(itemContinuation) : null;
+            if (nextPage is null && shelf.ValueKind == JsonValueKind.Object && shelf.TryGetProperty("continuations", out var legacy))
+                nextPage = WebContinuation(legacy);
+            return (tracks, nextPage);
         }
 
         var endpoint = playlistId is null ? "videos?part=snippet&myRating=like&maxResults=50"
