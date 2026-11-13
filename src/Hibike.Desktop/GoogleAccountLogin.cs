@@ -41,11 +41,10 @@ internal static class GoogleAccountLogin
         static string RandomValue() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
         var state = RandomValue(); var verifier = RandomValue();
         var challenge = Convert.ToBase64String(SHA256.HashData(Encoding.ASCII.GetBytes(verifier))).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-        using var socket = new TcpListener(IPAddress.Loopback, 0);
-        socket.Start(); var port = ((IPEndPoint)socket.LocalEndpoint).Port;
-        socket.Stop();
+        using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        socket.Bind(new IPEndPoint(IPAddress.Loopback, 0)); socket.Listen(8);
+        var port = ((IPEndPoint)socket.LocalEndPoint!).Port;
         var redirect = $"http://127.0.0.1:{port}/";
-        using var listener = new HttpListener(); listener.Prefixes.Add(redirect); listener.Start();
         var url = "https://accounts.google.com/o/oauth2/v2/auth?" + Encode(new()
         {
             ["client_id"] = clientId, ["redirect_uri"] = redirect, ["response_type"] = "code",
@@ -56,14 +55,20 @@ internal static class GoogleAccountLogin
         string? code = null;
         while (code is null)
         {
-            var context = await listener.GetContextAsync().WaitAsync(token);
-            var valid = context.Request.Url?.AbsolutePath == "/" && context.Request.QueryString["state"] == state;
-            var bytes = Encoding.UTF8.GetBytes(valid ? "Volte ao Hibike. Esta janela pode ser fechada." : "Solicitacao invalida.");
-            context.Response.StatusCode = valid ? 200 : 400;
-            context.Response.ContentType = "text/plain; charset=utf-8";
-            await context.Response.OutputStream.WriteAsync(bytes, token); context.Response.Close();
+            using var client = await socket.AcceptAsync().WaitAsync(token);
+            using var stream = new NetworkStream(client, ownsSocket: false);
+            using var reader = new StreamReader(stream, Encoding.ASCII, false, 4096, leaveOpen: true);
+            var request = await reader.ReadLineAsync().WaitAsync(token) ?? "";
+            var target = request.Split(' ').ElementAtOrDefault(1);
+            var requestUri = Uri.TryCreate("http://127.0.0.1" + target, UriKind.Absolute, out var parsed) ? parsed : null;
+            var query = requestUri?.Query;
+            var queryState = QueryValue(query, "state");
+            var valid = requestUri?.AbsolutePath == "/" && queryState == state;
+            var callbackBody = Encoding.UTF8.GetBytes(valid ? "Volte ao Hibike. Esta janela pode ser fechada." : "Solicitacao invalida.");
+            var header = Encoding.ASCII.GetBytes($"HTTP/1.1 {(valid ? "200 OK" : "400 Bad Request")}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {callbackBody.Length}\r\nConnection: close\r\n\r\n");
+            await stream.WriteAsync(header, token); await stream.WriteAsync(callbackBody, token);
             if (!valid) continue;
-            code = context.Request.QueryString["code"];
+            code = QueryValue(query, "code");
             if (string.IsNullOrEmpty(code)) throw new InvalidOperationException("Autorização Google recusada.");
         }
         var fields = new Dictionary<string, string> { ["client_id"] = clientId, ["code"] = code,
@@ -91,6 +96,19 @@ internal static class GoogleAccountLogin
             throw new InvalidOperationException("Permissão de leitura do YouTube não concedida.");
         // ponytail: access token only in memory; add OS credential storage and refresh for persistent login.
         return new YouTubeAccountLibrary(Client, result.RootElement.GetProperty("access_token").GetString()!);
+    }
+
+    private static string? QueryValue(string? query, string key)
+    {
+        if (string.IsNullOrEmpty(query)) return null;
+        foreach (var pair in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var split = pair.IndexOf('=');
+            var name = Uri.UnescapeDataString((split < 0 ? pair : pair[..split]).Replace('+', ' '));
+            if (!name.Equals(key, StringComparison.Ordinal)) continue;
+            return Uri.UnescapeDataString((split < 0 ? "" : pair[(split + 1)..]).Replace('+', ' '));
+        }
+        return null;
     }
 
     private static string Encode(Dictionary<string, string> values) => string.Join("&", values.Select(p => Uri.EscapeDataString(p.Key) + "=" + Uri.EscapeDataString(p.Value)));

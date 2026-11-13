@@ -35,8 +35,16 @@ public sealed partial class MusicController
         if (enabled)
         {
             StopOnlineDiscovery();
-            if (Pending is { IsLocal: false } || Current is { IsLocal: false } && Pending is null)
-                PausePlayback();
+            var online = Pending is { IsLocal: false } pending ? pending
+                : Current is { IsLocal: false } current && Pending is null ? current : null;
+            if (online is not null && FindOfflineCopy(online) is { } local)
+            {
+                var position = Current?.Source != online.Source ? 0
+                    : _seekAfterLoad ?? (Player.Position > 0 ? Player.Position : _lastPlaybackPosition);
+                _ = PlayCoreAsync(local, CurrentQueueIndex,
+                    new(local, CurrentQueueIndex, null, Math.Max(0, position)));
+            }
+            else if (online is not null) PausePlayback();
         }
         PersistPersonalization();
     }
@@ -101,6 +109,7 @@ public sealed partial class MusicController
     internal async Task RemoveOfflineTrackAsync(Track track)
     {
         await _offlineStoreGate.WaitAsync();
+        await _favoritesGate.WaitAsync();
         try
         {
             if (!CanRemoveOfflineTrack(track)) throw new InvalidOperationException("Aguarde a preparação do áudio para remover este arquivo.");
@@ -124,14 +133,7 @@ public sealed partial class MusicController
                 finally { _playGate.Release(); }
                 Changed?.Invoke();
             }
-            await Task.Run(() =>
-            {
-                File.Delete(track.Source);
-                if (OfflineOrigin(track) != "Download") return;
-                try { File.Delete(Path.ChangeExtension(track.Source, ".cover")); }
-                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-                { PlaybackDiagnostics.WriteFailure(DiagnosticSector.Storage, "Remover capa baixada", error); }
-            });
+            var origin = OfflineOrigin(track);
             OfflineTracks = OfflineTracks.Where(item => item.Source != track.Source).ToArray();
             foreach (var item in Favorites.Where(item => item.Source == track.Source).ToArray()) Favorites.Remove(item);
             foreach (var item in Queue.Where(item => item.Source == track.Source).ToArray()) Queue.Remove(item);
@@ -140,8 +142,17 @@ public sealed partial class MusicController
             foreach (var playlist in Playlists) playlist.Tracks.RemoveAll(item => item.Source == track.Source);
             PersistPersonalization();
             await Task.WhenAll(_offlineStore.SaveAsync(OfflineTracks), _store.SaveAsync(Favorites));
+            await FlushPendingSavesAsync();
+            await Task.Run(() =>
+            {
+                File.Delete(track.Source);
+                if (origin != "Download") return;
+                try { File.Delete(Path.ChangeExtension(track.Source, ".cover")); }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                { PlaybackDiagnostics.WriteFailure(DiagnosticSector.Storage, "Remover capa baixada", error); }
+            });
             SetStatus("Arquivo removido do aparelho.");
         }
-        finally { _removingOfflinePath = null; _offlineStoreGate.Release(); }
+        finally { _removingOfflinePath = null; _favoritesGate.Release(); _offlineStoreGate.Release(); }
     }
 }

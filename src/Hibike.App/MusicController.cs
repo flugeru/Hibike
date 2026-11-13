@@ -8,6 +8,7 @@ public sealed partial class MusicController
 {
     private readonly IMusicCatalog _catalog;
     private readonly LibraryStore _store;
+    private readonly SemaphoreSlim _favoritesGate = new(1, 1);
     private CancellationTokenSource? _search;
     private CancellationTokenSource? _play;
     private readonly SemaphoreSlim _playGate = new(1, 1);
@@ -122,8 +123,16 @@ public sealed partial class MusicController
         _initializing = true;
         try
         {
-            foreach (var track in await _store.LoadAsync())
-                Favorites.Add(await Task.Run(() => AppServices.ReadLocalTrack(track, Path.Combine(DataDirectory, "artwork"))));
+            try
+            {
+                foreach (var track in await _store.LoadAsync())
+                    Favorites.Add(await Task.Run(() => AppServices.ReadLocalTrack(track, Path.Combine(DataDirectory, "artwork"))));
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or System.Text.Json.JsonException or UnauthorizedAccessException)
+            {
+                PlaybackDiagnostics.WriteFailure(DiagnosticSector.Storage, "Abrir favoritos", ex);
+                HasError = true; Status = "Não foi possível ler os favoritos: " + ex.Message;
+            }
             try
             {
                 if (_session.Load() is { } session)
@@ -132,10 +141,10 @@ public sealed partial class MusicController
                     History.Clear(); foreach (var item in session.History ?? []) History.Add(item);
                     Current = session.Current; _queueIndex = CurrentQueueIndex;
                     _resumePosition = session.Position; _restored = Current is not null;
-                    if (_restored) Status = "Sessão restaurada. Toque para continuar.";
+                    if (_restored && !HasError) Status = "Sessão restaurada. Toque para continuar.";
                 }
             }
-            catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or InvalidDataException or System.Text.Json.JsonException or UnauthorizedAccessException)
             { PlaybackDiagnostics.Write("Sessão", ex.Message); }
             await InitializeOfflineTracksAsync();
         }
@@ -307,7 +316,7 @@ public sealed partial class MusicController
                 else _seekAfterLoad = recovery.Position;
                 _lastPlaybackPosition = recovery.Position;
             }
-            _playbackRecovery = null;
+            ClearRecovery();
             if (continuing) _listenTick = DateTime.UtcNow;
             else
             {
@@ -351,7 +360,7 @@ public sealed partial class MusicController
             if (ReferenceEquals(_play, request) && !request.IsCancellationRequested)
             {
                 if (!track.IsLocal && (recovery is not null || !AppServices.HasNetwork || ex is HttpRequestException or IOException))
-                    ScheduleRecovery(recovery ?? new(track, queueIndex, requestedSource, 0));
+                    HandlePlaybackFailure(ex, recovery ?? new(track, queueIndex, requestedSource, 0));
                 else Fail(ex.Message);
             }
         }
@@ -365,8 +374,7 @@ public sealed partial class MusicController
     }
     public void CancelPlayback()
     {
-        _playbackRecovery = null;
-        _bufferingSince = null;
+        ClearRecovery();
         if (_play is not null || !Player.IsPlaying) _wantsPlayback = false;
         _play?.Cancel();
     }
@@ -395,7 +403,7 @@ public sealed partial class MusicController
             return;
         }
         _advancing = true;
-        _playbackRecovery = null;
+        ClearRecovery();
         var session = _queueSession; var current = Current;
         try
         {
@@ -426,10 +434,17 @@ public sealed partial class MusicController
     }
     public async Task ToggleFavoriteAsync(Track track)
     {
-        var old = Favorites.FirstOrDefault(t => t.Id == track.Id);
-        if (old is null) Favorites.Add(track); else Favorites.Remove(old);
-        try { await _store.SaveAsync(Favorites); SetStatus(old is null ? "Salva na sua biblioteca." : "Removida dos favoritos."); }
-        catch (Exception ex) { SetStatus("Não foi possível salvar: " + ex.Message); }
+        await _favoritesGate.WaitAsync();
+        try
+        {
+            var old = Favorites.FirstOrDefault(t => t.Id == track.Id);
+            var snapshot = old is null ? Favorites.Append(track) : Favorites.Where(t => t != old);
+            await _store.SaveAsync(snapshot);
+            if (old is null) Favorites.Add(track); else Favorites.Remove(old);
+            SetStatus(old is null ? "Salva na sua biblioteca." : "Removida dos favoritos.");
+        }
+        catch (Exception ex) { HasError = true; SetStatus("Não foi possível salvar: " + ex.Message); }
+        finally { _favoritesGate.Release(); }
     }
     public bool IsFavorite(Track track) => Favorites.Any(t => t.Id == track.Id);
     public void ClearQueue()

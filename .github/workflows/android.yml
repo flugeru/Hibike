@@ -2,7 +2,7 @@ name: Hibike • Android APK
 
 on:
   push:
-    branches: [main, work-next, feat/experimental-player-lab, queue-fix, android-player-features]
+    branches: [main, work-next, feat/experimental-player-lab, queue-fix, android-player-features, refactor-library-downloads]
     paths: ['src/**', 'tests/**', 'scripts/**', 'Directory.*', 'global.json', 'Hibike.slnx', '.github/**']
   pull_request:
     paths: ['src/**', 'tests/**', 'scripts/**', 'Directory.*', 'global.json', 'Hibike.slnx', '.github/**']
@@ -53,9 +53,60 @@ jobs:
         run: dotnet test tests/Hibike.Core.Tests/Hibike.Core.Tests.csproj -c Release --logger "trx;LogFileName=core.trx" --results-directory artifacts/tests
       - name: Prepare verified Python, QuickJS and YT-DLP
         run: python3 scripts/prepare_android_runtime.py --abi arm64-v8a
-      - name: Build pull request without release credentials
+      # Pull requests must never access the production signing secrets.
+      # Use a separate application ID so the temporary key cannot conflict with the release app.
+      - name: Publish installable test APK for pull request
         if: github.event_name == 'pull_request'
-        run: dotnet build src/Hibike.Android/Hibike.Android.csproj -f net10.0-android -c Release -r android-arm64 -p:RuntimeIdentifiers=android-arm64
+        shell: bash
+        run: |
+          set -euo pipefail
+          keytool -genkeypair -noprompt -keystore "$RUNNER_TEMP/hibike-pr-test.jks" \
+            -storepass android -keypass android -alias hibike-test \
+            -keyalg RSA -keysize 3072 -validity 30 -dname "CN=Hibike Test,O=Hibike,C=BR"
+          dotnet publish src/Hibike.Android/Hibike.Android.csproj \
+            -f net10.0-android -c Release -r android-arm64 \
+            -p:RuntimeIdentifiers=android-arm64 \
+            -p:ApplicationId=com.flugel.hibike.test \
+            -p:AndroidSdkDirectory="$ANDROID_HOME" \
+            -p:AndroidKeyStore=true \
+            -p:AndroidSigningKeyStore="$RUNNER_TEMP/hibike-pr-test.jks" \
+            -p:AndroidSigningKeyAlias=hibike-test \
+            -p:AndroidSigningKeyPass=android \
+            -p:AndroidSigningStorePass=android \
+            -o artifacts/pr-android
+      - name: Verify and prepare pull request APK
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="$(find artifacts/pr-android -maxdepth 1 -name '*-Signed.apk' -print -quit)"
+          test -n "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" | tee artifacts/pr-android/package-info.txt
+          grep -Fq "package: name='com.flugel.hibike.test'" artifacts/pr-android/package-info.txt
+          grep -q "sdkVersion:'24'" artifacts/pr-android/package-info.txt
+          python3 scripts/check_apk.py "$apk"
+          mkdir -p artifacts/pr-release
+          cp "$apk" artifacts/pr-release/Hibike-Android-arm64-TEST.apk
+      - name: Upload installable pull request APK
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hibike-Android-arm64-TEST
+          path: artifacts/pr-release/Hibike-Android-arm64-TEST.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Explain how to install the test APK
+        if: github.event_name == 'pull_request'
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          Extract `Hibike-Android-arm64-TEST.apk` from the artifact ZIP. It installs alongside
+          the official Hibike app. Each run uses a fresh test key, so uninstall any previous
+          `com.flugel.hibike.test` build before installing this one.
+
+          To update the official Hibike app in place, use `Hibike-Android-arm64.apk` from a
+          signed branch build or a GitHub release.
+          EOF
       - name: Restore signing key from Secrets
         if: github.event_name != 'pull_request'
         shell: bash
@@ -117,7 +168,7 @@ jobs:
           retention-days: 30
       - name: Remove temporary signing material
         if: always()
-        run: rm -f "$RUNNER_TEMP/hibike-signing.jks" "$RUNNER_TEMP/hibike-signing.der"
+        run: rm -f "$RUNNER_TEMP/hibike-signing.jks" "$RUNNER_TEMP/hibike-signing.der" "$RUNNER_TEMP/hibike-pr-test.jks"
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4

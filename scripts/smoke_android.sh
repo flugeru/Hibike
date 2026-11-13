@@ -44,6 +44,7 @@ grep -q HIBIKE_PROBE_MEDIA_CONTROLS_OK artifacts/smoke/playback-probe.txt
 grep -q HIBIKE_PROBE_BACKGROUND_OK artifacts/smoke/playback-probe.txt
 grep -q HIBIKE_PROBE_NOTIFICATION_OK artifacts/smoke/playback-probe.txt
 grep -q HIBIKE_PROBE_RUNTIME_OK artifacts/smoke/playback-probe.txt
+! grep -q HIBIKE_PROBE_DONE_FAILED artifacts/smoke/playback-probe.txt
 grep -q HIBIKE_PROBE_DONE artifacts/smoke/playback-probe.txt
 grep -q HIBIKE_PROBE_LAYOUT_OK artifacts/smoke/playback-probe.txt
 adb shell am start -W -n "$activity"

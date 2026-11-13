@@ -49,9 +49,10 @@ public sealed partial class MainView
         var feedback = Text("", UiTheme.Caption, Muted);
         feedback.TextWrapping = TextWrapping.Wrap;
         Put(layout, feedback, 2, 0);
-        var actions = new WrapPanel { ItemSpacing = UiTheme.CompactGap, LineSpacing = UiTheme.CompactGap };
-        actions.Children.Add(CollectionAction("Copiar setor", () => CopyAsync(all: false), prominent: true));
-        actions.Children.Add(CollectionAction("Copiar todos", () => CopyAsync(all: true)));
+        var actions = new Grid { ColumnDefinitions = new("*,*"), ColumnSpacing = UiTheme.CompactGap };
+        actions.Children.Add(ActionButton("Copiar setor", () => CopyAsync(all: false)));
+        actions.Children[0].Classes.Add("primary");
+        Put(actions, ActionButton("Copiar todos", () => CopyAsync(all: true)), 0, 1);
         Put(layout, actions, 3, 0);
 
         Put(filters, CollectionIcon("refresh", "Atualizar relatório", () =>

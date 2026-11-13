@@ -64,6 +64,13 @@ public sealed partial class MainView
 
     private static TextBlock TopBarTitle(string text) => CollectionText(text, UiTheme.TopBarTitle, weight: FontWeight.SemiBold);
 
+    private static Border CollectionSegments(Grid tabs)
+    {
+        var frame = UiTheme.Card(tabs, padding: 3);
+        frame.CornerRadius = new CornerRadius(UiTheme.ControlRadius);
+        return frame;
+    }
+
     private static TextBlock CollectionText(string? value, double size, string color = UiTheme.TextPrimary,
         FontWeight weight = FontWeight.Normal)
     {

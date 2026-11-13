@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -24,9 +25,22 @@ public sealed partial class MainView
         _selectedGenres.Clear(); _selectedGenres.UnionWith(_music.FavoriteGenres);
         var genreStage = false;
         var layout = new Grid { RowDefinitions = new("Auto,*,Auto"), MaxWidth = 1000, Margin = new Thickness(20, 24) };
-        var top = new Grid { ColumnDefinitions = new("*,Auto") };
-        top.Children.Add(Text("Hibike · Seu som, seu espaço", UiTheme.Body));
-        Put(top, ActionButton("Pular", () => FinishOnboardingAsync(!genreStage)), 0, 1); layout.Children.Add(top);
+        var top = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.CompactGap };
+        var heading = Text("Hibike · Seu som, seu espaço", UiTheme.Body);
+        heading.TextWrapping = TextWrapping.Wrap;
+        heading.VerticalAlignment = VerticalAlignment.Center;
+        top.Children.Add(heading);
+        var dismiss = ActionButton(edit ? "Cancelar" : "Pular", () =>
+        {
+            if (_savingOnboarding) return Task.CompletedTask;
+            if (!edit) return FinishOnboardingAsync(!genreStage);
+            _artistSearch?.Cancel();
+            if (_onboarding is not null) _root.Children.Remove(_onboarding);
+            _onboarding = null;
+            _preferencesBack.Focus();
+            return Task.CompletedTask;
+        });
+        Put(top, dismiss, 0, 1); layout.Children.Add(top);
         var body = new StackPanel { Spacing = 18, Margin = new Thickness(0, 24) };
         var title = Text("Quais artistas você mais gosta?", UiTheme.DialogTitle); title.TextWrapping = TextWrapping.Wrap; body.Children.Add(title);
         var description = Text("Escolha pelo menos 3 artistas para personalizarmos suas recomendações.", UiTheme.Body, Muted); description.TextWrapping = TextWrapping.Wrap; body.Children.Add(description);
@@ -133,7 +147,17 @@ public sealed partial class MainView
         };
         UpdateSelection();
         _onboarding = new Border { Background = Brushes.Black, Child = layout };
+        KeyboardNavigation.SetTabNavigation(_onboarding, KeyboardNavigationMode.Cycle);
+        _onboarding.KeyDown += (_, e) =>
+        {
+            if (edit && e.Key == Key.Escape && !_savingOnboarding)
+            {
+                dismiss.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                e.Handled = true;
+            }
+        };
         Grid.SetColumnSpan(_onboarding, _root.ColumnDefinitions.Count); Grid.SetRowSpan(_onboarding, 3); _root.Children.Add(_onboarding); Animate(body);
+        dismiss.Focus();
         async Task LoadSuggestionsAsync()
         {
             var request = new CancellationTokenSource(TimeSpan.FromSeconds(20)); _artistSearch = request;

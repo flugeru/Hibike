@@ -11,26 +11,52 @@ public sealed class LibraryStore(string directory, string fileName = "favorites.
         await _gate.WaitAsync();
         try
         {
-            if (!File.Exists(_path)) return [];
-            var tracks = JsonSerializer.Deserialize<List<Track>>(await File.ReadAllTextAsync(_path)) ?? [];
-            if (tracks.Any(t => t is null || string.IsNullOrWhiteSpace(t.Source)))
-                throw new InvalidDataException("Biblioteca contém faixa inválida.");
-            return tracks;
+            return await ReadAsync();
         }
-        catch (JsonException) { return []; }
-        finally { _gate.Release(); }
+        finally
+        {
+            try { File.Delete(_path + ".tmp"); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+            _gate.Release();
+        }
+    }
+    private async Task<List<Track>> ReadAsync()
+    {
+        if (!File.Exists(_path)) return [];
+        var tracks = JsonSerializer.Deserialize<List<Track>>(await File.ReadAllTextAsync(_path))
+            ?? throw new InvalidDataException("Biblioteca inválida.");
+        Validate(tracks);
+        return tracks;
+    }
+    private static void Validate(IEnumerable<Track> tracks)
+    {
+        if (tracks.Any(t => t is null || string.IsNullOrWhiteSpace(t.Source)))
+            throw new InvalidDataException("Biblioteca contém faixa inválida.");
     }
     public async Task SaveAsync(IEnumerable<Track> tracks)
     {
         var snapshot = tracks.ToArray();
+        Validate(snapshot);
         await _gate.WaitAsync();
+        var temp = _path + ".tmp";
         try
         {
+            // Never replace unreadable user data with an empty or partial in-memory library.
+            await ReadAsync();
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-            var temp = _path + ".tmp";
-            await File.WriteAllTextAsync(temp, JsonSerializer.Serialize(snapshot));
+            await using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                await JsonSerializer.SerializeAsync(stream, snapshot);
+                await stream.FlushAsync();
+                stream.Flush(flushToDisk: true);
+            }
             File.Move(temp, _path, true);
         }
-        finally { _gate.Release(); }
+        finally
+        {
+            try { if (File.Exists(temp)) File.Delete(temp); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+            _gate.Release();
+        }
     }
 }

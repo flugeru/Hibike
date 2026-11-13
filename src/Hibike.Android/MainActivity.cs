@@ -37,9 +37,18 @@ public sealed class MainActivity : AvaloniaMainActivity
     }
     protected override void OnStop()
     {
-        AppServices.Controller?.SaveSession();
-        AppServices.Controller?.FlushPendingSaves();
+        if (AppServices.Controller is { } controller)
+        {
+            controller.SaveSession();
+            _ = FlushSavesAsync(controller);
+        }
         base.OnStop();
+    }
+    private static async Task FlushSavesAsync(Hibike.App.MusicController controller)
+    {
+        try { await controller.FlushPendingSavesAsync().WaitAsync(TimeSpan.FromSeconds(2)); }
+        catch (TimeoutException) { Hibike.Core.Services.PlaybackDiagnostics.Write("Salvar sessão", "Tempo limite ao salvar em segundo plano."); }
+        catch (IOException error) { Hibike.Core.Services.PlaybackDiagnostics.Write("Salvar sessão", error.Message); }
     }
     protected override void OnDestroy()
     {

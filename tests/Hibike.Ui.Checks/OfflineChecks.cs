@@ -33,9 +33,9 @@ internal static partial class Program
             view.UpdateLayout();
             Check(!controller.NetworkAvailable && !controller.CanUseOnline, "Connectivity loss did not disable online actions");
             Check(view.GetVisualDescendants().OfType<TextBlock>().Any(label => label.IsEffectivelyVisible
-                && label.Text?.Contains("Quer entrar no modo offline?") == true), "Offline screen did not offer a choice");
+                && label.Text == "Sem conexão"), "Offline screen did not explain connection loss");
             var accept = view.GetVisualDescendants().OfType<Button>().Single(button => button.IsEffectivelyVisible
-                && Equals(button.Content, "Entrar no modo offline"));
+                && Equals(button.Content, "Ativar modo offline"));
             accept.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Check(controller.OfflineMode, "Offline screen did not enter offline mode");
             var downloads = view.GetVisualDescendants().OfType<Button>().Single(button => button.IsEffectivelyVisible
@@ -50,7 +50,7 @@ internal static partial class Program
             await Task.Delay(50);
             Check(controller.NetworkAvailable && controller.OfflineMode && !controller.CanUseOnline, "Reconnection left offline mode without consent");
             var leave = view.GetVisualDescendants().OfType<Button>().Single(button => button.IsEffectivelyVisible
-                && Equals(button.Content, "Voltar ao modo online"));
+                && Equals(button.Content, "Voltar ao online"));
             leave.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Check(controller.CanUseOnline, "Offline screen did not return to online mode");
             AppServices.BackHandler!();

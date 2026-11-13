@@ -40,7 +40,7 @@ internal static class WebSessionStore
         finally
         {
             CryptographicOperations.ZeroMemory(bytes);
-            File.Delete(path + ".tmp");
+            try { File.Delete(path + ".tmp"); } catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
         }
     }
 

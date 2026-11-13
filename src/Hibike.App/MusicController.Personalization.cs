@@ -71,6 +71,7 @@ public sealed partial class MusicController
         public List<LocalPlaylist> Playlists { get; set; } = [];
         public bool Autoplay { get; set; } = true;
         public bool ReduceMotion { get; set; }
+        public bool DiscordUseTrackTitleAsName { get; set; }
         public bool OfflineMode { get; set; }
         public string Discovery { get; set; } = "Tudo";
         public bool OnboardingCompleted { get; set; }
@@ -81,6 +82,7 @@ public sealed partial class MusicController
         public RecommendationWeights Weights { get; set; } = new();
     }
     private Personalization _personal = new();
+    private bool _personalizationUnreadable;
     private readonly HashSet<string> _recommended = new(StringComparer.OrdinalIgnoreCase);
     private DateTime _listenTick = DateTime.UtcNow;
     private double _sessionSeconds;
@@ -89,6 +91,14 @@ public sealed partial class MusicController
     public IReadOnlyList<Track> Pins => _personal.Pins;
     public IReadOnlyDictionary<string, ListeningStat> Listening => _personal.Listening;
     public bool ReduceMotion => _personal.ReduceMotion;
+    public bool DiscordUseTrackTitleAsName => _personal.DiscordUseTrackTitleAsName;
+
+    public void SetDiscordUseTrackTitleAsName(bool enabled)
+    {
+        if (_personal.DiscordUseTrackTitleAsName == enabled) return;
+        _personal.DiscordUseTrackTitleAsName = enabled;
+        PersistPersonalization();
+    }
 
     public void SetReduceMotion(bool enabled)
     {
@@ -124,8 +134,11 @@ public sealed partial class MusicController
                 throw new InvalidDataException("Dados de personalização inválidos.");
             _personal = data;
         }
-        catch (Exception error) when (error is IOException or JsonException or UnauthorizedAccessException)
-        { PlaybackDiagnostics.Write("Personalização", "Não foi possível carregar dados locais: " + error.Message); }
+        catch (Exception error) when (error is IOException or InvalidDataException or JsonException or UnauthorizedAccessException)
+        {
+            _personalizationUnreadable = true;
+            PlaybackDiagnostics.Write("Personalização", "Não foi possível carregar dados locais: " + error.Message);
+        }
     }
     private void SavePersonalization() => QueueStateSave();
     private void PersistPersonalization()

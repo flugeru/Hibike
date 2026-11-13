@@ -98,6 +98,19 @@ internal static partial class Program
                      .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
                 await Task.Delay(50);
                 await AppServices.Controller!.FlushPendingSavesAsync();
+                var artistsBeforeEdit = AppServices.Controller.FavoriteArtists.ToArray();
+                var genresBeforeEdit = AppServices.Controller.FavoriteGenres.ToArray();
+                for (var attempt = 0; attempt < 100 && welcomeField.GetValue(view) is not null; attempt++) await Task.Delay(20);
+                Check(welcomeField.GetValue(view) is null, "Initial personalization did not finish saving");
+                typeof(MainView).GetMethod("ShowMusicOnboarding", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(view, [true]);
+                var editPanel = (Border)welcomeField.GetValue(view)!;
+                Check(Avalonia.Input.KeyboardNavigation.GetTabNavigation(editPanel) == Avalonia.Input.KeyboardNavigationMode.Cycle, "Personalization focus escapes overlay");
+                Check(!editPanel.GetVisualDescendants().OfType<Button>().Any(b => b.Content as string == "Pular"), "Editing exposes destructive skip");
+                editPanel.GetVisualDescendants().OfType<Button>().Single(b => b.Content as string == "Cancelar")
+                    .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                Check(welcomeField.GetValue(view) is null, "Cancel did not close personalization");
+                Check(AppServices.Controller.FavoriteArtists.SequenceEqual(artistsBeforeEdit)
+                    && AppServices.Controller.FavoriteGenres.SequenceEqual(genresBeforeEdit), "Cancel changed saved preferences");
                 var restoreSession = typeof(MainView).GetMethod("RestoreAccountAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
                 var loadingMethod = typeof(MainView).GetMethod("WithHeaderLoadingAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
                 var loadingBanner = (Border)typeof(MainView).GetField("_loadingBanner", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
@@ -182,6 +195,7 @@ internal static partial class Program
                 Check(saveFailed && !blockedProfile.OnboardingCompleted && blockedProfile.FavoriteArtists.Count == 0, "Failed onboarding save did not roll back");
                 blockedProfile.StopObserving();
                 try { await blockedProfile.FlushPendingSavesAsync(); } catch (IOException) { }
+                await CheckStorageAndMotionAsync(directory, view);
                 window.Width = initialWidth; window.Height = initialHeight; await Task.Delay(100);
                 var toolsEnabled = (bool)typeof(MainView).Assembly.GetType("Hibike.App.DeveloperFeatures")!.GetProperty("Enabled")!.GetValue(null)!;
                 typeof(MainView).GetMethod("ShowSettings", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(view, null);
@@ -446,7 +460,7 @@ internal static partial class Program
                     }
                     if (homeWidth == 1260)
                     {
-                        var import = view.GetVisualDescendants().OfType<Button>().Single(b => Avalonia.Automation.AutomationProperties.GetName(b) == "Importar músicas");
+                        var import = view.GetVisualDescendants().OfType<Button>().Single(b => b.IsEffectivelyVisible && Avalonia.Automation.AutomationProperties.GetName(b) == "Importar músicas");
                         var playlist = view.GetVisualDescendants().OfType<Button>().Single(b => Avalonia.Automation.AutomationProperties.GetName(b) == "Nova playlist");
                         Check(import.Bounds.Width == playlist.Bounds.Width && import.HorizontalContentAlignment == Avalonia.Layout.HorizontalAlignment.Center, "Sidebar actions not aligned");
                         var cache = typeof(MainView).Assembly.GetType("Hibike.App.Views.ArtworkCache")!;
@@ -541,6 +555,33 @@ internal static partial class Program
                     if (width < 1000)
                     {
                         var mini = (Border)typeof(MainView).GetField("_mini", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
+                        var main = (Border)typeof(MainView).GetField("_main", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
+                        Check(Grid.GetRowSpan(main) == 2 && main.Bounds.Bottom >= mini.Bounds.Bottom,
+                            "Mini player reserves an opaque bottom strip instead of overlaying content");
+                        Check(scrollingList.Content is Control scrollContent && scrollContent.Margin.Bottom >= mini.Bounds.Height + mini.Margin.Bottom,
+                            "Floating mini player has no scroll-end clearance");
+                        if (width == 360)
+                        {
+                            search.Text = "test";
+                            await AppServices.Controller.SearchAsync("test");
+                            await Task.Delay(100);
+                            for (var attempt = 0; attempt < 20; attempt++)
+                            {
+                                scrollingList.Offset = new Vector(0, scrollingList.Extent.Height);
+                                await Task.Delay(20);
+                            }
+                            var lastRow = list.GetRealizedContainers().Last();
+                            var lastBottom = lastRow.TranslatePoint(new Point(0, lastRow.Bounds.Height), view)!.Value.Y;
+                            var miniTop = mini.TranslatePoint(default, view)!.Value.Y;
+                            Check(lastBottom <= miniTop + 1, $"Last search row hidden by mini player: {lastBottom} > {miniTop}");
+                            Check(scrollingList.TranslatePoint(new Point(0, scrollingList.Bounds.Height), view)!.Value.Y > miniTop,
+                                "Search viewport stops above floating mini player");
+                            Capture(view, "mini-scroll-end-360");
+                            scrollingList.Offset = default;
+                            await Task.Delay(50);
+                            Capture(view, "mini-scroll-behind-360");
+                            search.Text = "";
+                        }
                         var cover = (ContentControl)typeof(MainView).GetField("_nowArt", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
                         var title = (TextBlock)typeof(MainView).GetField("_nowTitle", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
                         var miniTimeline = mini.GetVisualDescendants().OfType<ProgressBar>().Single();
@@ -554,6 +595,9 @@ internal static partial class Program
                     }
                     if (width >= 1000)
                     {
+                        var main = (Border)typeof(MainView).GetField("_main", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
+                        Check(Grid.GetRowSpan(main) == 1 && Equals(((Control)scrollingList.Content!).Resources["MiniPlayerInset"] ?? 0d, 0d),
+                            "Desktop dock retains floating mini player clearance");
                         var dockPlay = (Button)typeof(MainView).GetField("_dockPlay", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
                         var playIcon = dockPlay.Content;
                         typeof(MainView).GetMethod("RefreshDock", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(view, null);
@@ -674,6 +718,58 @@ internal static partial class Program
                     Capture(view, $"dialog-{width}"); Check(AppServices.BackHandler!(), "Dialog cannot close");
                 }
                 var music = AppServices.Controller!;
+                var transferQueue = typeof(MainView).GetField("_downloadQueue", hidden)!.GetValue(view)!;
+                var transferJobs = (System.Collections.IList)transferQueue.GetType().GetProperty("Jobs")!.GetValue(transferQueue)!;
+                var jobType = typeof(MainView).Assembly.GetType("Hibike.App.Downloads.DownloadJob")!;
+                var stageType = typeof(MainView).Assembly.GetType("Hibike.App.Downloads.TransferStage")!;
+                for (var i = 0; i < 25; i++)
+                {
+                    var job = Activator.CreateInstance(jobType, new Track($"transfer-{i}",
+                        "The Reacher - Vers le Sommet · Long title for narrow screen", "Lorien Testard & Alice Duport-Percier", $"https://example.test/{i}"))!;
+                    jobType.GetMethod("ChangeStage", hidden)!.Invoke(job, [Enum.Parse(stageType, i == 0 ? "Transferring" : "Queued"), null]);
+                    if (i == 0) jobType.GetMethod("UpdateProgress", hidden)!.Invoke(job, [new AudioDownloadProgress(2097152, 10485760, 204800)]);
+                    transferJobs.Add(job);
+                }
+                foreach (var width in new[] { 320, 360, 390, 430 })
+                {
+                    window.Width = width;
+                    window.Height = 720;
+                    var downloadsNav = view.GetVisualDescendants().OfType<Button>().First(b => b.IsEffectivelyVisible
+                        && b.Tag is ValueTuple<string, string, string, bool> tag && tag.Item1 == "downloads");
+                    downloadsNav.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                    await Task.Delay(100);
+                    var downloadsPage = (Grid)typeof(MainView).GetField("_downloadsPage", hidden)!.GetValue(view)!;
+                    var device = (Button)typeof(MainView).GetField("_deviceTab", hidden)!.GetValue(view)!;
+                    device.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                    await Task.Delay(50);
+                    var search = (TextBox)typeof(MainView).GetField("_downloadFilter", hidden)!.GetValue(view)!;
+                    var searchPosition = search.TranslatePoint(default, downloadsPage)!.Value;
+                    Check(search.Bounds.Width >= width - 80, "Downloads search squeezed");
+                    Check(searchPosition.Y + search.Bounds.Height <= downloadsPage.Bounds.Height, "Downloads search clipped");
+                    var playDownloads = (Button)typeof(MainView).GetField("_playDownloads", hidden)!.GetValue(view)!;
+                    Check(((Control)playDownloads.Content!).GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Path>().Single().Stroke is Avalonia.Media.ISolidColorBrush stroke
+                        && playDownloads.Foreground is Avalonia.Media.ISolidColorBrush foreground && stroke.Color == foreground.Color, "Downloads play icon lacks contrast on primary background");
+                    var rows = (ItemsControl)typeof(MainView).GetField("_downloadItems", hidden)!.GetValue(view)!;
+                    var scroll = rows.GetVisualAncestors().OfType<ScrollViewer>().First();
+                    Check(scroll.Bounds.Height >= downloadsPage.Bounds.Height * .35, "Downloads tools consume list viewport");
+                    Capture(view, $"downloads-device-{width}");
+                    var transfers = (Button)typeof(MainView).GetField("_transfersTab", hidden)!.GetValue(view)!;
+                    transfers.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+                    await Task.Delay(50);
+                    Check(!search.IsEffectivelyVisible, "Device tools leak into transfers");
+                    var queue = (ItemsControl)typeof(MainView).GetField("_downloadQueueItems", hidden)!.GetValue(view)!;
+                    Check(queue.GetVisualAncestors().OfType<ScrollViewer>().First().Bounds.Height > downloadsPage.Bounds.Height * .5,
+                        "Transfer list lacks bounded viewport");
+                    Check(queue.GetRealizedContainers().Count() < transferJobs.Count, "Transfer list lost virtualization");
+                    foreach (var button in queue.GetVisualDescendants().OfType<Button>().Where(button => button.IsEffectivelyVisible))
+                    {
+                        var position = button.TranslatePoint(default, queue)!.Value;
+                        Check(button.Bounds.Height >= 48 && position.X >= 0 && position.X + button.Bounds.Width <= queue.Bounds.Width + 1,
+                            "Transfer action squeezed or overflows narrow screen");
+                    }
+                    Capture(view, $"downloads-transfers-{width}");
+                }
+                transferJobs.Clear();
                 await music.ToggleFavoriteAsync(music.Results[0]);
                 await music.ToggleFavoriteAsync(new("local-filter", "Local favorite", "Local artist", "test", IsLocal: true));
                 foreach (var width in new[] { 360, 1260 })

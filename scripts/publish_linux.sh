@@ -15,10 +15,9 @@ dotnet publish src/Hibike.Desktop/Hibike.Desktop.csproj -c Release -r linux-x64 
 python3 - "$appdir/usr/bin" <<'PY'
 import hashlib, json, pathlib, sys, urllib.request
 output = pathlib.Path(sys.argv[1])
-version = json.loads(pathlib.Path('scripts/runtime-lock.json').read_text())['yt_dlp']['version']
+lock = json.loads(pathlib.Path('scripts/runtime-lock.json').read_text())['yt_dlp']
+version, expected = lock['version'], lock['linux_sha256']
 base = f'https://github.com/yt-dlp/yt-dlp/releases/download/{version}'
-checksums = urllib.request.urlopen(base + '/SHA2-256SUMS', timeout=60).read().decode()
-expected = next(line.split()[0] for line in checksums.splitlines() if line.split()[-1].lstrip('*') == 'yt-dlp_linux')
 data = urllib.request.urlopen(base + '/yt-dlp_linux', timeout=120).read()
 assert hashlib.sha256(data).hexdigest() == expected, 'yt-dlp checksum mismatch'
 (output / 'yt-dlp').write_bytes(data)
