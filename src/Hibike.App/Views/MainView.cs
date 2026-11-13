@@ -784,7 +784,7 @@ public sealed partial class MainView : UserControl
         field.InnerLeftContent = new Border { Child = Icons.Make("search", Muted), Padding = UiTheme.SearchIconPadding };
 
     private Control TrackRow(Track track, bool showMenu = false, Func<Task>? playTrack = null, Action<Control>? openMenu = null,
-        string? subtitle = null)
+        string? subtitle = null, Func<IEnumerable<Track>>? selectionTracks = null)
     {
         if (track.IsArtist)
         {
@@ -792,6 +792,7 @@ public sealed partial class MainView : UserControl
             showMenu = false;
             openMenu = null;
             subtitle = "Artista · abrir canal";
+            selectionTracks = null;
         }
         var grid = new Grid { ColumnDefinitions = new("*,Auto,Auto"), ColumnSpacing = UiTheme.CompactGap, Height = UiTheme.ThumbnailSize };
         var play = ActionButton("", playTrack ?? (() => _music.PlayAsync(track, _music.Queue.Contains(track) ? _music.Queue.IndexOf(track) : null))); play.Classes.Add("subtle"); play.Padding = UiTheme.Zero; play.HorizontalContentAlignment = HorizontalAlignment.Stretch;
@@ -806,11 +807,11 @@ public sealed partial class MainView : UserControl
         grid.Children.Add(play);
         if (track.DurationSeconds > 0 || !showMenu) Put(grid, Text(track.DurationLabel, UiTheme.Caption, Muted), 0, 1);
         var more = IconButton("more", "Opções de " + track.Title, () => Task.CompletedTask);
-        openMenu ??= anchor => ShowSongMenu(track, anchor);
+        openMenu ??= anchor => ShowSongMenu(track, anchor, selectionTracks);
         more.Click += (_, _) => openMenu(more);
         Put(grid, more, 0, 2);
         more.Classes.Add("subtle");
-        AttachSongHold(play, track, openMenu);
+        AttachSongHold(play, track, openMenu, selectionTracks);
         more.IsVisible = showMenu || !OperatingSystem.IsAndroid();
         var border = new Border { Child = grid, Padding = UiTheme.RowPadding, Height = OperatingSystem.IsAndroid() || showMenu ? 64 : UiTheme.TrackRowHeight };
         if (showMenu)
@@ -970,7 +971,7 @@ public sealed partial class MainView : UserControl
         _detailQueueFingerprint = null;
         var queueItems = _detailQueue = new ItemsControl { ItemsSource = _music.Upcoming.ToArray(),
             ItemsPanel = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel()),
-            ItemTemplate = new FuncDataTemplate<Track>((item, _) => item is null ? new Border() : TrackRow(item)) };
+            ItemTemplate = new FuncDataTemplate<Track>((item, _) => item is null ? new Border() : TrackRow(item, selectionTracks: () => _music.Upcoming)) };
         Put(queuePanel, UiTheme.FadingScroll(queueItems), 2, 0);
         var transport = new Grid { RowDefinitions = new("Auto,Auto"), ColumnDefinitions = new("*,Auto,*"), ColumnSpacing = UiTheme.PageGap,
             Background = UiTheme.Brush(UiTheme.Surface), Margin = UiTheme.Zero };
@@ -1246,15 +1247,16 @@ public sealed partial class MainView : UserControl
             PreferenceLink("heart", "Personalizar meu som", "Artistas e estilos favoritos", () => { ShowMusicOnboarding(edit: true); return Task.CompletedTask; }),
             PreferenceLink("queue", "Histórico de escuta", "Reproduções salvas neste dispositivo", () =>
         {
+            var tracks = _music.History.ToArray();
             var history = CollectionList<Track>(track =>
             {
                 var row = new StackPanel { Spacing = 4 };
-                row.Children.Add(TrackRow(track));
+                row.Children.Add(TrackRow(track, selectionTracks: () => tracks));
                 if (_music.Listening.TryGetValue(MusicController.SongKey(track), out var stat))
                     row.Children.Add(Text($"{stat.Plays} inícios · {Time(stat.Seconds)} ouvidos · {stat.Completed} conclusões · {stat.Skips} pulos rápidos", UiTheme.Caption, Muted));
                 return row;
             });
-            history.ItemsSource = _music.History.ToArray();
+            history.ItemsSource = tracks;
             ShowSheet("Histórico local", history); return Task.CompletedTask;
         })));
         sections.Add(PreferenceSection("Integrações", PreferenceLink("info", "Discord", "Atividade de reprodução", ShowDiscordAccountAsync)));
@@ -1548,7 +1550,10 @@ public sealed partial class MainView : UserControl
         panel.Children.Add(ActionButton("Histórico neste aparelho", () =>
         {
             var history = new StackPanel { Spacing = UiTheme.CompactGap };
-            foreach (var track in _music.History.ToArray()) history.Children.Add(ActionButton(track.Artist + " — " + track.Title, async () => { CloseSheet(); await _music.PlayAsync(track); }));
+            var tracks = _music.History.ToArray();
+            foreach (var track in tracks)
+                history.Children.Add(TrackRow(track, showMenu: true, playTrack: async () => { CloseSheet(); await _music.PlayAsync(track); },
+                    selectionTracks: () => tracks));
             ShowSheet("Histórico", history); return Task.CompletedTask;
         }));
         ShowSheet("Laboratório experimental", panel);

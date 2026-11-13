@@ -15,7 +15,7 @@ public sealed partial class MainView
 {
     private Image _brandIcon = null!;
     private Popup? _songPopup;
-    private void AttachSongHold(Control control, Track track, Action<Control>? openMenu = null)
+    private void AttachSongHold(Control control, Track track, Action<Control>? openMenu = null, Func<IEnumerable<Track>>? selectionTracks = null)
     {
         openMenu ??= anchor => ShowSongMenu(track, anchor);
         control.SetValue(InputElement.IsHoldingEnabledProperty, true);
@@ -23,7 +23,9 @@ public sealed partial class MainView
         control.Holding += (_, e) =>
         {
             if (e.HoldingState != HoldingState.Started) return;
-            held = true; e.Handled = true; openMenu(control);
+            held = true; e.Handled = true;
+            if (selectionTracks is null) openMenu(control);
+            else ShowTrackSelection(track, selectionTracks());
         };
         control.AddHandler(PointerPressedEvent, (_, _) => held = false, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         control.AddHandler(PointerReleasedEvent, (_, e) => { if (held) { e.Handled = true; held = false; } }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
@@ -33,10 +35,12 @@ public sealed partial class MainView
             { e.Handled = true; openMenu(control); }
         };
     }
-    private void ShowSongMenu(Track track, Control anchor)
+    private void ShowSongMenu(Track track, Control anchor, Func<IEnumerable<Track>>? selectionTracks = null)
     {
         _songPopup?.SetCurrentValue(Popup.IsOpenProperty, false);
         var actions = (StackPanel)SongActions(track); actions.Spacing = 0;
+        if (selectionTracks is not null)
+            actions.Children.Insert(0, SelectTracksAction(track, selectionTracks));
         foreach (var button in actions.Children.OfType<Button>())
         {
             var label = button.Content as string ?? "";
@@ -47,7 +51,11 @@ public sealed partial class MainView
             button.Classes.Add("subtle"); button.BorderThickness = new Thickness(0);
             button.HorizontalContentAlignment = HorizontalAlignment.Left;
             button.Padding = new Thickness(16, 8); button.CornerRadius = new(0);
-            button.Click += (_, _) => { _songPopup?.SetCurrentValue(Popup.IsOpenProperty, false); ClosePlayer(); };
+            button.Click += (_, _) =>
+            {
+                _songPopup?.SetCurrentValue(Popup.IsOpenProperty, false);
+                if (label != "Selecionar músicas") ClosePlayer();
+            };
         }
         var popup = new Popup
         {
@@ -95,7 +103,7 @@ public sealed partial class MainView
                 return Task.CompletedTask;
             }));
         if (_music.CanUseOnline) actions.Children.Add(ActionButton("Ver artista", () => OpenTrackArtistAsync(track)));
-        if (!string.IsNullOrWhiteSpace(track.Album)) actions.Children.Add(ActionButton("Abrir álbum", () => { CloseSheet(); OpenLocalCollection(track.Album, _music.Favorites.Concat(_music.History).Append(track).Where(t => t.Album == track.Album && t.Artist == track.Artist)); return Task.CompletedTask; }));
+        if (!string.IsNullOrWhiteSpace(track.Album)) actions.Children.Add(ActionButton("Abrir álbum", () => { CloseSheet(); OpenLocalCollection(track.Album, _music.OfflineTracks.Concat(_music.Favorites).Concat(_music.History).Append(track).Where(t => t.Album == track.Album && t.Artist == track.Artist)); return Task.CompletedTask; }));
         if (!track.IsLocal && Uri.TryCreate(track.Source, UriKind.Absolute, out var uri) && uri.Scheme == "https")
             actions.Children.Add(ActionButton("Compartilhar: copiar link", async () => { var clipboard = TopLevel.GetTopLevel(this)?.Clipboard; if (clipboard is null) throw new InvalidOperationException("Área de transferência indisponível."); await clipboard.SetTextAsync(track.Source); CloseSheet(); }));
         if (_music.Queue.Contains(track))
@@ -107,20 +115,39 @@ public sealed partial class MainView
     {
         OpenCollection(title, tracks.DistinctBy(t => t.Source).ToArray(), "Álbum");
     }
-    private void ShowPlaylistPicker(Track track)
+    private void ShowPlaylistPicker(Track track) => ShowPlaylistPicker([track]);
+
+    private void ShowPlaylistPicker(IReadOnlyList<Track> tracks)
     {
         var panel = new StackPanel { Spacing = 8 };
         foreach (var playlist in _music.Playlists)
-            panel.Children.Add(ActionButton(playlist.Name, () => { _music.AddToPlaylist(playlist, track); CloseSheet(); return Task.CompletedTask; }));
-        panel.Children.Add(ActionButton("Nova playlist", () => { ShowNewPlaylist(track); return Task.CompletedTask; }));
-        ShowSheet("Salvar na playlist local", panel);
+            panel.Children.Add(ActionButton(playlist.Name, () =>
+            {
+                _music.AddToPlaylist(playlist, tracks);
+                CloseSheet();
+                return Task.CompletedTask;
+            }));
+        panel.Children.Add(ActionButton("Nova playlist", () => { ShowNewPlaylist(tracks); return Task.CompletedTask; }));
+        ShowSheet("Salvar na playlist local", panel, preservePlayer: true);
     }
-    private void ShowNewPlaylist(Track? track = null)
+
+    private void ShowNewPlaylist() => ShowNewPlaylist([]);
+
+    private void ShowNewPlaylist(IReadOnlyList<Track> tracks)
     {
-        var panel = new StackPanel { Spacing = 12 }; var field = UiTheme.Field("Nome da playlist"); panel.Children.Add(field);
-        panel.Children.Add(ActionButton("Criar", () => { _music.CreatePlaylist(field.Text ?? ""); if (track is not null) _music.AddToPlaylist(_music.Playlists.Last(), track); CloseSheet(); return Task.CompletedTask; }));
-        ShowSheet("Nova playlist local", panel);
+        var panel = new StackPanel { Spacing = 12 };
+        var field = UiTheme.Field("Nome da playlist");
+        panel.Children.Add(field);
+        panel.Children.Add(ActionButton("Criar", () =>
+        {
+            _music.CreatePlaylist(field.Text ?? "");
+            if (tracks.Count > 0) _music.AddToPlaylist(_music.Playlists.Last(), tracks);
+            CloseSheet();
+            return Task.CompletedTask;
+        }));
+        ShowSheet("Nova playlist local", panel, preservePlayer: true);
     }
+
     private void ShowLocalPlaylist(MusicController.LocalPlaylist playlist)
     {
         _page = "library";
@@ -135,10 +162,11 @@ public sealed partial class MainView
         panel.Children.Add(ActionButton(playlist.Pinned ? "Desafixar da sidebar" : "Fixar na sidebar", () => { _music.PinPlaylist(playlist); ShowLocalPlaylist(playlist); return Task.CompletedTask; }));
         var name = UiTheme.Field("Nome"); name.Text = playlist.Name; panel.Children.Add(name);
         panel.Children.Add(ActionButton("Renomear", () => { _music.RenamePlaylist(playlist, name.Text ?? ""); ShowLocalPlaylist(playlist); return Task.CompletedTask; }));
-        foreach (var track in playlist.Tracks)
+        var tracks = playlist.Tracks.ToArray();
+        foreach (var track in tracks)
         {
             var row = new Grid { ColumnDefinitions = new("*,Auto") };
-            row.Children.Add(ActionButton(track.Title, () => { CloseSheet(); return _music.PlayAsync(track); }));
+            row.Children.Add(TrackRow(track, showMenu: true, playTrack: () => { CloseSheet(); return _music.PlayAsync(track); }, selectionTracks: () => tracks));
             Put(row, IconButton("close", "Remover " + track.Title + " da playlist", () => { _music.RemoveFromPlaylist(playlist, track); ShowLocalPlaylist(playlist); return Task.CompletedTask; }), 0, 1); panel.Children.Add(row);
         }
         panel.Children.Add(ActionButton("Excluir playlist…", () =>

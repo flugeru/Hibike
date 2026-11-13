@@ -16,8 +16,10 @@ public sealed partial class MainView
     {
         if (_profileButton is null || ReferenceEquals(_profileAccount, _account) && _profileButton.Tag is not null) return;
         _profileAccount = _account; _profileButton.Tag = true;
+        var size = _androidLayout ? UiTheme.TouchSize : 32;
         _profileButton.Content = _account?.AvatarUrl is { } url
-            ? new Artwork(new Track("account-avatar", "Conta", "", "", Thumbnail: url), 28) { Width = 28, Height = 28, CornerRadius = new(14) }
+            ? new Artwork(new Track("account-avatar", "Conta", "", "", Thumbnail: url), size - 4, highQuality: true)
+                { CornerRadius = new((size - 4) / 2), BorderThickness = UiTheme.Zero }
             : Icons.Make(_account is null ? "account-off" : "account", Muted, 24);
         Avalonia.Automation.AutomationProperties.SetName(_profileButton, _account?.DisplayName is { Length: > 0 } name ? "Perfil de " + name : _account is null ? "Perfil · sem conta" : "Perfil · conta conectada");
     }

@@ -83,7 +83,7 @@ public sealed partial class MainView
         _mobileSearchError.MaxLines = 3;
         Put(page, _mobileSearchError, 3, 0);
 
-        _mobileSearchItems = CollectionList<Track>(track => TrackRow(track, showMenu: true));
+        _mobileSearchItems = CollectionList<Track>(track => TrackRow(track, showMenu: true, selectionTracks: () => _mobileSearchTracks));
         _searchArtists = new StackPanel { Spacing = UiTheme.CompactGap };
         _searchSongsHeading = CollectionText("Músicas", UiTheme.SectionTitle, weight: FontWeight.SemiBold);
         _searchProgress = CollectionText("Carregando mais resultados…", UiTheme.Caption, Muted);

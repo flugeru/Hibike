@@ -81,12 +81,23 @@ public sealed partial class MusicController
             var candidates = saved.Concat(Favorites).Concat(Queue).Concat(History)
                 .Concat(Playlists.SelectMany(playlist => playlist.Tracks)).Concat(Pins)
                 .Concat(Current is { } current ? [current] : []).DistinctBy(track => track.Source).ToArray();
+            var knownMetadata = candidates.Where(track => !track.IsLocal && !string.IsNullOrWhiteSpace(track.Album))
+                .ToDictionary(track => track.Source);
             var available = await Task.Run(() => candidates
-                .Where(track => OfflineOrigin(track) is not null && File.Exists(track.Source)).ToArray());
+                .Where(track => OfflineOrigin(track) is not null && File.Exists(track.Source))
+                .Select(track => OfflineOrigin(track) == "Download" && string.IsNullOrWhiteSpace(track.Album)
+                    ? RestoreDownloadMetadata(track, knownMetadata) : track).ToArray());
             OfflineTracks = available;
             if (!available.SequenceEqual(saved)) await _offlineStore.SaveAsync(available);
         }
         finally { _offlineStoreGate.Release(); }
+    }
+
+    private Track RestoreDownloadMetadata(Track track, IReadOnlyDictionary<string, Track> knownMetadata)
+    {
+        if (track.DownloadedFrom is { } source && knownMetadata.TryGetValue(source, out var known))
+            return track with { Album = known.Album, Artist = known.MusicArtist ?? known.Artist };
+        return LocalTrackMetadata.Read(track, Path.Combine(DataDirectory, "artwork"));
     }
 
     internal async Task SaveOfflineTrackAsync(Track track)

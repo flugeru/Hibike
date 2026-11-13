@@ -135,7 +135,8 @@ public sealed partial class MainView
 
         _downloadItems = CollectionList<Track>(track => TrackRow(track, showMenu: true,
             openMenu: _ => ShowOfflineTrackOptions(track),
-            subtitle: TrackTextFormatter.Artist(track.Artist) + " · " + _music.OfflineOrigin(track)));
+            subtitle: TrackTextFormatter.Artist(track.Artist) + " · " + _music.OfflineOrigin(track),
+            selectionTracks: () => _shownDownloads));
         var tools = new Grid { RowDefinitions = new("Auto,Auto,Auto"), ColumnDefinitions = new("*,Auto"),
             RowSpacing = UiTheme.CompactGap, ColumnSpacing = UiTheme.SectionGap };
         tools.Children.Add(actions);
@@ -274,6 +275,7 @@ public sealed partial class MainView
         try { size = $"{new FileInfo(track.Source).Length / 1048576d:0.0} MB"; }
         catch (IOException) { size = "Arquivo indisponível"; }
         catch (UnauthorizedAccessException) { size = "Arquivo indisponível"; }
+        details.Children.Add(SelectTracksAction(track, () => _shownDownloads));
         details.Children.Add(Text(_music.OfflineOrigin(track) + " · " + size, UiTheme.Caption, Muted));
         details.Children.Add(ActionButton("Tocar a seguir", () => { _music.PlayNext(track); CloseSheet(); return Task.CompletedTask; }));
         details.Children.Add(ActionButton("Adicionar à fila", () => { _music.Enqueue(track); CloseSheet(); return Task.CompletedTask; }));
@@ -301,19 +303,31 @@ public sealed partial class MainView
 
     private Task DownloadCurrentAsync() => _music.Current is { } track ? DownloadTrackAsync(track) : Task.CompletedTask;
 
-    private Task DownloadTrackAsync(Track track)
+    private Task DownloadTrackAsync(Track track) => DownloadTracksAsync([track]);
+
+    private Track[] DownloadableTracks(IEnumerable<Track> tracks)
     {
+        var savedSources = _music.OfflineTracks
+            .Where(track => track.DownloadedFrom is not null && File.Exists(track.Source))
+            .Select(track => track.DownloadedFrom).ToHashSet();
+        return tracks.Where(track => !track.IsLocal && !track.IsArtist && !savedSources.Contains(track.Source))
+            .DistinctBy(track => track.Source).ToArray();
+    }
+
+    private Task DownloadTracksAsync(IEnumerable<Track> tracks)
+    {
+        if (!_music.CanUseOnline) return Task.CompletedTask;
+        var pending = DownloadableTracks(tracks);
+        if (pending.Length == 0)
+        {
+            _music.SetStatus("As faixas selecionadas já estão no aparelho ou não estão disponíveis para download.");
+            return Task.CompletedTask;
+        }
         CloseSheet();
         ClosePlayer();
         _page = "downloads";
         Refresh();
-        if (!_music.CanUseOnline || track.IsLocal || track.IsArtist) return Task.CompletedTask;
-        if (_music.OfflineTracks.Any(local => local.DownloadedFrom == track.Source && File.Exists(local.Source)))
-        {
-            _downloadQueueSummary.Text = "Esta faixa já está no aparelho.";
-            return Task.CompletedTask;
-        }
-        _downloadQueue.Enqueue(track);
+        foreach (var track in pending) _downloadQueue.Enqueue(track);
         RevealMobileTopBars();
         _showTransfers = true;
         RefreshDownloadQueue();
@@ -327,7 +341,10 @@ public sealed partial class MainView
         await _music.SaveOfflineTrackAsync(track with
         {
             Id = Guid.NewGuid().ToString("N"),
-            Source = path, IsLocal = true, DownloadedFrom = track.Source, Thumbnail = thumbnail
+            Source = path, IsLocal = true, DownloadedFrom = track.Source, Thumbnail = thumbnail,
+            Album = source.Album ?? track.Album,
+            Title = source.Title ?? track.MusicTitle ?? track.Title,
+            Artist = source.Artist ?? track.MusicArtist ?? track.Artist
         });
     }
 

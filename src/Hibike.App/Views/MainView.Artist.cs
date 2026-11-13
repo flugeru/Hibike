@@ -105,7 +105,9 @@ public sealed partial class MainView
         if (profile.Tracks.Count > 0)
         {
             body.Children.Add(Text("Músicas em destaque", UiTheme.SectionTitle));
-            foreach (var track in profile.Tracks.Take(5)) body.Children.Add(TrackRow(track, showMenu: true));
+            var highlights = profile.Tracks.Take(5).ToArray();
+            foreach (var track in highlights)
+                body.Children.Add(TrackRow(track, showMenu: true, selectionTracks: () => highlights));
             if (profile.Tracks.Count > 5) body.Children.Add(ActionButton("Mostrar todas", () => { OpenCollection(artist.Name, profile.Tracks, "Músicas", artwork); return Task.CompletedTask; }));
         }
         foreach (var kind in new[] { "Álbum", "Single / EP", "Playlist" }.Concat(profile.Collections.Select(c => c.Kind)).Distinct())

@@ -126,7 +126,7 @@ public sealed partial class MainView
         Put(summary, _mobileLibraryPlay, 0, 1);
         Put(page, summary, 4, 0);
 
-        _mobileLibraryTracks = CollectionList<Track>(track => TrackRow(track, showMenu: true));
+        _mobileLibraryTracks = CollectionList<Track>(track => TrackRow(track, showMenu: true, selectionTracks: () => _mobileLibraryShownTracks));
         _mobileLibraryGroups = CollectionList<LibraryGroup[]>(BuildMobileLibraryGroupRow);
         _mobileLibraryScroll = UiTheme.FadingScroll();
         _mobileLibraryEmpty = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch };
@@ -199,7 +199,7 @@ public sealed partial class MainView
         var seed = detail?.Tracks.FirstOrDefault();
         var tracks = detail is null
             ? _mobileLibraryTab == LibraryTab.Playlists ? [] : FilterMobileLibraryTracks().ToArray()
-            : detail.Playlist?.Tracks.ToArray() ?? _music.Favorites.Where(track => seed is not null
+            : detail.Playlist?.Tracks.ToArray() ?? FilterMobileLibraryTracks().Where(track => seed is not null
                 && track.Artist == seed.Artist && (_mobileLibraryTab == LibraryTab.Artists || track.Album == seed.Album)).ToArray();
         var showingTracks = detail is not null || _mobileLibraryTab == LibraryTab.Songs;
         _mobileLibrarySection.IsVisible = !showingTracks;
@@ -318,13 +318,18 @@ public sealed partial class MainView
         }, DispatcherPriority.Loaded);
     }
 
-    private IEnumerable<Track> FilterMobileLibraryTracks() => !_music.CanUseOnline
-        ? _music.OfflineTracks : _music.Favorites.Where(track => _mobileLibrarySource switch
+    private IEnumerable<Track> FilterMobileLibraryTracks()
     {
-        LibrarySource.Local => track.IsLocal,
-        LibrarySource.Online => !track.IsLocal,
-        _ => true
-    });
+        if (!_music.CanUseOnline) return _music.OfflineTracks;
+        return _music.OfflineTracks.Concat(_music.Favorites)
+            .DistinctBy(track => track.Source)
+            .Where(track => _mobileLibrarySource switch
+            {
+                LibrarySource.Local => track.IsLocal,
+                LibrarySource.Online => !track.IsLocal,
+                _ => true
+            });
+    }
 
     private IEnumerable<Track> OrderMobileLibraryTracks(IEnumerable<Track> tracks) => _mobileLibraryOrder switch
     {

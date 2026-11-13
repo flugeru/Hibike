@@ -69,8 +69,8 @@ public sealed class YtDlpCatalog(ICommandRunner runner, string? dataDirectory = 
             foreach (var header in values.EnumerateObject())
                 if (header.Value.ValueKind == JsonValueKind.String) headers[header.Name] = header.Value.GetString()!;
         PlaybackDiagnostics.Write("Extrator", "Áudio resolvido; formato=" + (Text(item, "format_id") ?? "?") + "; protocolo=" + (Text(item, "protocol") ?? "?"));
-        return new(url, headers, track.Title, track.Artist, Text(item, "thumbnail") ?? track.Thumbnail,
-            Number(item, "abr"), Text(item, "acodec"), Number(item, "asr"), Number(item, "audio_channels"), Text(item, "format_id"), Text(item, "ext"));
+        return new(url, headers, Text(item, "track") ?? track.MusicTitle ?? track.Title, Text(item, "artist") ?? track.MusicArtist ?? track.Artist, Text(item, "thumbnail") ?? track.Thumbnail,
+            Number(item, "abr"), Text(item, "acodec"), Number(item, "asr"), Number(item, "audio_channels"), Text(item, "format_id"), Text(item, "ext"), Album: Text(item, "album") ?? track.Album);
     }
 
     public static IReadOnlyList<Track> ParseSearch(string json)

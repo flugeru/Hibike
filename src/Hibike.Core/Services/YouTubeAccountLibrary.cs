@@ -89,8 +89,14 @@ public sealed class YouTubeAccountLibrary(HttpClient client, string accessToken)
                 var id = Nodes(item, "videoId").Select(node => node.GetString()).FirstOrDefault();
                 var columns = Columns(item).ToArray();
                 if (id is null || !System.Text.RegularExpressions.Regex.IsMatch(id, "^[A-Za-z0-9_-]{11}$") || columns.Length == 0) continue;
+                var album = Nodes(item, "runs").Where(runs => runs.ValueKind == JsonValueKind.Array)
+                    .SelectMany(runs => runs.EnumerateArray())
+                    .Where(run => Nodes(run, "browseId").Any(value => value.ValueKind == JsonValueKind.String
+                        && value.GetString()!.StartsWith("MPRE", StringComparison.Ordinal)))
+                    .Select(run => run.TryGetProperty("text", out var text) ? text.GetString() : null)
+                    .FirstOrDefault(text => !string.IsNullOrWhiteSpace(text));
                 tracks.Add(new(id, columns[0], columns.ElementAtOrDefault(1) ?? "YouTube Music",
-                    "https://www.youtube.com/watch?v=" + id, Thumbnail: WebImage(item)));
+                    "https://www.youtube.com/watch?v=" + id, Thumbnail: WebImage(item), Album: album));
             }
             return (tracks, WebContinuation(root));
         }

@@ -104,7 +104,8 @@ public sealed partial class MainView
             var caption = TrackTextFormatter.Artist(track.Artist);
             if (item.Recommended) caption += " · Rádio";
             return TrackRow(track, showMenu: true, playTrack: () => PlayMobileQueueTrackAsync(track),
-                openMenu: _ => ShowMobileQueueTrackOptions(track), subtitle: caption);
+                openMenu: _ => ShowMobileQueueTrackOptions(track), subtitle: caption,
+                selectionTracks: () => _mobileQueueRows.Select(row => row.Track));
         });
         _mobileQueueScroll = UiTheme.FadingScroll(_mobileQueueItems);
         _mobileQueueEmpty = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch,
@@ -185,6 +186,7 @@ public sealed partial class MainView
         Add("Mover para cima", -1, index > first);
         Add("Mover para baixo", 1, index < _music.Queue.Count - 1);
         Add("Remover da fila", 0, true);
+        panel.Children.Add(SelectTracksAction(track, () => _mobileQueueRows.Select(row => row.Track)));
         panel.Children.Add(CollectionAction("Ver artista", () => OpenTrackArtistAsync(track)));
         ShowSheet(TrackTextFormatter.Title(track.Title, track.Artist), panel);
 

@@ -56,7 +56,7 @@ public class CatalogTests
     }
     [Fact] public async Task ResolveSelectsBestAudioAndPreservesQualityMetadata()
     {
-        var runner = new FakeRunner("""{"url":"https://example.org/audio","abr":159.7,"acodec":"opus","asr":48000,"audio_channels":2,"format_id":"251","ext":"webm"}""");
+        var runner = new FakeRunner("""{"url":"https://example.org/audio","abr":159.7,"acodec":"opus","asr":48000,"audio_channels":2,"format_id":"251","ext":"webm","album":"Soundtrack","artist":"Composer","track":"Recording"}""");
         var source = await new YtDlpCatalog(runner).ResolveAsync(new("id", "Song", "Artist", "https://example.org"), default);
         Assert.Equal("bestaudio", runner.Arguments[runner.Arguments.ToList().IndexOf("-f") + 1]);
         Assert.Equal(159.7, source.BitrateKbps);
@@ -65,6 +65,9 @@ public class CatalogTests
         Assert.Equal(2, source.Channels);
         Assert.Equal("251", source.Format);
         Assert.Equal("webm", source.Container);
+        Assert.Equal("Soundtrack", source.Album);
+        Assert.Equal("Composer", source.Artist);
+        Assert.Equal("Recording", source.Title);
     }
     [Fact] public async Task FavoritesRoundTripAtomically()
     {

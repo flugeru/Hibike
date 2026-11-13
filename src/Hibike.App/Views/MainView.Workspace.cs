@@ -309,7 +309,7 @@ public sealed partial class MainView
         if (!artistPage && artwork is { IsArtist: true } && !string.Equals(artwork.Title, title, StringComparison.OrdinalIgnoreCase))
             actions.Children.Add(ActionButton("Ver artista", () => ShowChannelAsync(artwork)));
         Put(grid, actions, 1, 0);
-        var list = CollectionList<object>(item => item is Track track ? TrackRow(track, showMenu: true) : new Border());
+        var list = CollectionList<object>(item => item is Track track ? TrackRow(track, showMenu: true, selectionTracks: () => tracks) : new Border());
         list.ItemsSource = footer is null ? tracks : tracks.Cast<object>().Append(footer).ToArray();
         Put(grid, tracks.Count > 0 ? UiTheme.FadingScroll(list)
             : EmptyState("library", message ?? "Nenhuma faixa disponível", "", retry is null ? null : "Tentar novamente", retry), 2, 0);

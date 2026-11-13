@@ -224,7 +224,16 @@ public sealed partial class MusicController
         playlist.Name = name; PersistPersonalization();
     }
     public void AddToPlaylist(LocalPlaylist playlist, Track track)
-    { if (!playlist.Tracks.Any(t => t.Source == track.Source)) playlist.Tracks.Add(track); PersistPersonalization(); }
+        => AddToPlaylist(playlist, [track]);
+
+    public void AddToPlaylist(LocalPlaylist playlist, IEnumerable<Track> tracks)
+    {
+        var sources = playlist.Tracks.Select(track => track.Source).ToHashSet();
+        var additions = tracks.Where(track => sources.Add(track.Source)).ToArray();
+        if (additions.Length == 0) return;
+        playlist.Tracks.AddRange(additions);
+        PersistPersonalization();
+    }
     public void RemoveFromPlaylist(LocalPlaylist playlist, Track track) { playlist.Tracks.Remove(track); PersistPersonalization(); }
     public void DeletePlaylist(LocalPlaylist playlist) { _personal.Playlists.Remove(playlist); PersistPersonalization(); }
     public void PinPlaylist(LocalPlaylist playlist) { playlist.Pinned = !playlist.Pinned; PersistPersonalization(); }

@@ -181,6 +181,44 @@ internal static partial class Program
             }
             music.SetOfflineMode(false);
 
+            var offlineTrack = new Hibike.Core.Models.Track("offline-library", "Downloaded recording", "Downloaded artist",
+                "downloaded-recording", IsLocal: true, Album: "Downloaded album");
+            await (Task)typeof(MusicController).GetMethod("SaveOfflineTrackAsync", hidden)!.Invoke(music, [offlineTrack])!;
+            Navigate("library");
+            var tabs = Field<List<Button>>("_mobileLibraryTabs");
+            foreach (var (index, title) in new[] { (2, offlineTrack.Album), (3, offlineTrack.Artist) })
+            {
+                Click(tabs[index]);
+                view.UpdateLayout();
+                Check(Field<Grid>("_mobileLibrary").GetVisualDescendants().OfType<TextBlock>()
+                    .Any(label => label.IsEffectivelyVisible && label.Text == title),
+                    "Downloaded track missing from an online library group");
+            }
+
+            var selectionTracks = new[]
+            {
+                new Hibike.Core.Models.Track("select-1", "First", "Artist", "https://example.test/1"),
+                new Hibike.Core.Models.Track("select-2", "Second", "Artist", "https://example.test/2")
+            };
+            typeof(MainView).GetMethod("ShowTrackSelection", hidden)!.Invoke(view, [selectionTracks[1], selectionTracks]);
+            view.UpdateLayout();
+            var selectionSheet = Field<Border>("_overlay");
+            var selectionList = selectionSheet.GetVisualDescendants().OfType<ListBox>().Single();
+            Check(selectionList.SelectedItems!.Count == 1 && Equals(selectionList.SelectedItem, selectionTracks[1]),
+                "Track selection did not start with the held track");
+            Click(selectionSheet.GetVisualDescendants().OfType<Button>().Single(button => Equals(button.Content, "Selecionar todas")));
+            Check(selectionList.SelectedItems!.Count == 2, "Select all skipped tracks");
+            Click(selectionSheet.GetVisualDescendants().OfType<Button>().Single(button => Equals(button.Content, "Limpar seleção")));
+            Check(selectionList.SelectedItems!.Count == 0, "Clear selection left tracks selected");
+            music.CreatePlaylist("Batch selection check");
+            Click(selectionSheet.GetVisualDescendants().OfType<Button>().Single(button => Equals(button.Content, "Selecionar todas")));
+            Click(selectionSheet.GetVisualDescendants().OfType<Button>().Single(button => Equals(button.Content, "Salvar em playlist")));
+            view.UpdateLayout();
+            Click(Field<Border>("_overlay").GetVisualDescendants().OfType<Button>()
+                .Single(button => Equals(button.Content, "Batch selection check")));
+            Check(music.Playlists.Single(playlist => playlist.Name == "Batch selection check").Tracks.SequenceEqual(selectionTracks),
+                "Batch playlist save lost tracks or changed their order");
+
             Navigate("home");
             typeof(MusicController).GetProperty("Current")!.SetValue(music,
                 new Hibike.Core.Models.Track("swipe-check", "Swipe check", "Artist", "test"));
