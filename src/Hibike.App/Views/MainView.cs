@@ -812,7 +812,7 @@ public sealed partial class MainView : UserControl
         var thumbnail = new Grid(); thumbnail.Children.Add(new Artwork(track, UiTheme.ThumbnailSize));
         var equalizer = new Equalizer(); thumbnail.Children.Add(equalizer); metadata.Children.Add(thumbnail);
         var labels = new StackPanel { Spacing = UiTheme.ProgressRadius, VerticalAlignment = VerticalAlignment.Center };
-        var title = Text(TrackTextFormatter.Title(track.Title, track.Artist), UiTheme.Body); title.TextTrimming = TextTrimming.CharacterEllipsis; labels.Children.Add(title);
+        var title = Text(TrackTextFormatter.Title(track.Title, track.Artist), UiTheme.Body); var scrollingTitle = new ScrollingTitle(title); labels.Children.Add(scrollingTitle);
         var artist = Text(subtitle ?? TrackTextFormatter.Artist(track.Artist), UiTheme.Caption, Muted); artist.TextTrimming = TextTrimming.CharacterEllipsis; labels.Children.Add(artist);
         Put(metadata, labels, 0, 1); play.Content = metadata;
         grid.Children.Add(play);
@@ -887,6 +887,7 @@ public sealed partial class MainView : UserControl
     {
         var playing = selected && _music.Player.IsPlaying;
         equalizer.SetState(selected, playing);
+        if (title.Parent is ScrollingTitle scrolling) scrolling.SetScrolling(selected && !UiMotion.Reduced);
         if (row.Tag is bool wasSelected && wasSelected == selected) return;
         row.Tag = selected;
         row.Background = selected ? UiTheme.Brush(UiTheme.PrimaryContainer) : Brushes.Transparent;
@@ -925,7 +926,10 @@ public sealed partial class MainView : UserControl
         Put(panel, playerCover, 1, 0);
         var metadata = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.CompactGap };
         var labels = new StackPanel { Spacing = UiTheme.CompactGap };
-        var title = Text(TrackTextFormatter.Title(track.Title, track.Artist), UiTheme.DialogTitle); title.FontWeight = FontWeight.SemiBold; title.TextWrapping = TextWrapping.Wrap; title.MaxLines = 2; labels.Children.Add(title);
+        var title = Text(TrackTextFormatter.Title(track.Title, track.Artist), UiTheme.DialogTitle); title.FontWeight = FontWeight.SemiBold;
+        var scrollingTitle = new ScrollingTitle(title);
+        scrollingTitle.SetScrolling(!UiMotion.Reduced);
+        labels.Children.Add(scrollingTitle);
         var artist = Text(TrackTextFormatter.Artist(track.Artist), UiTheme.Body, Muted);
         artist.TextTrimming = TextTrimming.CharacterEllipsis;
         var artistLink = ActionButton("", () => OpenTrackArtistAsync(_music.Pending ?? _music.Current ?? track));
@@ -948,6 +952,7 @@ public sealed partial class MainView : UserControl
         {
             album.Text = displayed.Album ?? TrackTextFormatter.Artist(displayed.Artist);
             title.Text = TrackTextFormatter.Title(displayed.Title, displayed.Artist);
+            scrollingTitle.SetScrolling(!UiMotion.Reduced);
             artist.Text = TrackTextFormatter.Artist(displayed.Artist);
             artistLink.IsVisible = !string.IsNullOrEmpty(artist.Text);
             Avalonia.Automation.AutomationProperties.SetName(artistLink, "Ver artista · " + artist.Text);
@@ -1067,11 +1072,7 @@ public sealed partial class MainView : UserControl
                     desktopLayout.VerticalAlignment = VerticalAlignment.Stretch;
                     playerCover.MaxWidth = playerCover.MaxHeight = UiTheme.DesktopArtworkMax;
                     queuePanel.VerticalAlignment = VerticalAlignment.Stretch;
-                    title.TextWrapping = TextWrapping.NoWrap; title.MaxLines = 1; title.TextTrimming = TextTrimming.CharacterEllipsis;
                     title.FontSize = UiTheme.Body; artist.FontSize = UiTheme.Caption;
-                    labels.Children.Remove(title);
-                    title.TextTrimming = TextTrimming.None; title.Width = double.NaN;
-                    labels.Children.Insert(0, new ScrollingTitle(title));
                     playerPlay.Width = playerPlay.Height = UiTheme.DesktopPlaySize; playerPlay.CornerRadius = new(UiTheme.DesktopPlaySize / 2);
                     transport.ColumnDefinitions = new("*,Auto,*");
                     controls.ColumnDefinitions = new("Auto,Auto,Auto,Auto,Auto,Auto");
@@ -1103,12 +1104,7 @@ public sealed partial class MainView : UserControl
                     mobileQuality.Padding = UiTheme.ChipPadding;
                     Put(header, compactAudio, 0, 3);
                     controls.ColumnDefinitions = new("*,*,Auto,*,*");
-                    if (title.Parent is ScrollingTitle scrolling)
-                    {
-                        labels.Children.Remove(scrolling); scrolling.Children.Remove(title);
-                        title.RenderTransform = null; title.Width = double.NaN; labels.Children.Insert(0, title);
-                    }
-                    title.TextWrapping = TextWrapping.Wrap; title.MaxLines = 2; title.FontSize = UiTheme.DialogTitle; artist.FontSize = UiTheme.Body;
+                    title.FontSize = UiTheme.DialogTitle; artist.FontSize = UiTheme.Body;
                     playerPlay.Width = playerPlay.Height = UiTheme.PlaySize; playerPlay.CornerRadius = new(UiTheme.PlaySize / 2);
                     Grid.SetColumnSpan(header, 1); Grid.SetColumnSpan(seek, 1);
                     Put(panel, header, 0, 0); Put(panel, playerCover, 1, 0); Put(panel, metadata, 2, 0);

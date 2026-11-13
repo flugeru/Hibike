@@ -670,7 +670,11 @@ internal static partial class Program
                     }
                     if (width == 1260)
                     {
-                        var marquee = view.GetVisualDescendants().OfType<Canvas>().Single(c => c.GetType().Name == "ScrollingTitle");
+                        var playerPage = (Border)typeof(MainView).GetField("_playerPage",
+                            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(view)!;
+                        var marquee = playerPage.GetVisualDescendants().OfType<Canvas>().First(c =>
+                            c.GetType().Name == "ScrollingTitle" && ((TextBlock)c.Children[0]).Text ==
+                                TrackTextFormatter.Title(AppServices.Controller.Current!.Title, AppServices.Controller.Current.Artist));
                         var movingTitle = (TextBlock)marquee.Children[0];
                         await Task.Delay(2300);
                         Check(((Avalonia.Media.TranslateTransform)movingTitle.RenderTransform!).X < 0, "Overflow title did not scroll");

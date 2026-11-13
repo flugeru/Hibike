@@ -190,6 +190,43 @@ internal static partial class Program
             }
             music.SetOfflineMode(false);
 
+            var longTitle = string.Join(" ", Enumerable.Repeat("Título longo de teste", 12));
+            var titleTrack = new Track("marquee-check", longTitle, "Artista", "marquee-check", IsLocal: true);
+            var originalTrack = typeof(MusicController).GetProperty(nameof(MusicController.Current))!;
+            var previousTrack = music.Current;
+            music.SetReduceMotion(false);
+            try
+            {
+                originalTrack.SetValue(music, titleTrack);
+                typeof(MainView).GetMethod("OpenCollection", hidden)!.Invoke(view,
+                    ["Title check", new[] { titleTrack, titleTrack with { Id = "other", Source = "other" } },
+                        "Playlist", null, null, null, false, false, null]);
+                view.UpdateLayout();
+                Canvas[] Titles(Control parent) => parent.GetVisualDescendants().OfType<Canvas>()
+                    .Where(c => c.GetType().Name == "ScrollingTitle").ToArray();
+                static double Offset(Canvas c) =>
+                    ((Avalonia.Media.TranslateTransform)((TextBlock)c.Children[0]).RenderTransform!).X;
+                var rows = Titles(Field<Border>("_collectionPage"));
+                Check(rows.Length == 2, "Track rows lack title containers");
+                await Task.Delay(2300);
+                Check(Offset(rows[0]) < 0 && Offset(rows[1]) == 0, "Only the current track should scroll in a list");
+
+                AppServices.OpenPlayerView!();
+                view.UpdateLayout();
+                var playerTitle = Titles(Field<Border>("_playerPage")).First();
+                await Task.Delay(2300);
+                Check(Offset(playerTitle) < 0, "Android fullscreen title did not scroll");
+                music.SetReduceMotion(true);
+                view.UpdateLayout();
+                Check(Offset(playerTitle) == 0, "Reduced motion did not stop the title");
+                AppServices.BackHandler!();
+            }
+            finally
+            {
+                originalTrack.SetValue(music, previousTrack);
+                music.SetReduceMotion(true);
+            }
+
             var offlineTrack = new Hibike.Core.Models.Track("offline-library", "Downloaded recording", "Downloaded artist",
                 "downloaded-recording", IsLocal: true, Album: "Downloaded album");
             await (Task)typeof(MusicController).GetMethod("SaveOfflineTrackAsync", hidden)!.Invoke(music, [offlineTrack])!;

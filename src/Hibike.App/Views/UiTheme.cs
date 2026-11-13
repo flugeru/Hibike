@@ -26,8 +26,7 @@ internal static class UiTheme
         PauseStroke = 4, StateTransitionMilliseconds = 160, EqualizerMilliseconds = 180,
         ListFadeHeight = 18,
         DesktopPlayerGap = 48, ToggleIconHeight = 36,
-        DesktopArtworkMax = 500, DesktopPlayerMaxWidth = 1120, DesktopPlaySize = 56,
-        MarqueeFrameMilliseconds = 30, MarqueeStep = .8, MarqueePauseFrames = 60, TitleLineHeight = 24;
+        DesktopArtworkMax = 500, DesktopPlayerMaxWidth = 1120, DesktopPlaySize = 56;
     public static readonly Thickness PageMargin = new(14, 14, 14, 18), ButtonPadding = new(12, 7),
         RowPadding = new(4, 8), ChipPadding = new(10, 4), BannerPadding = new(14, 10),
         One = new(1), Zero = new(0), InnerPadding = new(12), DialogMargin = new(14),
