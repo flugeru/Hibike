@@ -916,6 +916,7 @@ internal static partial class Program
             finally { AppServices.Controller?.FlushPendingSaves(); lifetime.Shutdown(result); }
         }));
         builder.StartWithClassicDesktopLifetime([]);
+        AppServices.Controller?.FlushPendingSavesAsync().GetAwaiter().GetResult();
         Directory.Delete(directory, true);
         return result;
     }
