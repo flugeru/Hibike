@@ -405,7 +405,7 @@ internal static partial class Program
                 var now = DateTimeOffset.FromUnixTimeMilliseconds(1_800_000_000_000);
                 using (var activity = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(
                     presenceType.GetMethod("BuildActivity", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!
-                        .Invoke(null, [new Track("rpc", "Song", "Artist", "test"), 30d, 180d, "mp:external/test", now]))))
+                        .Invoke(null, [new Track("rpc", "Song", "Artist", "test"), 30d, 180d, "mp:external/test", now, null]))))
                 {
                     var root = activity.RootElement;
                     Check(root.GetProperty("application_id").GetString() == "1566415890596241459", "Discord application mismatch");

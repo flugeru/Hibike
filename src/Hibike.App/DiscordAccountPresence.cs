@@ -21,7 +21,6 @@ internal sealed class DiscordAccountPresence : IDisposable
     private bool _updating;
     private string? _lastKey;
     private double _lastPosition;
-    private bool _lastTitleMode;
     private DateTimeOffset _lastUpdate;
     public bool IsClosed => Volatile.Read(ref _disposed) != 0;
     public bool CredentialsRejected { get; private set; }
@@ -92,22 +91,20 @@ internal sealed class DiscordAccountPresence : IDisposable
                 var now = DateTimeOffset.UtcNow;
                 var position = _music.Player.Position;
                 var cover = _music.CurrentSource?.Artwork ?? track.Thumbnail;
-                var titleAsName = _music.DiscordUseTrackTitleAsName;
-                var key = track.Source + "\n" + track.Title + "\n" + track.Artist + "\n" + track.Album + "\n" + cover + "\n" + titleAsName;
+                var key = track.Source + "\n" + track.Title + "\n" + track.Artist + "\n" + track.Album + "\n" + cover;
                 if (key == _lastKey && Math.Abs(position - _lastPosition - (now - _lastUpdate).TotalSeconds) < 3) return;
                 // Discord limits presence updates; coalesce rapid seeks on subsequent player ticks.
-                if ((now - _lastUpdate).TotalSeconds < 5 && titleAsName == _lastTitleMode) return;
+                if ((now - _lastUpdate).TotalSeconds < 5) return;
                 var image = await ResolveArtworkAsync(cover);
                 // Discord Gateway needs the image asset id (mp:...), not a raw PNG URL.
                 var icon = await ResolveArtworkAsync(DiscordActivityDisplay.IconUrl);
-                if (_stop.IsCancellationRequested || _music.Current != track || !_music.Player.IsPlaying
-                    || _music.DiscordUseTrackTitleAsName != titleAsName) return;
+                if (_stop.IsCancellationRequested || _music.Current != track || !_music.Player.IsPlaying || _music.LoadingAudio) return;
                 now = DateTimeOffset.UtcNow; position = _music.Player.Position;
                 var duration = _music.Player.Duration > 0 ? _music.Player.Duration : track.DurationSeconds;
-                object[] activities = [BuildActivity(track, position, duration, image, now, titleAsName, icon)];
+                object[] activities = [BuildActivity(track, position, duration, image, now, icon)];
                 await SendAsync(new { op = 3, d = Presence(activities) });
                 _activities = activities;
-                _lastKey = key; _lastTitleMode = titleAsName; _lastPosition = position; _lastUpdate = now;
+                _lastKey = key; _lastPosition = position; _lastUpdate = now;
                 PublishedTrack = track;
             }
             if (_stop.IsCancellationRequested) { PublishedTrack = null; return; }
@@ -126,11 +123,11 @@ internal sealed class DiscordAccountPresence : IDisposable
     }
 
     internal static object BuildActivity(Track track, double position, double duration, string? image,
-        DateTimeOffset now, bool titleAsName = false, string? icon = null)
+        DateTimeOffset now, string? icon = null)
     {
         position = double.IsFinite(position) ? Math.Clamp(position, 0, 31_536_000) : 0;
         duration = double.IsFinite(duration) ? Math.Clamp(duration, 0, 31_536_000) : 0;
-        var info = DiscordActivityDisplay.Format(track, titleAsName);
+        var info = DiscordActivityDisplay.Format(track);
         var youtube = !track.IsLocal && Uri.TryCreate(track.Source, UriKind.Absolute, out var source)
             && source.Scheme == "https" && source.Host is "www.youtube.com" or "youtube.com" or "youtu.be";
 
@@ -144,7 +141,7 @@ internal sealed class DiscordAccountPresence : IDisposable
             if (image is not null && icon is not null)
             {
                 assets["small_image"] = icon;
-                assets["small_text"] = "Hibike";
+                assets["small_text"] = DiscordActivityDisplay.AppName;
             }
         }
 
@@ -159,7 +156,7 @@ internal sealed class DiscordAccountPresence : IDisposable
             }
         };
         if (info.Details is not null) activity["details"] = info.Details;
-        if (info.State is not null) activity["state"] = info.State;
+        activity["state"] = info.State;
         if (duration > position)
             ((Dictionary<string, long>)activity["timestamps"])["end"] =
                 now.AddSeconds(duration - position).ToUnixTimeMilliseconds();

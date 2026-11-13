@@ -3,42 +3,23 @@ using Hibike.Desktop;
 using Hibike.Core.Models;
 using Hibike.Core.Services;
 
-// A preferência deve preservar o nome original por padrão e alterar apenas a primeira linha.
 var discordTrack = new Track("discord-check", "Faixa de teste", "Artista", "https://www.youtube.com/watch?v=test");
-var standardPresence = DiscordPresence.Build(discordTrack, 0, 180, null, DateTime.UtcNow);
-var titlePresence = DiscordPresence.Build(discordTrack, 0, 180, null, DateTime.UtcNow, titleAsName: true);
-if (standardPresence.Name != "Hibike" || titlePresence.Name != "Faixa de teste"
-    || titlePresence.Details != "Artista" || titlePresence.State is not null)
-    throw new Exception("Desktop Discord activity-name option failed.");
 var accountPresenceType = typeof(Hibike.App.AppServices).Assembly.GetType("Hibike.App.DiscordAccountPresence")!;
 var buildAndroidActivity = accountPresenceType.GetMethod("BuildActivity", BindingFlags.NonPublic | BindingFlags.Static)!;
-string GetAndroidActivityName(bool titleAsName)
-{
-    var payload = buildAndroidActivity.Invoke(null, [discordTrack, 0d, 180d, null, DateTimeOffset.UtcNow, titleAsName, null]);
-    return System.Text.Json.JsonSerializer.SerializeToElement(payload).GetProperty("name").GetString()!;
-}
-if (GetAndroidActivityName(false) != "Hibike" || GetAndroidActivityName(true) != "Faixa de teste")
-    throw new Exception("Android Discord activity-name option failed.");
 var androidWithoutAlbum = System.Text.Json.JsonSerializer.SerializeToElement(
-    buildAndroidActivity.Invoke(null, [discordTrack, 0d, 180d, null, DateTimeOffset.UtcNow, true, null]));
-if (androidWithoutAlbum.TryGetProperty("state", out _) || androidWithoutAlbum.TryGetProperty("assets", out _))
+    buildAndroidActivity.Invoke(null, [discordTrack, 0d, 180d, null, DateTimeOffset.UtcNow, null]));
+if (androidWithoutAlbum.GetProperty("state").GetString() != "Hibike" || androidWithoutAlbum.TryGetProperty("assets", out _))
     throw new Exception("Missing Android album or artwork should not produce placeholder fields.");
 var androidIconWithoutAlbum = System.Text.Json.JsonSerializer.SerializeToElement(
-    buildAndroidActivity.Invoke(null, [discordTrack, 0d, 180d, null, DateTimeOffset.UtcNow, true, "mp:icon"]));
-if (androidIconWithoutAlbum.TryGetProperty("state", out _)
+    buildAndroidActivity.Invoke(null, [discordTrack, 0d, 180d, null, DateTimeOffset.UtcNow, "mp:icon"]));
+if (androidIconWithoutAlbum.GetProperty("state").GetString() != "Hibike"
     || androidIconWithoutAlbum.GetProperty("assets").TryGetProperty("large_text", out _)
     || androidIconWithoutAlbum.GetProperty("assets").GetProperty("large_image").GetString() != "mp:icon")
     throw new Exception("Android missing album or cover should not be fabricated.");
 var androidWithIcon = System.Text.Json.JsonSerializer.SerializeToElement(
-    buildAndroidActivity.Invoke(null, [discordTrack, 0d, 180d, "mp:cover", DateTimeOffset.UtcNow, true, "mp:icon"]));
+    buildAndroidActivity.Invoke(null, [discordTrack, 0d, 180d, "mp:cover", DateTimeOffset.UtcNow, "mp:icon"]));
 if (androidWithIcon.GetProperty("assets").GetProperty("small_image").GetString() != "mp:icon")
     throw new Exception("Android Discord icon asset missing.");
-var personal = new Hibike.App.MusicController.Personalization { DiscordUseTrackTitleAsName = true };
-if (System.Text.Json.JsonSerializer.Deserialize<Hibike.App.MusicController.Personalization>(
-        System.Text.Json.JsonSerializer.Serialize(personal))?.DiscordUseTrackTitleAsName != true)
-    throw new Exception("Discord activity-name preference persistence failed.");
-Console.WriteLine("Discord activity-name checks passed.");
-
 var login = typeof(VlcAudioPlayer).Assembly.GetType("Hibike.Desktop.WebAccountLogin")!;
 var mediaInfo = typeof(VlcAudioPlayer).Assembly.GetType("Hibike.Desktop.MediaInfoReader")!;
 var mediaDetails = (IReadOnlyDictionary<string, string>)mediaInfo.GetMethod("Parse", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, ["""{"media":{"track":[{"@type":"General"},{"@type":"Audio","Format":"FLAC","SamplingRate":"96000","BitDepth":"24"}]}}"""])!;

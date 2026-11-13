@@ -43,13 +43,13 @@ public sealed class DiscordPresence : IDisposable
             var now = DateTime.UtcNow;
             var cover = PublicArtwork(_music.CurrentSource?.Artwork ?? track.Thumbnail);
             var key = track.Source + "\n" + track.Title + "\n" + track.Artist + "\n" + track.Album
-                + "\n" + cover + "\n" + _music.DiscordUseTrackTitleAsName;
+                + "\n" + cover;
             if (_visible && key == _lastKey && Math.Abs(position - _lastPosition - (now - _lastUpdate).TotalSeconds) < 3) return;
             if (cover is null && track.IsLocal) cover = await FindCoverAsync(track);
             if (_disposed || _music.Current != track || !_music.Player.IsPlaying || _music.LoadingAudio) return;
             position = _music.Player.Position; now = DateTime.UtcNow;
             var duration = _music.Player.Duration > 0 ? _music.Player.Duration : track.DurationSeconds;
-            await _client.SetActivityAsync(Build(track, position, duration, cover, now, _music.DiscordUseTrackTitleAsName));
+            await _client.SetActivityAsync(Build(track, position, duration, cover, now));
             _visible = true; _lastKey = key; _lastPosition = position; _lastUpdate = now;
             _retryAt = DateTime.MinValue;
         }
@@ -128,11 +128,11 @@ public sealed class DiscordPresence : IDisposable
         [property: JsonPropertyName("label")] string Label,
         [property: JsonPropertyName("url")] string Url);
 
-    public static DiscordActivity Build(Track track, double position, double duration, string? cover, DateTime now, bool titleAsName = false)
+    public static DiscordActivity Build(Track track, double position, double duration, string? cover, DateTime now)
     {
         position = double.IsFinite(position) ? Math.Clamp(position, 0, 31_536_000) : 0;
         duration = double.IsFinite(duration) ? Math.Clamp(duration, 0, 31_536_000) : 0;
-        var info = DiscordActivityDisplay.Format(track, titleAsName);
+        var info = DiscordActivityDisplay.Format(track);
         var art = PublicArtwork(cover);
         var youtube = !track.IsLocal && Uri.TryCreate(track.Source, UriKind.Absolute, out var source)
             && source.Scheme == "https" && source.Host is "www.youtube.com" or "youtube.com" or "youtu.be";
@@ -146,7 +146,7 @@ public sealed class DiscordPresence : IDisposable
             Timestamps = new DiscordTimestamps(start, end),
             Assets = new DiscordAssets(art ?? DiscordActivityDisplay.IconUrl,
                 info.ArtworkText, art is null ? null : DiscordActivityDisplay.IconUrl,
-                art is null ? null : "Hibike"),
+                art is null ? null : DiscordActivityDisplay.AppName),
             Buttons = youtube ? [new DiscordButton("Ouvir no YouTube", track.Source)] : null
         };
     }

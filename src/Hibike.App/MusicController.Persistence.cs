@@ -22,7 +22,7 @@ public sealed partial class MusicController
 
     private Personalization PersonalSnapshot() => new()
     {
-        Autoplay = _personal.Autoplay, ReduceMotion = _personal.ReduceMotion, DiscordUseTrackTitleAsName = _personal.DiscordUseTrackTitleAsName, OfflineMode = _personal.OfflineMode, Discovery = _personal.Discovery,
+        Autoplay = _personal.Autoplay, ReduceMotion = _personal.ReduceMotion, OfflineMode = _personal.OfflineMode, Discovery = _personal.Discovery,
         OnboardingCompleted = _personal.OnboardingCompleted, Region = _personal.Region, Weights = _personal.Weights,
         Pins = [.. _personal.Pins], Artists = [.. _personal.Artists], Genres = [.. _personal.Genres],
         Dismissed = new(_personal.Dismissed),

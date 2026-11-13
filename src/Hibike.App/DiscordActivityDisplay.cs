@@ -9,31 +9,34 @@ namespace Hibike.App;
 /// </summary>
 public static class DiscordActivityDisplay
 {
+    public const string AppName = "Hibike";
     public const string IconUrl = "https://raw.githubusercontent.com/flugeru/Hibike/main/site/Assets/hibike.png";
 
-    public static (string Name, string? Details, string? State, string? ArtworkText) Format(Track track, bool titleAsName)
+    public static (string Name, string? Details, string State, string? ArtworkText) Format(Track track)
     {
         var title = Optional(track.IsLocal ? track.Title : TrackTextFormatter.Title(track.Title, track.Artist));
-        var artist = Optional(track.IsLocal ? track.Artist : TrackTextFormatter.Artist(track.Artist));
-        var album = Optional(track.Album);
+        var artist = track.IsLocal ? track.Artist : TrackTextFormatter.Artist(track.Artist);
+        var album = track.Album?.Trim();
+        if (string.IsNullOrWhiteSpace(album)
+            || string.Equals(album.Normalize(), track.Artist?.Trim().Normalize(), StringComparison.OrdinalIgnoreCase)
+            || string.Equals(album.Normalize(), artist?.Trim().Normalize(), StringComparison.OrdinalIgnoreCase))
+            album = null;
 
-        // Missing metadata must be omitted, never replaced by placeholder labels.
-        return (titleAsName && title is not null ? title : "Hibike",
-            titleAsName ? artist : title,
-            titleAsName ? album : artist,
-            album);
+        // The card has one secondary text field. Reserve space for Hibike even on long albums.
+        var state = album is null ? AppName : Limit(album, 128 - Encoding.UTF8.GetByteCount(" · " + AppName)) + " · " + AppName;
+        return (title ?? AppName, Optional(artist), state, Optional(album));
     }
 
     private static string? Optional(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : Limit(value.Trim());
 
-    public static string Limit(string value)
+    private static string Limit(string value, int maxBytes = 128)
     {
         var result = new StringBuilder();
         var bytes = 0;
         foreach (var rune in value.EnumerateRunes())
         {
-            if (bytes + rune.Utf8SequenceLength > 128) break;
+            if (bytes + rune.Utf8SequenceLength > maxBytes) break;
             result.Append(rune);
             bytes += rune.Utf8SequenceLength;
         }

@@ -1270,13 +1270,6 @@ public sealed partial class MainView : UserControl
     }
     private YouTubeAccountLibrary? _account;
 
-    private Control DiscordTitleNamePreference()
-    {
-        var option = PreferenceCheckBox("Exibir título da música no lugar de Hibike", _music.DiscordUseTrackTitleAsName);
-        option.IsCheckedChanged += (_, _) => _music.SetDiscordUseTrackTitleAsName(option.IsChecked == true);
-        return option;
-    }
-
     private Task ShowDiscordAccountAsync()
     {
         if (!OperatingSystem.IsAndroid())
@@ -1284,7 +1277,7 @@ public sealed partial class MainView : UserControl
             var desktopPanel = new StackPanel { Spacing = 12 };
             var explanation = Text("O desktop usa o Rich Presence do Discord instalado, sem token pessoal. O Discord precisa estar aberto para mostrar a atividade.", UiTheme.Caption, Muted);
             explanation.TextWrapping = TextWrapping.Wrap;
-            desktopPanel.Children.Add(PreferenceSection("Exibição da atividade", DiscordTitleNamePreference(), explanation));
+            desktopPanel.Children.Add(PreferenceSection("Exibição da atividade", explanation));
             desktopPanel.Children.Add(PreferenceLink("info", "Diagnóstico do Discord", "", () =>
             {
                 ShowDiagnostics(DiagnosticSector.Discord);
@@ -1320,7 +1313,6 @@ public sealed partial class MainView : UserControl
                 await launcher.LaunchUriAsync(new Uri("https://discord.com/users/" + profile.Id));
         });
         panel.Children.Add(PreferenceSection("Perfil e atividade", identity, activityDetails, profileLink));
-        panel.Children.Add(PreferenceSection("Exibição da atividade", DiscordTitleNamePreference()));
 
         var note = Text("Integração não oficial. O Discord pode restringir contas que usam token pessoal.", UiTheme.Caption, Muted);
         note.TextWrapping = TextWrapping.Wrap;
