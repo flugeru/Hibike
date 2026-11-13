@@ -73,7 +73,8 @@ public sealed partial class MainView : UserControl
         _sidebar = BuildSidebar(); _root.Children.Add(_sidebar); Grid.SetRowSpan(_sidebar, 3);
         _main = new Border { Padding = UiTheme.ContentPadding, HorizontalAlignment = HorizontalAlignment.Stretch }; Put(_root, _main, 0, 1);
         var content = new Grid { RowDefinitions = new("Auto,Auto,*"), RowSpacing = 4 }; _main.Child = content;
-        var header = new Grid { Name = "AppHeader", RowDefinitions = new("28,20"), ColumnDefinitions = new("Auto,*,Auto") };
+        var header = new Grid { Name = "AppHeader", RowDefinitions = new("Auto,20"), ColumnDefinitions = new("Auto,*,Auto") };
+        header.RowDefinitions[0].MinHeight = 28;
         var brandIcon = _brandIcon = new Image { Source = new Avalonia.Media.Imaging.Bitmap(Avalonia.Platform.AssetLoader.Open(new Uri("avares://Hibike.App/Assets/hibike-desktop.png"))), Width = 22, Height = 22, VerticalAlignment = VerticalAlignment.Center };
         var pageBrand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         pageBrand.Children.Add(brandIcon); pageBrand.Children.Add(_pageTitle); Put(header, pageBrand, 0, 1);
@@ -412,6 +413,7 @@ public sealed partial class MainView : UserControl
         _brandIcon.IsVisible = _page == "home" && compactHeader && !ShowOfflineHome;
         _pageTitle.IsVisible = _page != "home" || compactHeader || ShowOfflineHome;
         _pageTitle.Text = _page switch { "home" when ShowOfflineHome => _music.OfflineMode ? "Modo offline" : "Sem conexão", "home" => "Hibike", "downloads" => "Downloads", "settings" => "Configurações", "account" => "Minha conta", "collection" => "Coleção", _ => "Buscar" };
+        _pageTitle.FontSize = _page == "downloads" ? UiTheme.PageTitle : UiTheme.TopBarTitle;
         var showOnlineHome = _page == "home" && !ShowOfflineHome;
         _homeScroll.IsVisible = showOnlineHome;
         if (_homeRefreshContainer is not null) _homeRefreshContainer.IsVisible = showOnlineHome;
@@ -649,7 +651,9 @@ public sealed partial class MainView : UserControl
         var cover = new Grid { Width = size, Height = size };
         var artwork = new Artwork(track, size, highQuality: true)
         {
-            DeferOffscreen = _page == "home", CornerRadius = new(roundArtwork ? size / 2 : 16), Background = Brushes.Transparent, BorderThickness = new Thickness(0)
+            DeferOffscreen = _page == "home", CornerRadius = new(roundArtwork ? size / 2 : 16),
+            Background = _page == "library" ? UiTheme.Brush(UiTheme.SurfaceElevated) : Brushes.Transparent,
+            BorderThickness = new Thickness(0)
         };
         cover.Children.Add(artwork);
         var playOverlay = new Button { Content = Icons.Make("play"), IsHitTestVisible = false, Focusable = false,
@@ -657,7 +661,8 @@ public sealed partial class MainView : UserControl
         playOverlay.Classes.Add("cardAction");
         if (songActions && !playlist) cover.Children.Add(playOverlay);
         panel.Children.Add(cover);
-        var title = Text(TrackTextFormatter.Title(track.Title, track.Artist), UiTheme.Body);
+        var title = UiTheme.Text(TrackTextFormatter.Title(track.Title, track.Artist), UiTheme.Body,
+            weight: _page == "library" ? FontWeight.SemiBold : FontWeight.Normal);
         title.TextWrapping = TextWrapping.Wrap; title.MaxLines = 2; title.VerticalAlignment = VerticalAlignment.Top; title.TextTrimming = TextTrimming.CharacterEllipsis; panel.Children.Add(title);
         var artist = Text(subtitle, UiTheme.Caption, Muted); artist.TextTrimming = TextTrimming.CharacterEllipsis; panel.Children.Add(artist);
         var button = ActionButton("", action); button.Content = panel; button.Classes.Add("cover");
