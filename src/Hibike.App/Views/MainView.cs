@@ -114,6 +114,7 @@ public sealed partial class MainView : UserControl
         _statusBox = new Border { Child = statusRow }; UiTheme.StateBanner(_statusBox, UiTheme.Warning); var statusArea = new StackPanel { Children = { _statusBox } }; Put(content, statusArea, 1, 0);
         _play = IconButton("play", "Reproduzir, pausar ou cancelar", _music.ToggleAsync, UiTheme.OnPrimary); _play.Classes.Add("primary"); _play.Classes.Add("miniPlay");
         _mini = BuildMiniPlayer(); Put(_root, _mini, 1, 1);
+        InitializePlayerSwipe();
         _mini.SizeChanged += (_, _) => RefreshMiniPlayerInset();
         InitializeWorkspace(content);
         InitializeOfflineWorkspace(content, statusArea);
@@ -135,8 +136,8 @@ public sealed partial class MainView : UserControl
             _sidebar.IsVisible = !compact; _bottom.IsVisible = compact;
             brandIcon.IsVisible = _page == "home" && compact && !ShowOfflineHome;
             _pageTitle.IsVisible = _page != "home" || compact || ShowOfflineHome;
-            _main.IsVisible = !_showingPlayer;
-            _bottom.IsVisible = compact && !_showingPlayer;
+            _main.IsVisible = !_showingPlayer || _androidLayout;
+            _bottom.IsVisible = compact && (!_showingPlayer || _androidLayout);
             _main.Padding = _androidLayout ? UiTheme.MobileContentPadding
                 : compact ? new Thickness(12, 0, 12, 4) : new Thickness(32, 4, 32, 12);
             _homeScroll.Margin = _androidLayout ? new Thickness(-UiTheme.MobileGutter, 0) : UiTheme.Zero;
@@ -840,10 +841,18 @@ public sealed partial class MainView : UserControl
         row.CornerRadius = new(selected ? UiTheme.ControlRadius : 0);
         title.FontWeight = selected ? FontWeight.SemiBold : FontWeight.Normal;
     }
-    private void ShowPlayer()
+    private void ShowPlayer() => OpenPlayer(fromSwipe: false);
+
+    private void OpenPlayer(bool fromSwipe)
     {
+        if (_showingPlayer) return;
         var track = _music.Pending ?? _music.Current; if (track is null) return;
         if (_overlay is not null) CloseSheet();
+        if (_slidingOutPlayer is { } closing)
+        {
+            _root.Children.Remove(closing);
+            _slidingOutPlayer = null;
+        }
         _showingPlayer = true; _seeking = false;
         if (_playerPage is not null) _root.Children.Remove(_playerPage);
         var panel = new Grid
@@ -1062,13 +1071,30 @@ public sealed partial class MainView : UserControl
         transport.LayoutUpdated += (_, _) => { if (_playerPage?.Child == host) ArrangeTransport(); };
         _playerPage = new Border { Background = UiTheme.Brush(UiTheme.Background), Child = host, ClipToBounds = true };
         Grid.SetColumn(_playerPage, 1); Grid.SetColumnSpan(_playerPage, 2); Grid.SetRowSpan(_playerPage, 3); _root.Children.Add(_playerPage);
-        _main.IsVisible = false; _mini.IsVisible = false; _desktopDock.IsVisible = false; _queuePane.IsVisible = false; _bottom.IsVisible = false;
-        Animate(_playerPage, 14); RefreshPlayerQueue(); RefreshPlayback();
+        if (_androidLayout)
+        {
+            SetPlayerSlide(_playerPage, PlayerCollapsedOffset(), animate: false);
+            var opening = _playerPage;
+            if (!fromSwipe) Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                if (ReferenceEquals(_playerPage, opening) && !_playerDragging) SetPlayerSlide(opening, 0, animate: true);
+            }, Avalonia.Threading.DispatcherPriority.Render);
+        }
+        else
+        {
+            _main.IsVisible = false; _mini.IsVisible = false; _desktopDock.IsVisible = false; _queuePane.IsVisible = false; _bottom.IsVisible = false;
+            Animate(_playerPage, 14);
+        }
+        RefreshPlayerQueue(); RefreshPlayback();
     }
     private void ClosePlayer()
     {
         if (!_showingPlayer && _playerPage is null) return;
-        if (_playerPage is { } closingPlayer) RemoveAfterExit(closingPlayer, 14);
+        if (_playerPage is { } closingPlayer)
+        {
+            if (_androidLayout) SlidePlayerOut(closingPlayer);
+            else RemoveAfterExit(closingPlayer, 14);
+        }
         _expandedRecoveryNotice = null;
         _playerPage = null; _showingPlayer = false; _main.IsVisible = true; _bottom.IsVisible = _androidLayout || Bounds.Width < UiTheme.DesktopWidth;
         _detailShuffle = _detailRepeat = _detailFavorite = null; _detailVolume = null;

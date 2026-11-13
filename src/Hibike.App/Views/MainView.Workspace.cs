@@ -83,7 +83,8 @@ public sealed partial class MainView
         if (openingSideQueue) Animate(_queuePane);
         var display = _music.Pending ?? _music.Current;
         _desktopDock.IsVisible = display is not null && !_showingPlayer && Bounds.Width >= 1000 && !_androidLayout;
-        _mini.IsVisible = display is not null && !_showingPlayer && !_desktopDock.IsVisible && !(_androidLayout && _page == "queue");
+        _mini.IsVisible = display is not null && (!_showingPlayer || _androidLayout) && !_desktopDock.IsVisible
+            && !(_androidLayout && _page == "queue");
         Grid.SetRowSpan(_main, _mini.IsVisible ? 2 : 1);
         _collectionPage.IsVisible = _page == "collection";
         RefreshDock();

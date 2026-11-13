@@ -7,6 +7,7 @@ using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 using Hibike.App;
 using Hibike.App.Views;
+using Hibike.Core.Services;
 
 internal static partial class Program
 {
@@ -168,6 +169,53 @@ internal static partial class Program
             Navigate("home");
             view.UpdateLayout();
             Check(header.Bounds.Height == expandedHeight, "Leaving a collapsed screen hid the next page toolbar");
+
+            music.SetOfflineMode(true);
+            foreach (var (route, field) in new[] { ("library", "_mobileLibrary"), ("queue", "_mobileQueue") })
+            {
+                Navigate(route);
+                view.UpdateLayout();
+                var banner = Field<Border>("_connectionBanner");
+                var page = Field<Grid>(field);
+                var bannerBottom = banner.TranslatePoint(new Point(0, banner.Bounds.Height), view)!.Value.Y;
+                var pageTop = page.TranslatePoint(default, view)!.Value.Y;
+                Check(banner.IsEffectivelyVisible && bannerBottom <= pageTop, $"Offline banner overlapped {route}");
+            }
+            music.SetOfflineMode(false);
+
+            Navigate("home");
+            typeof(MusicController).GetProperty("Current")!.SetValue(music,
+                new Hibike.Core.Models.Track("swipe-check", "Swipe check", "Artist", "test"));
+            typeof(MainView).GetMethod("Refresh", hidden)!.Invoke(view, null);
+            view.UpdateLayout();
+            var root = Field<Grid>("_root");
+            var mini = Field<Border>("_mini");
+            var miniY = mini.TranslatePoint(default, root)!.Value.Y;
+            var touch = new Avalonia.Input.Pointer(93, PointerType.Touch, true);
+            var pressed = new PointerPointProperties(RawInputModifiers.LeftMouseButton, PointerUpdateKind.LeftButtonPressed);
+            var released = new PointerPointProperties(RawInputModifiers.None, PointerUpdateKind.LeftButtonReleased);
+            void Press(Control source, double y) => source.RaiseEvent(new PointerPressedEventArgs(
+                source, touch, root, new Point(50, y), 100, pressed, KeyModifiers.None));
+            void Move(double y) => root.RaiseEvent(new PointerEventArgs(
+                InputElement.PointerMovedEvent, root, touch, root, new Point(50, y), 250, pressed, KeyModifiers.None));
+            void Release(double y) => root.RaiseEvent(new PointerReleasedEventArgs(
+                root, touch, root, new Point(50, y), 450, released, KeyModifiers.None, MouseButton.Left));
+            Press(mini, miniY + 20);
+            Move(miniY - 150);
+            var player = Field<Border>("_playerPage");
+            Check(Math.Abs(player.RenderTransform!.Value.M32 - (miniY - 170)) < 1, "Mini player did not follow the upward drag");
+            Release(miniY - 150);
+            view.UpdateLayout();
+            Check(player.RenderTransform!.Value.M32 == 0, "Upward drag did not expand the player");
+            Press(player, 75);
+            Move(120);
+            Release(120);
+            Check(player.RenderTransform!.Value.M32 == 0, "Short downward drag did not return to full screen");
+            Press(player, 75);
+            Move(265);
+            Check(Math.Abs(player.RenderTransform!.Value.M32 - 190) < 1, "Full player did not follow the downward drag");
+            Release(265);
+            Check(Field<Border?>("_playerPage") is null && mini.IsEffectivelyVisible, "Downward drag did not return to the mini player");
         }
         finally
         {

@@ -24,7 +24,7 @@ public sealed partial class MainView
         if (_page == "library" && _mobileLibrary is null)
         {
             _mobileLibrary = BuildMobileLibrary();
-            Grid.SetRowSpan(_mobileLibrary, content.RowDefinitions.Count);
+            Grid.SetRow(_mobileLibrary, 2);
             content.Children.Add(_mobileLibrary);
         }
 
@@ -48,7 +48,7 @@ public sealed partial class MainView
             else if (!queueOnSide && !content.Children.Contains(_mobileQueue))
             {
                 _queuePane.Child = null;
-                Grid.SetRowSpan(_mobileQueue, content.RowDefinitions.Count);
+                Grid.SetRow(_mobileQueue, 2);
                 content.Children.Add(_mobileQueue);
             }
             _mobileQueue.IsVisible = true;
