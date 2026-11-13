@@ -44,6 +44,7 @@ public sealed partial class MainView : UserControl
     private const double MiniCoverSize = 72;
     private readonly ContentControl _nowArt = new() { HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };
     private readonly TextBlock _nowTitle = Text("", UiTheme.Body);
+    private ScrollingTitle _miniTitle = null!;
     private readonly TextBlock _nowArtist = Text("", UiTheme.Caption, Muted);
     private readonly Button _play;
     private readonly ProgressBar _progress = new() { Height = UiTheme.MiniProgressHeight, Minimum = 0, Maximum = 1 };
@@ -270,8 +271,9 @@ public sealed partial class MainView : UserControl
         metadata.Children.Add(_nowArt);
         var info = new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(contentInset, 0, UiTheme.CompactGap, progressInset) };
-        _nowTitle.TextTrimming = _nowArtist.TextTrimming = TextTrimming.CharacterEllipsis;
-        info.Children.Add(_nowTitle);
+        _nowArtist.TextTrimming = TextTrimming.CharacterEllipsis;
+        _miniTitle = new ScrollingTitle(_nowTitle);
+        info.Children.Add(_miniTitle);
         info.Children.Add(_nowArtist);
         Put(metadata, info, 0, 1);
         open.Content = metadata;
@@ -1136,6 +1138,7 @@ public sealed partial class MainView : UserControl
             _main.IsVisible = false; _mini.IsVisible = false; _desktopDock.IsVisible = false; _queuePane.IsVisible = false; _bottom.IsVisible = false;
             Animate(_playerPage, 14);
         }
+        _miniTitle.SetScrolling(false);
         RefreshPlayerQueue(); RefreshPlayback();
     }
     private void ClosePlayer()

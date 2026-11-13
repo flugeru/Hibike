@@ -211,8 +211,12 @@ internal static partial class Program
                 await Task.Delay(2300);
                 Check(Offset(rows[0]) < 0 && Offset(rows[1]) == 0, "Only the current track should scroll in a list");
 
+                var miniTitle = Field<Canvas>("_miniTitle");
+                Check(Offset(miniTitle) < 0, "Long mini player title did not scroll");
+
                 AppServices.OpenPlayerView!();
                 view.UpdateLayout();
+                Check(Offset(miniTitle) == 0, "Mini player title kept scrolling behind the fullscreen player");
                 var playerTitle = Titles(Field<Border>("_playerPage")).First();
                 await Task.Delay(2300);
                 Check(Offset(playerTitle) < 0, "Android fullscreen title did not scroll");

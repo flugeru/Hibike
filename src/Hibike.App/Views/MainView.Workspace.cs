@@ -86,6 +86,7 @@ public sealed partial class MainView
         _desktopDock.IsVisible = display is not null && !_showingPlayer && Bounds.Width >= 1000 && !_androidLayout;
         _mini.IsVisible = display is not null && (!_showingPlayer || _androidLayout) && !_desktopDock.IsVisible
             && !(_androidLayout && _page == "queue");
+        _miniTitle.SetScrolling(_mini.IsVisible && !_showingPlayer && !UiMotion.Reduced);
         Grid.SetRowSpan(_main, _mini.IsVisible ? 2 : 1);
         _collectionPage.IsVisible = _page == "collection";
         RefreshDock();

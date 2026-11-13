@@ -9,15 +9,11 @@ permissions:
   contents: read
 
 jobs:
-  windows:
-    uses: ./.github/workflows/windows.yml
-  android:
-    uses: ./.github/workflows/android.yml
+  build:
+    uses: ./.github/workflows/build.yml
     secrets: inherit
-  linux:
-    uses: ./.github/workflows/linux.yml
   release:
-    needs: [windows, android, linux]
+    needs: build
     runs-on: ubuntu-24.04
     permissions:
       contents: write
