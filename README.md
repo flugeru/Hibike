@@ -11,7 +11,7 @@ Biblioteca local e novas descobertas, no mesmo player.
 [![Release](https://img.shields.io/github/v/release/flugeru/Hibike?label=release&color=b784f7&style=flat-square)](https://github.com/flugeru/Hibike/releases/latest)
 [![Windows](https://img.shields.io/badge/Windows-x64-202020?style=flat-square)](https://github.com/flugeru/Hibike/releases/latest)
 [![Android](https://img.shields.io/badge/Android-7.0%2B%20%C2%B7%20ARM64-202020?style=flat-square&logo=android&logoColor=b784f7)](https://github.com/flugeru/Hibike/releases/latest)
-[![Licença](https://img.shields.io/badge/licen%C3%A7a-MIT-202020?style=flat-square)](LICENSE)
+[![Licença](https://img.shields.io/badge/licen%C3%A7a-GPL--3.0-202020?style=flat-square)](LICENSE)
 
 [**Baixar Hibike**](https://github.com/flugeru/Hibike/releases/latest) · [Site oficial](https://flugeru.github.io/Hibike/) · [Novidades](https://github.com/flugeru/Hibike/releases) · [Reportar problema](https://github.com/flugeru/Hibike/issues)
 
@@ -84,6 +84,6 @@ Os scripts verificam os componentes baixados antes do empacotamento. Licenças e
 
 <div align="center">
 
-Desenvolvido por [Flugel](https://github.com/flugeru) · Código sob [licença MIT](LICENSE)
+Desenvolvido por [Flugel](https://github.com/flugeru) · Código sob [GPL-3.0](LICENSE) · [aviso MIT anterior](PRIOR-MIT-LICENSE-NOTICE.md)
 
 </div>

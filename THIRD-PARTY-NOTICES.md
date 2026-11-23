@@ -1,6 +1,6 @@
 # Third-party components
 
-Hibike source is distributed under the repository's MIT license. Separately executed upstream tools retain their own licenses.
+Hibike source is distributed under the repository's GPL-3.0-only license (`LICENSE`); the prior MIT notice is preserved in `PRIOR-MIT-LICENSE-NOTICE.md`. Separately executed upstream tools retain their own licenses.
 
 - **Avalonia UI / Inter:** MIT / SIL Open Font License; [Avalonia](https://github.com/AvaloniaUI/Avalonia), [Inter](https://github.com/rsms/inter).
 - **YT-DLP 2026.10.26:** Unlicense, including bundled third-party components; [source and license](https://github.com/yt-dlp/yt-dlp/tree/2026.10.26), [third-party licenses](https://github.com/yt-dlp/yt-dlp/blob/2026.10.26/THIRD_PARTY_LICENSES.txt). The release zipapp includes yt-dlp-ejs and its JavaScript component licenses.
