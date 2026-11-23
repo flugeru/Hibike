@@ -181,9 +181,12 @@ internal static partial class Program
                 var profileDirectory = Path.Combine(directory, "music-profile");
                 var profile = new MusicController(new Catalog(), new Player(), new LibraryStore(profileDirectory), profileDirectory);
                 profile.Volume = .37;
+                // Restart means a shutdown flush; it must complete synchronously before the process exits.
+                profile.FlushPendingSaves();
+                Check(File.ReadAllText(Path.Combine(profileDirectory, "volume.txt")) == "0.37", "Shutdown flush did not persist volume");
                 var volumeRestored = new MusicController(new Catalog(), new Player(), new LibraryStore(profileDirectory), profileDirectory);
                 Check(Math.Abs(volumeRestored.Volume - .37) < .000001, "User volume did not survive restart");
-                volumeRestored.Volume = 0;
+                volumeRestored.Volume = 0; volumeRestored.FlushPendingSaves();
                 var mutedRestored = new MusicController(new Catalog(), new Player(), new LibraryStore(profileDirectory), profileDirectory);
                 Check(mutedRestored.Volume == 0, "Muted volume did not survive restart");
                 mutedRestored.Volume = double.NaN; Check(mutedRestored.Volume == 0, "Invalid volume accepted");
@@ -895,7 +898,8 @@ internal static partial class Program
                     && pageRows.Items.OfType<Track>().Count() == 52 && playlistScroll.Offset.Y > 0,
                     "Retry skipped or duplicated tracks, replaced the list, or reset its position");
                 Check(AppServices.BackHandler!(), "Paged playlist cannot return to its origin");
-                music.SaveSession(); await music.FlushPendingSavesAsync();
+                // Same path as desktop exit: the process ends right after this synchronous flush.
+                music.SaveSession(); music.FlushPendingSaves();
                 var restored = new MusicController(new Catalog(), new Player(), new LibraryStore(directory), directory);
                 await restored.InitializeAsync();
                 Check(restored.Current == AppServices.Controller.Current && restored.Queue.SequenceEqual(AppServices.Controller.Queue), "Playback session not restored");
@@ -918,7 +922,7 @@ internal static partial class Program
     private static void Capture(Control control, string name)
     {
         using var bitmap = new RenderTargetBitmap(new PixelSize((int)control.Bounds.Width, (int)control.Bounds.Height));
-        bitmap.Render(control); bitmap.Save(Path.Combine(AppContext.BaseDirectory, name + ".png"));
+        bitmap.Render(control); bitmap.Save(Path.Combine(AppContext.BaseDirectory, name + ".png"), PngBitmapEncoderOptions.Default);
     }
     private sealed class Catalog : IMusicCatalog
     {

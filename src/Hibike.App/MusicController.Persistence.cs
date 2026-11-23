@@ -59,11 +59,29 @@ public sealed partial class MusicController
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
 
-    public Task FlushPendingSavesAsync() => _stateWriter.FlushAsync();
+    public async Task FlushPendingSavesAsync()
+    {
+        try { await _volumeWriter.FlushAsync().ConfigureAwait(false); }
+        catch (IOException error) { PlaybackDiagnostics.Write("Salvar volume", error.Message); }
+        await _stateWriter.FlushAsync().ConfigureAwait(false);
+    }
     public void FlushPendingSaves()
     {
-        // Only lifecycle shutdown/suspension waits; ordinary UI changes never wait for storage.
-        try { _ = FlushPendingSavesAsync(); }
-        catch (IOException error) { PlaybackDiagnostics.Write("Salvar sessão", error.Message); }
+        // Only lifecycle shutdown waits; ordinary UI changes never wait for storage.
+        // The process may exit right after this call, so an unobserved async flush would lose
+        // the final queue, position, preferences and volume.
+        // Each writer is flushed independently so one failing file never skips the other.
+        Flush(_stateWriter, "Salvar sessão");
+        Flush(_volumeWriter, "Salvar volume");
+        static void Flush<T>(LatestSnapshotWriter<T> writer, string stage) where T : class
+        {
+            try
+            {
+                if (!writer.Flush(ShutdownFlushTimeout))
+                    PlaybackDiagnostics.Write(stage, "Tempo limite ao salvar antes de encerrar.");
+            }
+            catch (IOException error) { PlaybackDiagnostics.Write(stage, error.Message); }
+        }
     }
+    private static readonly TimeSpan ShutdownFlushTimeout = TimeSpan.FromSeconds(3);
 }

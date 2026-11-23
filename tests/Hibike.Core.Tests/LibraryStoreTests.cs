@@ -45,4 +45,40 @@ public sealed class LibraryStoreTests
         }
         finally { Directory.Delete(directory, true); }
     }
+
+    [Fact]
+    public async Task ExternalCorruptionAfterSaveIsStillNeverOverwritten()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "hibike-library-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new LibraryStore(directory);
+            var track = new Track("a", "Song", "Artist", "https://example.org/a");
+            await store.SaveAsync([track]);
+            var path = Path.Combine(directory, "favorites.json");
+            await File.WriteAllTextAsync(path, "{broken");
+            var save = await Record.ExceptionAsync(() => store.SaveAsync([track, track with { Id = "b", Source = "https://example.org/b" }]));
+            Assert.IsAssignableFrom<JsonException>(save);
+            Assert.Equal("{broken", await File.ReadAllTextAsync(path));
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    [Fact]
+    public async Task RepeatedSavesKeepLatestLibrary()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "hibike-library-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new LibraryStore(directory);
+            var tracks = new List<Track>();
+            for (var i = 0; i < 20; i++)
+            {
+                tracks.Add(new Track("t" + i, "Song " + i, "Artist", "https://example.org/" + i));
+                await store.SaveAsync(tracks);
+            }
+            Assert.Equal(tracks, await new LibraryStore(directory).LoadAsync());
+        }
+        finally { Directory.Delete(directory, true); }
+    }
 }

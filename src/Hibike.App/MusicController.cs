@@ -72,6 +72,7 @@ public sealed partial class MusicController
     {
         _catalog = catalog; Player = player; _store = store; DataDirectory = directory;
         _offlineStore = new LibraryStore(directory, OfflineFileName);
+        _volumeWriter = CreateVolumeWriter();
         LoadVolume();
         _session = new PlaybackSessionStore(directory);
         _stateWriter = new(WriteState, ReportSaveError);

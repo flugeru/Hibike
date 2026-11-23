@@ -39,4 +39,42 @@ public sealed class LatestSnapshotWriterTests
         writer.Enqueue("recovered"); await writer.FlushAsync();
         Assert.Single(errors); Assert.Equal("recovered", written);
     }
+
+    [Fact]
+    public void SynchronousFlushPersistsLatestSnapshotBeforeReturning()
+    {
+        string? written = null;
+        var writer = new LatestSnapshotWriter<string>(value => written = value, _ => { });
+        writer.Enqueue("old"); writer.Enqueue("final");
+        Assert.True(writer.Flush(TimeSpan.FromSeconds(5)));
+        Assert.Equal("final", written);
+    }
+
+    [Fact]
+    public void SynchronousFlushReportsWriteFailure()
+    {
+        var writer = new LatestSnapshotWriter<string>(_ => throw new IOException("Disk unavailable"), _ => { });
+        writer.Enqueue("value");
+        Assert.Throws<IOException>(() => writer.Flush(TimeSpan.FromSeconds(5)));
+    }
+
+    [Fact]
+    public async Task FlushSkipsCoalescingDelay()
+    {
+        var written = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var writer = new LatestSnapshotWriter<string>(_ => written.TrySetResult(), _ => { });
+        // Repeat to reduce scheduler noise; each flush must not wait for the 50 ms grouping window.
+        var elapsed = new List<double>();
+        for (var i = 0; i < 5; i++)
+        {
+            written = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            writer.Enqueue("value" + i);
+            await writer.FlushAsync();
+            elapsed.Add(watch.Elapsed.TotalMilliseconds);
+            Assert.True(written.Task.IsCompleted);
+        }
+        elapsed.Sort();
+        Assert.True(elapsed[2] < 40, $"Median flush took {elapsed[2]:0.0} ms");
+    }
 }

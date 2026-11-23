@@ -6,6 +6,10 @@ public sealed class LibraryStore(string directory, string fileName = "favorites.
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly string _path = Path.Combine(directory, fileName);
+    // Length and timestamp of the file as last parsed or written by this store. When unchanged,
+    // the protective pre-save read cannot find anything new, so a save need not parse the whole
+    // library again. Any external change still triggers full validation before replacement.
+    private (long Length, DateTime WriteTimeUtc)? _verified;
     public async Task<List<Track>> LoadAsync()
     {
         await _gate.WaitAsync();
@@ -22,11 +26,19 @@ public sealed class LibraryStore(string directory, string fileName = "favorites.
     }
     private async Task<List<Track>> ReadAsync()
     {
+        _verified = null;
         if (!File.Exists(_path)) return [];
+        var state = FileState();
         var tracks = JsonSerializer.Deserialize<List<Track>>(await File.ReadAllTextAsync(_path))
             ?? throw new InvalidDataException("Biblioteca inválida.");
         Validate(tracks);
+        if (state is not null && state == FileState()) _verified = state;
         return tracks;
+    }
+    private (long, DateTime)? FileState()
+    {
+        var info = new FileInfo(_path);
+        return info.Exists ? (info.Length, info.LastWriteTimeUtc) : null;
     }
     private static void Validate(IEnumerable<Track> tracks)
     {
@@ -42,7 +54,8 @@ public sealed class LibraryStore(string directory, string fileName = "favorites.
         try
         {
             // Never replace unreadable user data with an empty or partial in-memory library.
-            await ReadAsync();
+            if (_verified is null || _verified != FileState()) await ReadAsync();
+            _verified = null;
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
             await using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
             {
@@ -51,6 +64,7 @@ public sealed class LibraryStore(string directory, string fileName = "favorites.
                 stream.Flush(flushToDisk: true);
             }
             File.Move(temp, _path, true);
+            _verified = FileState();
         }
         finally
         {
