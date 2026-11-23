@@ -8,13 +8,14 @@ using Avalonia.VisualTree;
 namespace Hibike.App.Views;
 
 // Touch lists previously turned scroll gestures into taps: a finger that stopped a fling, or that
-// moved less than Avalonia's 30 DIP scroll threshold, still released over a row or cover and
-// clicked it, so moving through lists often started playback. Like Android's own lists, a touch
+// dragged in a direction the list under it cannot scroll (sideways over a vertical list, along a
+// carousel edge), still released over a row or cover and clicked it, so moving through lists
+// often started playback. Like Android's own lists, a touch
 // that begins while content is moving only stops the motion, and a touch that travels beyond the
 // tap slop is never a click.
 public sealed partial class MainView
 {
-    // Close to Android's 8 dp touch slop; well below the distance at which lists start scrolling.
+    // Close to Android's 8 dp touch slop.
     internal const double TapSlop = 10;
     // A press this soon after a scroll offset changed lands on moving content.
     private static readonly TimeSpan ScrollMotionWindow = TimeSpan.FromMilliseconds(160);

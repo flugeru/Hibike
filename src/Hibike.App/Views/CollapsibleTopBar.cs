@@ -15,12 +15,9 @@ internal sealed class CollapsibleTopBar : Decorator
     static CollapsibleTopBar()
     {
         AffectsMeasure<CollapsibleTopBar>(RevealProperty);
-        RevealProperty.Changed.AddClassHandler<CollapsibleTopBar>((bar, _) =>
-        {
-            var visible = bar.Reveal > 0;
-            bar.IsHitTestVisible = visible;
-            bar.IsEnabled = visible;
-        });
+        // Only input is blocked while hidden. Toggling IsEnabled restyled every control in the bar
+        // (disabled opacity) each time it crossed zero during a scroll.
+        RevealProperty.Changed.AddClassHandler<CollapsibleTopBar>((bar, _) => bar.IsHitTestVisible = bar.Reveal > 0);
     }
 
     public CollapsibleTopBar() => ClipToBounds = true;

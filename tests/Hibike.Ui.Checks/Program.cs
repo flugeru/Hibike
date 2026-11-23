@@ -20,7 +20,7 @@ internal static partial class Program
         var directory = Path.Combine(Path.GetTempPath(), "hibike-ui-check-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         if (args.Contains("--queue-only") || args.Contains("--performance-study") || args.Contains("--performance-checks")
-            || args.Contains("--collapsing-top-bars") || args.Contains("--android-screens"))
+            || args.Contains("--collapsing-top-bars") || args.Contains("--android-screens") || args.Contains("--collapsing-cost"))
         {
             // Keep onboarding and home discovery offline before the view is attached.
             File.WriteAllText(Path.Combine(directory, "personalization.json"), "{\"OnboardingCompleted\":true}");
@@ -43,6 +43,12 @@ internal static partial class Program
             try
             {
                 var window = lifetime.MainWindow!; var view = (MainView)window.Content!;
+                if (args.Contains("--collapsing-cost"))
+                {
+                    await MeasureCollapsingCostAsync(window);
+                    result = 0;
+                    return;
+                }
                 if (args.Contains("--android-screens"))
                 {
                     await CaptureAndroidScreensAsync(window);
@@ -54,7 +60,8 @@ internal static partial class Program
                 {
                     await CheckCollapsingTopBarsAsync(window);
                     await CheckTouchTapGuardAsync(window);
-                    Console.WriteLine("Android collapsing top bar and touch tap checks passed.");
+                    await CheckTopMenuMotionAsync(window);
+                    Console.WriteLine("Android collapsing top bar, touch tap and menu motion checks passed.");
                     result = 0;
                     return;
                 }

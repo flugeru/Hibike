@@ -67,5 +67,27 @@ internal static partial class Program
         Frame(2_000_000_000);
         if (next is not null) Frame(2_016_666_666);
         Check(next is null && scroll.Offset.Y == bottom, "Home inertia did not stop at the scroll boundary");
+
+        // Every page list gets display-synchronised inertia, not only Início.
+        typeof(MainView).GetField("_page", hidden)!.SetValue(view, "library");
+        typeof(MainView).GetMethod("Refresh", hidden)!.Invoke(view, null);
+        await Task.Delay(100);
+        var library = (ScrollViewer)typeof(MainView).GetField("_mobileLibraryScroll", hidden)!.GetValue(view)!;
+        library.Content = new Border { Height = 5000 };
+        library.IsVisible = true;
+        await Task.Delay(100);
+        presenter = library.GetVisualDescendants().OfType<ScrollContentPresenter>().First();
+        Start(103, new Vector(0, 1400));
+        var libraryStep = Step(103, new Vector(0, 12));
+        Check(libraryStep.ShouldEndScrollGesture && next is not null, "Library fling kept the timer-driven stock inertia");
+        presenter.RaiseEvent(new ScrollGestureEndedEventArgs(103));
+        Frame(3_000_000_000);
+        var libraryOffset = library.Offset.Y;
+        Frame(3_008_333_333);
+        Check(library.Offset.Y > libraryOffset, "Library inertia did not advance with display time");
+        typeof(MainView).GetMethod("StopHomeInertia", hidden)!.Invoke(view, null);
+        if (next is not null) Frame(3_016_666_666);
+        typeof(MainView).GetField("_page", hidden)!.SetValue(view, "home");
+        typeof(MainView).GetMethod("Refresh", hidden)!.Invoke(view, null);
     }
 }
