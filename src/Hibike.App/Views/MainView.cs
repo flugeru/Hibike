@@ -174,6 +174,7 @@ public sealed partial class MainView : UserControl
         AddHandler(KeyDownEvent, OnPlaybackKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         AddHandler(KeyUpEvent, OnPlaybackKeyUp, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         InitializeDiscordRecovery();
+        InitializeTouchTapGuard();
         AttachedToVisualTree += async (_, _) =>
         {
             if (TopLevel.GetTopLevel(this) is Window desktopWindow) { desktopWindow.Deactivated -= ResetPlaybackKey; desktopWindow.Deactivated += ResetPlaybackKey; }

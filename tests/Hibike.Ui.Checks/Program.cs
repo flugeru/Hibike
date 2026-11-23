@@ -46,7 +46,8 @@ internal static partial class Program
                 if (args.Contains("--collapsing-top-bars"))
                 {
                     await CheckCollapsingTopBarsAsync(window);
-                    Console.WriteLine("Android collapsing top bar checks passed.");
+                    await CheckTouchTapGuardAsync(window);
+                    Console.WriteLine("Android collapsing top bar and touch tap checks passed.");
                     result = 0;
                     return;
                 }
