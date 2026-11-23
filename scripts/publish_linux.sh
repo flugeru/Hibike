@@ -41,8 +41,9 @@ desktop-file-validate "$appdir/hibike.desktop"
 
 tool="$root/artifacts/appimagetool-x86_64.AppImage"
 curl --fail --location --retry 3 \
-    https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -o "$tool"
-echo "62aebc77c2149e96b593b94da9bbd1881e0984a56399ff6d7a03b7ddd7c9ce68  $tool" | sha256sum --check
+    https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage -o "$tool"
+# Pin a release tag: "continuous" is rebuilt in place, so its fixed checksum broke the build.
+echo "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  $tool" | sha256sum --check
 chmod +x "$tool"
 ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$tool" "$appdir" "$root/artifacts/Hibike-x86_64.AppImage"
 test -s "$root/artifacts/Hibike-x86_64.AppImage"
