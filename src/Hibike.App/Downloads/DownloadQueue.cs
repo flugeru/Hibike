@@ -113,11 +113,15 @@ internal sealed class DownloadQueue(
         return item;
     }
 
-    public void Pause(DownloadJob job)
+    public void Pause(DownloadJob job) => Pause(job, network: false);
+
+    // A manual pause always wins over an earlier network pause still unwinding,
+    // so reconnecting never restarts a transfer the user explicitly paused.
+    private void Pause(DownloadJob job, bool network)
     {
         if (!job.CanPause || job.Cancellation is not { } source) return;
         job.PauseRequested = true;
-        if (!job.NetworkPaused) job.NetworkPaused = false;
+        job.NetworkPaused = network;
         source.Cancel();
     }
 
@@ -126,8 +130,7 @@ internal sealed class DownloadQueue(
         foreach (var job in Jobs.ToArray())
         {
             if (!job.CanPause || job.Cancellation is null) continue;
-            if (network) job.NetworkPaused = true;
-            Pause(job);
+            Pause(job, network);
         }
     }
 

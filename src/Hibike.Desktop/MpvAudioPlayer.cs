@@ -12,6 +12,9 @@ public sealed class MpvAudioPlayer : IAudioPlayer
     private bool _disposed, _loaded;
     private double _volume = .8, _position, _duration;
     public bool IsPlaying { get; private set; }
+    // Reported so MusicController's stall recovery also covers desktop streams; without it a
+    // dropped connection left libmpv waiting on its cache indefinitely.
+    public bool IsBuffering { get; private set; }
     public double Position { get { lock (_gate) return _position; } }
     public double Duration { get { lock (_gate) return _duration; } }
     public AudioSource? PlaybackSource { get; private set; }
@@ -38,7 +41,7 @@ public sealed class MpvAudioPlayer : IAudioPlayer
                 Check(mpv_initialize(_handle));
                 _timer = new Timer(Poll, null, 100, 100);
             }
-            Command("stop"); _loaded = false; _position = _duration = 0; IsPlaying = false;
+            Command("stop"); _loaded = false; _position = _duration = 0; IsPlaying = IsBuffering = false;
             while (Marshal.PtrToStructure<MpvEvent>(mpv_wait_event(_handle, 0)).Id != 0) { }
             Set("http-header-fields", ""); Set("user-agent", "Hibike"); Set("referrer", "");
             var headers = new List<string>();
@@ -74,7 +77,10 @@ public sealed class MpvAudioPlayer : IAudioPlayer
                 }
             }
             _position = Number("time-pos"); _duration = Number("duration");
-            IsPlaying = _loaded && Property("pause") == "no" && Property("paused-for-cache") != "yes";
+            var unpaused = _loaded && Property("pause") == "no";
+            var waitingForCache = unpaused && Property("paused-for-cache") == "yes";
+            IsPlaying = unpaused && !waitingForCache;
+            IsBuffering = waitingForCache;
         }
         if (ended) Ended?.Invoke(this, EventArgs.Empty);
         if (failed) Failed?.Invoke(this, "libmpv não conseguiu abrir ou continuar áudio.");
@@ -109,12 +115,12 @@ public sealed class MpvAudioPlayer : IAudioPlayer
         lock (_gate)
         {
             if (_handle != IntPtr.Zero) Command("stop");
-            _loaded = IsPlaying = false;
+            _loaded = IsPlaying = IsBuffering = false;
             _position = _duration = 0;
             PlaybackSource = null;
         }
     });
-    public void Pause() { lock (_gate) { if (_handle != IntPtr.Zero) Set("pause", "yes"); IsPlaying = false; } }
+    public void Pause() { lock (_gate) { if (_handle != IntPtr.Zero) Set("pause", "yes"); IsPlaying = IsBuffering = false; } }
     public void Resume() { lock (_gate) { if (_handle != IntPtr.Zero) Set("pause", "no"); } }
     public void Seek(double seconds) { if (double.IsFinite(seconds)) lock (_gate) { if (_handle != IntPtr.Zero) Command("seek", Math.Max(0, seconds).ToString(System.Globalization.CultureInfo.InvariantCulture), "absolute"); } }
     public void Dispose() { lock (_gate) { if (_disposed) return; _disposed = true; _timer?.Dispose(); if (_handle != IntPtr.Zero) mpv_terminate_destroy(_handle); _handle = IntPtr.Zero; IsPlaying = false; } }

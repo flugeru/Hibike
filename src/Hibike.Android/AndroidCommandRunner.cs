@@ -113,7 +113,9 @@ public sealed class AndroidCommandRunner(Context context) : ICommandRunner
             {
                 PlaybackDiagnostics.Write("YT-DLP", "Processo interrompido pelo cancelamento/limite de tempo.");
                 process.Destroy();
-                process.DestroyForcibly();
+                // destroyForcibly() is API 26+; on Android 7 it threw NoSuchMethodError and
+                // replaced the cancellation with an unrelated failure, leaving the child unreaped.
+                if (OperatingSystem.IsAndroidVersionAtLeast(26)) process.DestroyForcibly();
                 await Task.Run(() => process.WaitFor(), CancellationToken.None);
                 await Task.WhenAll(output, error);
                 throw;

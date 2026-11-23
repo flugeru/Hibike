@@ -26,7 +26,7 @@ public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPr
         if (!reuseService || PlaybackService.Instance is null)
         {
             var intent = new Intent(context, typeof(PlaybackService)).SetAction(PlaybackService.PrepareAction)!.PutExtra("title", track.Title);
-            await MainAsync(() => { if (Build.VERSION.SdkInt >= BuildVersionCodes.O) context.StartForegroundService(intent); else context.StartService(intent); }).WaitAsync(cancellationToken);
+            await MainAsync(() => { if (OperatingSystem.IsAndroidVersionAtLeast(26)) context.StartForegroundService(intent); else context.StartService(intent); }).WaitAsync(cancellationToken);
             while (PlaybackService.Instance is null) await Task.Delay(20, cancellationToken);
         }
         var service = PlaybackService.Instance;

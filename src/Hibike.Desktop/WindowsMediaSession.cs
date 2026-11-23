@@ -76,7 +76,11 @@ internal sealed class WindowsMediaSession : IDisposable
                 if (Uri.TryCreate(artwork, UriKind.Absolute, out var imageUri))
                 {
                     if (imageUri.IsFile)
-                        thumbnail = RandomAccessStreamReference.CreateFromFile(await Windows.Storage.StorageFile.GetFileFromPathAsync(imageUri.LocalPath));
+                    {
+                        // A missing or unreadable cover must not prevent title and artist from being published.
+                        try { thumbnail = RandomAccessStreamReference.CreateFromFile(await Windows.Storage.StorageFile.GetFileFromPathAsync(imageUri.LocalPath)); }
+                        catch (Exception error) { PlaybackDiagnostics.Write("Capa Windows", error.Message); }
+                    }
                     else if (imageUri.Scheme == "https")
                     {
                         try
@@ -107,7 +111,9 @@ internal sealed class WindowsMediaSession : IDisposable
                         catch (Exception error) { PlaybackDiagnostics.Write("Capa Windows", error.Message); }
                     }
                 }
-                if (_disposed || _metadataKey != key || _music.Current != track) return;
+                if (_disposed || _metadataKey != key) return;
+                // Local metadata can replace the Track instance with an equal source; retry on the next update.
+                if (_music.Current?.Source != track.Source) { _metadataKey = null; return; }
                 var display = _controls.DisplayUpdater;
                 display.ClearAll(); display.Type = MediaPlaybackType.Music;
                 display.AppMediaId = "Hibike";

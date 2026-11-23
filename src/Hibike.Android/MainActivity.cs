@@ -27,7 +27,7 @@ public sealed class MainActivity : AvaloniaMainActivity
 #endif
         if (Intent?.GetBooleanExtra("open_player", false) == true)
             Avalonia.Threading.Dispatcher.UIThread.Post(() => AppServices.OpenPlayerView?.Invoke());
-        if (global::Android.OS.Build.VERSION.SdkInt >= global::Android.OS.BuildVersionCodes.Tiramisu)
+        if (OperatingSystem.IsAndroidVersionAtLeast(33))
             RequestPermissions(new[] { global::Android.Manifest.Permission.PostNotifications }, 42);
     }
     protected override void OnActivityResult(int requestCode, Result resultCode, global::Android.Content.Intent? data)

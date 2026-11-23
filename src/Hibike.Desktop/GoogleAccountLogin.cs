@@ -58,7 +58,11 @@ internal static class GoogleAccountLogin
             using var client = await socket.AcceptAsync().WaitAsync(token);
             using var stream = new NetworkStream(client, ownsSocket: false);
             using var reader = new StreamReader(stream, Encoding.ASCII, false, 4096, leaveOpen: true);
-            var request = await reader.ReadLineAsync().WaitAsync(token) ?? "";
+            // A local client that connects without sending a request must not hold the only
+            // callback listener until the whole sign-in times out.
+            string request;
+            try { request = await reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(5), token) ?? ""; }
+            catch (TimeoutException) { continue; }
             var target = request.Split(' ').ElementAtOrDefault(1);
             var requestUri = Uri.TryCreate("http://127.0.0.1" + target, UriKind.Absolute, out var parsed) ? parsed : null;
             var query = requestUri?.Query;

@@ -76,17 +76,27 @@ public sealed class PlaybackService : MediaSessionService
             }
             catch (Exception error) when (error is not OutOfMemoryException)
             { PlaybackDiagnostics.Write("Atualizar reprodução Android", error.Message); }
-            finally { if (_player is not null) _handler?.PostDelayed(_poll!, 100); }
+            finally { if (_player is not null) _handler?.PostDelayed(_poll!, PollInterval()); }
         };
         _handler.Post(_poll); Instance = this;
+    }
+    // Fast sampling only while audio is preparing, buffering or meant to play. A paused or idle
+    // service used to wake the main thread ten times per second indefinitely, also in background.
+    private long PollInterval() => _player is { } player && (State == 2 || player.PlayWhenReady && State == 3) ? 100 : 1000;
+    // Commands and player events restart sampling at once, so state never lags the slow interval.
+    private void KickPoll()
+    {
+        if (_poll is null || _handler is null || _player is null) return;
+        _handler.RemoveCallbacks(_poll);
+        _handler.Post(_poll);
     }
     public override StartCommandResult OnStartCommand(Intent? intent, StartCommandFlags flags, int startId)
     {
         if (intent?.Action == PrepareAction && IsOwnApp(intent))
         {
-            if (Build.VERSION.SdkInt >= BuildVersionCodes.O)
+            if (OperatingSystem.IsAndroidVersionAtLeast(26))
                 ((NotificationManager)GetSystemService(NotificationService)!).CreateNotificationChannel(new NotificationChannel("hibike-playback", "Reprodução de música", NotificationImportance.Low));
-            var builder = Build.VERSION.SdkInt >= BuildVersionCodes.O ? new Notification.Builder(this, "hibike-playback") : new Notification.Builder(this);
+            var builder = OperatingSystem.IsAndroidVersionAtLeast(26) ? new Notification.Builder(this, "hibike-playback") : new Notification.Builder(this);
             var notification = builder.SetContentTitle(intent.GetStringExtra("title") ?? "Hibike")!
                 .SetContentText("Preparando áudio…")!.SetSmallIcon(Resource.Drawable.ic_stat_music)!
                 .SetCategory("transport")!.SetVisibility(NotificationVisibility.Public)!
@@ -96,8 +106,8 @@ public sealed class PlaybackService : MediaSessionService
         }
         return base.OnStartCommand(intent, flags, startId);
     }
-    public override MediaSession? OnGetSession(MediaSession.ControllerInfo controllerInfo) =>
-        IsTrustedController(controllerInfo) ? _session : null;
+    public override MediaSession? OnGetSession(MediaSession.ControllerInfo? controllerInfo) =>
+        controllerInfo is not null && IsTrustedController(controllerInfo) ? _session : null;
     private bool IsOwnApp(Intent intent) =>
         string.Equals(intent.Package, PackageName, StringComparison.Ordinal) ||
         string.Equals(intent.Component?.PackageName, PackageName, StringComparison.Ordinal);
@@ -124,20 +134,22 @@ public sealed class PlaybackService : MediaSessionService
         // Register after playable item exists so Media3 replaces preparation notification id 42.
         if (!IsSessionAdded(_session!)) AddSession(_session!);
         _player.Prepare(); _player.Play();
+        KickPoll();
     }
-    public void PauseAudio() => _player?.Pause();
+    public void PauseAudio() { _player?.Pause(); KickPoll(); }
     public void StopAudio()
     {
         _player?.Stop();
         _player?.ClearMediaItems();
         StopForeground(StopForegroundFlags.Remove);
+        KickPoll();
     }
-    public void ResumeAudio() { if (_player?.PlaybackState == 4) _player.SeekTo(0); _player?.Play(); }
-    public void Seek(double seconds) => _player?.SeekTo((long)(Math.Max(0, seconds) * 1000));
+    public void ResumeAudio() { if (_player?.PlaybackState == 4) _player.SeekTo(0); _player?.Play(); KickPoll(); }
+    public void Seek(double seconds) { _player?.SeekTo((long)(Math.Max(0, seconds) * 1000)); KickPoll(); }
     public void SetVolume(double volume) { if (_player is not null) _player.Volume = (float)volume; }
     public void CancelPreparation()
     {
-        if (!Playing) { _player?.Stop(); StopForeground(StopForegroundFlags.Remove); }
+        if (!Playing) { _player?.Stop(); StopForeground(StopForegroundFlags.Remove); KickPoll(); }
     }
     public override void OnDestroy()
     {
@@ -155,10 +167,13 @@ public sealed class PlaybackService : MediaSessionService
 
     private sealed class PlaybackListener(PlaybackService service) : Java.Lang.Object, IPlayerListener
     {
-        public void OnEvents(IPlayer player, PlayerEvents events)
+        public void OnEvents(IPlayer? player, PlayerEvents? events)
         {
+            if (player is null) return;
             var playing = player.IsPlaying;
             service.Buffering = player.PlaybackState == 2 && player.PlayWhenReady;
+            // Covers notification, headset and system controls that bypass the service methods.
+            service.KickPoll();
             if (service.Playing == playing) return;
             service.Playing = playing;
             service.PlaybackStateChanged?.Invoke(service, EventArgs.Empty);

@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
@@ -8,7 +9,8 @@ view = (root / 'src/Hibike.App/Views/MainView.cs').read_text(encoding='utf-8')
 assert activity.index('AppServices.ReadLocalMetadata =') < activity.index('base.OnCreate(savedInstanceState)')
 assert 'AppServices.ReadLocalTrack(original,' in controller
 assert 'AppServices.ReadLocalTrack(track,' in controller
-assert 'AppServices.ReadLocalTrack(new Track(' in view
+# The call may be wrapped across lines; match its shape, not its formatting.
+assert re.search(r'AppServices\.ReadLocalTrack\(\s*new Track\(', view)
 for field in ('Title', 'Artist', 'Album', 'CdTrackNumber', 'Date', 'Duration'):
     assert f'MetadataKey.{field}' in reader
 assert 'GetEmbeddedPicture()' in reader and 'MediaExtractor' in reader
