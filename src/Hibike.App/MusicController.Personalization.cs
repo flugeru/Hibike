@@ -101,6 +101,7 @@ public sealed partial class MusicController
         public bool ReduceMotion { get; set; }
         public bool OfflineMode { get; set; }
         public string Discovery { get; set; } = "Tudo";
+        public string Theme { get; set; } = Views.UiTheme.ThemeMonochrome;
         public bool OnboardingCompleted { get; set; }
         public List<MusicArtist> Artists { get; set; } = [];
         public List<string> Genres { get; set; } = [];
@@ -122,6 +123,17 @@ public sealed partial class MusicController
     {
         if (_personal.ReduceMotion == enabled) return;
         _personal.ReduceMotion = enabled;
+        PersistPersonalization();
+    }
+
+    public string Theme => _personal.Theme;
+    public event Action? ThemeChanged;
+    public void SetTheme(string theme)
+    {
+        if (!Views.UiTheme.Themes.Contains(theme)) throw new ArgumentException("Tema desconhecido.", nameof(theme));
+        if (_personal.Theme == theme) return;
+        _personal.Theme = theme;
+        ThemeChanged?.Invoke();
         PersistPersonalization();
     }
 
@@ -150,6 +162,8 @@ public sealed partial class MusicController
                 || data.Playlists.Any(p => p is null || string.IsNullOrWhiteSpace(p.Name) || p.Tracks is null || p.Tracks.Any(t => t is null || string.IsNullOrWhiteSpace(t.Source)))
                 || data.Listening.Any(p => p.Value is null || !double.IsFinite(p.Value.Seconds) || p.Value.Seconds < 0))
                 throw new InvalidDataException("Dados de personalização inválidos.");
+            // A cosmetic preference never makes the whole file unreadable; unknown themes fall back.
+            if (!Views.UiTheme.Themes.Contains(data.Theme)) data.Theme = Views.UiTheme.ThemeMonochrome;
             _personal = data;
         }
         catch (Exception error) when (error is IOException or InvalidDataException or JsonException or UnauthorizedAccessException)

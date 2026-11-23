@@ -46,6 +46,7 @@ internal static partial class Program
                 if (args.Contains("--android-screens"))
                 {
                     await CaptureAndroidScreensAsync(window);
+                    await CheckThemesAsync(directory, window, capture: true);
                     result = 0;
                     return;
                 }
@@ -913,6 +914,8 @@ internal static partial class Program
                 Check(!restored.Player.IsPlaying, "Restored session autoplayed");
                 restored.ClearQueue(); Check(restored.Queue.Count == 1 && restored.Queue[0] == restored.Current, "Clear queue lost current track");
                 restored.StopObserving(); await restored.FlushPendingSavesAsync();
+                // Creates its own view (which takes over the global back handler), so it runs last.
+                await CheckThemesAsync(directory, window, capture: false);
                 Console.WriteLine("UI checks passed: 360/390/430, typography, touch targets, virtualization, player, session restore and clear queue.");
                 File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "ui-check-result.txt"), "PASS: 360/390/430, typography, touch targets, virtualization, player.");
                 result = 0;

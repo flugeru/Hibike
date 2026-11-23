@@ -175,6 +175,7 @@ public sealed partial class MainView : UserControl
         AddHandler(KeyUpEvent, OnPlaybackKeyUp, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         InitializeDiscordRecovery();
         InitializeTouchTapGuard();
+        InitializeThemes();
         AttachedToVisualTree += async (_, _) =>
         {
             if (TopLevel.GetTopLevel(this) is Window desktopWindow) { desktopWindow.Deactivated -= ResetPlaybackKey; desktopWindow.Deactivated += ResetPlaybackKey; }
@@ -425,10 +426,10 @@ public sealed partial class MainView : UserControl
             button.CornerRadius = new(10); button.Padding = new Thickness(vertical ? 1 : 4, 4);
             button.MinHeight = vertical ? 56 : 76;
             var stack = new StackPanel { Spacing = vertical ? 2 : 6, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
-            var image = Icons.Make(icon, active ? Accent : Muted, 22); image.HorizontalAlignment = HorizontalAlignment.Center;
+            var image = Icons.Make(icon, active ? UiTheme.Accent : Muted, 22); image.HorizontalAlignment = HorizontalAlignment.Center;
             image.VerticalAlignment = VerticalAlignment.Center;
             var indicator = new Border { Child = image, Width = 52, Height = vertical ? 28 : 32,
-                CornerRadius = new(16), Background = active ? UiTheme.Brush("#292929") : Brushes.Transparent };
+                CornerRadius = new(16), Background = active ? UiTheme.Brush(UiTheme.AccentContainer) : Brushes.Transparent };
             stack.Children.Add(indicator);
             var caption = UiTheme.Text(label, UiTheme.Label, active ? UiTheme.TextPrimary : Muted, active ? FontWeight.SemiBold : FontWeight.Normal);
             caption.HorizontalAlignment = HorizontalAlignment.Center;
@@ -454,7 +455,7 @@ public sealed partial class MainView : UserControl
         RefreshWorkspace();
         var displayed = _music.Pending ?? _music.Current;
         UpdateRows(displayed);
-        if (!Equals(displayed, _shownTrack)) { _shownTrack = displayed; _nowArt.Content = MiniCover(displayed); }
+        if (!Equals(displayed, _shownTrack)) { _shownTrack = displayed; _nowArt.Content = MiniCover(displayed); UpdateCoverTheme(displayed); }
         _nowTitle.Text = TrackTextFormatter.Title(displayed?.Title, displayed?.Artist);
         _nowArtist.Text = TrackTextFormatter.Artist(displayed?.Artist);
         if (displayed is not null) _updatePlayerTrack?.Invoke(displayed);
@@ -1139,6 +1140,7 @@ public sealed partial class MainView : UserControl
         host.SizeChanged += (_, _) => { if (_playerPage is not null && _playerPage.IsVisualAncestorOf(host)) ArrangePlayer(); };
         transport.LayoutUpdated += (_, _) => { if (_playerPage is not null && _playerPage.IsVisualAncestorOf(host)) ArrangeTransport(); };
         _playerPage = new Border { Background = UiTheme.Brush(UiTheme.Background), Child = CreateTrackSelectionHost(host), ClipToBounds = true };
+        UpdatePlayerTint();
         Grid.SetColumn(_playerPage, 1); Grid.SetColumnSpan(_playerPage, 2); Grid.SetRowSpan(_playerPage, 3); _root.Children.Add(_playerPage);
         if (_androidLayout)
         {
@@ -1297,7 +1299,7 @@ public sealed partial class MainView : UserControl
         sections.Add(PreferenceSection("Reprodução", sound));
         var reduceMotion = PreferenceCheckBox("Reduzir movimento", _music.ReduceMotion);
         reduceMotion.IsCheckedChanged += (_, _) => _music.SetReduceMotion(reduceMotion.IsChecked == true);
-        sections.Add(PreferenceSection("Aparência", reduceMotion));
+        sections.Add(PreferenceSection("Aparência", ThemePicker(), reduceMotion));
         sections.Add(PreferenceSection("Conta e biblioteca",
             PreferenceLink("account", "Minha conta", _account?.DisplayName ?? "Google e YouTube Music", ShowAccountAsync),
             PreferenceLink("heart", "Personalizar meu som", "Artistas e estilos favoritos", () => { ShowMusicOnboarding(edit: true); return Task.CompletedTask; }),
@@ -1729,7 +1731,7 @@ public sealed partial class MainView : UserControl
     private static Control ToggleIcon(string name, bool active, bool repeatOne = false)
     {
         var panel = new Grid { Width = UiTheme.IconSize, Height = UiTheme.ToggleIconHeight };
-        var icon = new Grid(); icon.Children.Add(Icons.Make(name, active ? Accent : Muted));
+        var icon = new Grid(); icon.Children.Add(Icons.Make(name, active ? UiTheme.Accent : Muted));
         if (name == "repeat" && repeatOne)
         {
             var badge = UiTheme.Text("1", UiTheme.Label, Accent, FontWeight.SemiBold);

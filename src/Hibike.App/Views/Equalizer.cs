@@ -34,8 +34,13 @@ internal sealed class Equalizer : Border
         }
         UpdateBars();
         _timer.Tick += (_, _) => { _frame++; UpdateBars(); };
-        DetachedFromVisualTree += (_, _) => _timer.Stop();
-        AttachedToVisualTree += (_, _) => { if (_playing) _timer.Start(); };
+        void Recolor() { foreach (var bar in _bars) bar.Background = UiTheme.Brush(UiTheme.Accent); }
+        DetachedFromVisualTree += (_, _) => { _timer.Stop(); UiTheme.AccentChanged -= Recolor; };
+        AttachedToVisualTree += (_, _) =>
+        {
+            Recolor(); UiTheme.AccentChanged -= Recolor; UiTheme.AccentChanged += Recolor;
+            if (_playing) _timer.Start();
+        };
     }
     public void SetState(bool selected, bool playing)
     {

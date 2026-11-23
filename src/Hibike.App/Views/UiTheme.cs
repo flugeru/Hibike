@@ -88,6 +88,73 @@ internal static class UiTheme
     public static readonly FontFamily Inter = new("avares://Avalonia.Fonts.Inter/Assets#Inter");
     public static readonly FontFamily Mono = new(OperatingSystem.IsLinux() ? "DejaVu Sans Mono" : "Cascadia Mono, Consolas, monospace");
     public static IBrush Brush(string color) => new SolidColorBrush(Color.Parse(color)).ToImmutable();
+
+    // Accent: the colour of active and progress states (play button, sliders, selected tabs and
+    // toggles, equalizer). Text and ordinary icons keep their own colours, so a theme only
+    // changes what signals state. The monochrome theme keeps the original white accent.
+    public const string ThemeMonochrome = "Monocromático", ThemeLavender = "Lavanda", ThemeSakura = "Rosa sakura", ThemeCover = "Cor da capa";
+    public static readonly IReadOnlyList<string> Themes = [ThemeMonochrome, ThemeLavender, ThemeSakura, ThemeCover];
+    public static string ThemeAccent(string theme) => theme switch { ThemeLavender => "#B784F7", ThemeSakura => "#F7B7E3", _ => Primary };
+    public static string Accent { get; private set; } = Primary;
+    public static string OnAccent { get; private set; } = OnPrimary;
+    /// <summary>Soft fill behind an active item (selected tab pill), derived from the accent.</summary>
+    public static string AccentContainer { get; private set; } = "#292929";
+    public static event Action? AccentChanged;
+    private static readonly Styles AccentStyles = new();
+    private static IResourceDictionary? _resources;
+
+    public static void SetAccent(string accent)
+    {
+        var color = Color.Parse(accent);
+        if (string.Equals(Accent, accent, StringComparison.OrdinalIgnoreCase)) return;
+        Accent = accent;
+        // Glyphs on the accent use whichever of the dark or light text colours contrasts more (WCAG).
+        var accentLuminance = Luminance(color);
+        var onDark = (accentLuminance + .05) / (Luminance(Color.Parse(OnPrimary)) + .05);
+        var onLight = (Luminance(Color.Parse(TextPrimary)) + .05) / (accentLuminance + .05);
+        OnAccent = onDark >= onLight ? OnPrimary : TextPrimary;
+        AccentContainer = accent.Equals(Primary, StringComparison.OrdinalIgnoreCase) ? "#292929"
+            : Color.FromArgb(0x38, color.R, color.G, color.B).ToString();
+        ApplyAccent();
+        AccentChanged?.Invoke();
+    }
+
+    internal static double Luminance(Color color)
+    {
+        static double Channel(byte c) { var v = c / 255d; return v <= .03928 ? v / 12.92 : Math.Pow((v + .055) / 1.055, 2.4); }
+        return .2126 * Channel(color.R) + .7152 * Channel(color.G) + .0722 * Channel(color.B);
+    }
+
+    private static void ApplyAccent()
+    {
+        AccentStyles.Clear();
+        void Add(Style style, params Setter[] setters) { foreach (var setter in setters) style.Setters.Add(setter); AccentStyles.Add(style); }
+        Add(new Style(x => x.OfType<Button>().Class("primary")), new(TemplatedControl.BackgroundProperty, Brush(Accent)),
+            new(TemplatedControl.ForegroundProperty, Brush(OnAccent)), new(TemplatedControl.BorderThicknessProperty, Zero),
+            new(TemplatedControl.FontWeightProperty, FontWeight.SemiBold));
+        Add(new Style(x => x.OfType<Button>().Class("primary").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
+            new Setter(ContentPresenter.ForegroundProperty, Brush(OnAccent)));
+        foreach (var state in new[] { ":pointerover", ":pressed" })
+            Add(new Style(x => x.OfType<Button>().Class("primary").Class(state).Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
+                new(ContentPresenter.BackgroundProperty, new SolidColorBrush(Color.Parse(Accent), state == ":pressed" ? .75 : .9)),
+                new(ContentPresenter.ForegroundProperty, Brush(OnAccent)));
+        Add(new Style(x => x.OfType<ProgressBar>()), new(TemplatedControl.ForegroundProperty, Brush(Accent)),
+            new(TemplatedControl.BackgroundProperty, Brush(Outline)), new(TemplatedControl.CornerRadiusProperty, new CornerRadius(ProgressRadius)));
+        foreach (var pressed in new[] { false, true })
+        {
+            var selector = pressed ? (Func<Selector?, Selector>)(x => x.OfType<Slider>().Class(":pressed").Template().OfType<Thumb>())
+                : x => x.OfType<Slider>().Template().OfType<Thumb>();
+            Add(new Style(selector), new(Layoutable.WidthProperty, pressed ? SeekThumbPressedSize : SeekThumbSize),
+                new(Layoutable.HeightProperty, pressed ? SeekThumbPressedSize : SeekThumbSize),
+                new(TemplatedControl.BackgroundProperty, Brush(Accent)));
+        }
+        Add(new Style(x => x.OfType<Slider>().Template().OfType<RepeatButton>().Name("PART_DecreaseButton")),
+            new Setter(TemplatedControl.BackgroundProperty, Brush(Accent)));
+        if (_resources is { } resources)
+            foreach (var key in new[] { "SliderTrackValueFill", "SliderThumbBackground", "SliderThumbBackgroundPointerOver",
+                "SliderThumbBackgroundPressed", "SliderTrackValueFillPointerOver", "SliderTrackValueFillPressed" })
+                resources[key] = Brush(Accent);
+    }
     public static TextBlock Text(string? text, double size = Body, string color = TextPrimary,
         FontWeight weight = FontWeight.Normal) => new()
     {
@@ -158,13 +225,8 @@ internal static class UiTheme
             new(TemplatedControl.BorderBrushProperty, Brush(Outline)), new(TemplatedControl.BorderThicknessProperty, One),
             new(ContentControl.HorizontalContentAlignmentProperty, HorizontalAlignment.Center),
             new(ContentControl.VerticalContentAlignmentProperty, VerticalAlignment.Center));
-        Add(new Style(x => x.OfType<Button>().Class("primary")), new(TemplatedControl.BackgroundProperty, Brush(Primary)),
-            new(TemplatedControl.ForegroundProperty, Brush(OnPrimary)), new(TemplatedControl.BorderThicknessProperty, Zero),
-            new(TemplatedControl.FontWeightProperty, FontWeight.SemiBold));
         Add(new Style(x => x.OfType<Button>().Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
             new Setter(ContentPresenter.ForegroundProperty, Brush(Primary)));
-        Add(new Style(x => x.OfType<Button>().Class("primary").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
-            new Setter(ContentPresenter.ForegroundProperty, Brush(OnPrimary)));
         Add(new Style(x => x.OfType<Button>().Class("onboardingContinue").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
             new Setter(ContentPresenter.ForegroundProperty, Brush("#151019")));
         Add(new Style(x => x.OfType<Button>().Class("onboardingContinue").Class(":disabled").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
@@ -192,9 +254,6 @@ internal static class UiTheme
             Add(new Style(x => x.OfType<Button>().Class(state).Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
                 new(ContentPresenter.BackgroundProperty, Brush(SurfaceElevated)), new(ContentPresenter.BorderBrushProperty, Brush(Primary)),
                 new(ContentPresenter.ForegroundProperty, Brush(Primary)));
-            Add(new Style(x => x.OfType<Button>().Class("primary").Class(state).Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
-                new(ContentPresenter.BackgroundProperty, new SolidColorBrush(Color.Parse(Primary), state == ":pressed" ? .75 : .9)),
-                new(ContentPresenter.ForegroundProperty, Brush(OnPrimary)));
         }
         Add(new Style(x => x.OfType<Button>().Class("cardAction")),
             new(Layoutable.WidthProperty, TouchSize), new(Layoutable.HeightProperty, TouchSize),
@@ -220,21 +279,16 @@ internal static class UiTheme
             new(TemplatedControl.PaddingProperty, ButtonPadding), new(TemplatedControl.FontSizeProperty, Body), new(Layoutable.MinHeightProperty, TouchSize));
         Add(new Style(x => x.OfType<TextBox>().Class(":focus-within")), new Setter(TemplatedControl.BorderBrushProperty, Brush(Primary)));
         Add(new Style(x => x.OfType<TextBox>().Template().OfType<TextBlock>().Name("PART_Watermark")), new Setter(TextBlock.ForegroundProperty, Brush(TextSecondary)));
-        Add(new Style(x => x.OfType<ProgressBar>()), new(TemplatedControl.ForegroundProperty, Brush(Primary)),
-            new(TemplatedControl.BackgroundProperty, Brush(Outline)), new(TemplatedControl.CornerRadiusProperty, new CornerRadius(ProgressRadius)));
-        Add(new Style(x => x.OfType<Slider>().Template().OfType<Thumb>()),
-            new(Layoutable.WidthProperty, SeekThumbSize), new(Layoutable.HeightProperty, SeekThumbSize),
-            new(TemplatedControl.BackgroundProperty, Brush(Primary)));
-        Add(new Style(x => x.OfType<Slider>().Class(":pressed").Template().OfType<Thumb>()),
-            new(Layoutable.WidthProperty, SeekThumbPressedSize), new(Layoutable.HeightProperty, SeekThumbPressedSize),
-            new(TemplatedControl.BackgroundProperty, Brush(Primary)));
-        Add(new Style(x => x.OfType<Slider>().Template().OfType<RepeatButton>().Name("PART_DecreaseButton")),
-            new Setter(TemplatedControl.BackgroundProperty, Brush(Primary)));
         Add(new Style(x => x.OfType<Slider>().Template().OfType<RepeatButton>().Name("PART_IncreaseButton")),
             new Setter(TemplatedControl.BackgroundProperty, Brush(Outline)));
+        // Accent-dependent styles come last so they win over the neutral button states above,
+        // and live in their own collection so a theme change replaces only them.
+        ApplyAccent();
+        styles.Add(AccentStyles);
     }
     public static void InstallResources(IResourceDictionary resources)
     {
+        _resources = resources;
         resources["SliderTrackValueFill"] = Brush(Primary);
         resources["SliderTrackFill"] = Brush(Outline);
         resources["SliderTrackThemeHeight"] = SeekHeight;

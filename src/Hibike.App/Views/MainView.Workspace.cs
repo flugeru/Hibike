@@ -222,7 +222,7 @@ public sealed partial class MainView
             if (!Equals(button.Tag, state))
             {
                 button.Tag = state;
-                button.Content = icon == "heart" ? Icons.Make(icon, active ? Accent : Muted, filled: active) : ToggleIcon(icon, active, repeatOne);
+                button.Content = icon == "heart" ? Icons.Make(icon, active ? UiTheme.Accent : Muted, filled: active) : ToggleIcon(icon, active, repeatOne);
             }
             ToolTip.SetTip(button, label);
             Avalonia.Automation.AutomationProperties.SetName(button, label);
