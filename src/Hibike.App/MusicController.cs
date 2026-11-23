@@ -27,7 +27,14 @@ public sealed partial class MusicController
     private DateTime _radioRetryAt;
     private bool _advancing;
     private int _queueSession;
-    public int CurrentQueueIndex => Current is null ? -1 : Queue.ToList().FindIndex(t => t.Source == Current.Source);
+    public int CurrentQueueIndex => Current is null ? -1 : IndexInQueue(Current.Source);
+    // Runs on every queue change; copying the queue here made bulk edits quadratic in allocations.
+    private int IndexInQueue(string source)
+    {
+        for (var index = 0; index < Queue.Count; index++)
+            if (Queue[index].Source == source) return index;
+        return -1;
+    }
     public IEnumerable<Track> Upcoming => Queue.Skip(CurrentQueueIndex + 1);
     public double Position => _restored ? _resumePosition
         : _playbackRecovery is { } recovery && Current?.Source == recovery.Track.Source ? recovery.Position
@@ -85,9 +92,18 @@ public sealed partial class MusicController
             Dispatcher.UIThread.Post(async () =>
             {
                 if (generation != _playGeneration || LoadingAudio || _playbackRecovery is not null) return;
-                RecordFinish();
-                if (Repeat && Current is not null) await PlayAsync(Current, CurrentQueueIndex);
-                else await NextAsync();
+                // async void on the dispatcher: an escaping exception would terminate the app.
+                try
+                {
+                    RecordFinish();
+                    if (Repeat && Current is not null) await PlayAsync(Current, CurrentQueueIndex);
+                    else await NextAsync();
+                }
+                catch (Exception error) when (error is not OutOfMemoryException)
+                {
+                    PlaybackDiagnostics.WriteFailure(DiagnosticSector.Playback, "Avançar faixa", error);
+                    Fail("Não foi possível avançar para a próxima faixa: " + error.Message);
+                }
             });
         };
         Player.Failed += (_, message) =>
@@ -208,7 +224,7 @@ public sealed partial class MusicController
     private void AddToQueue(Track track, bool notify = true)
     {
         if (track.IsArtist) return;
-        var existing = Queue.ToList().FindIndex(t => t.Source == track.Source);
+        var existing = IndexInQueue(track.Source);
         if (existing >= 0 && existing == _queueIndex) { if (notify) SetStatus("Faixa já está tocando."); return; }
         if (existing > _queueIndex && !IsRecommended(Queue[existing])) { if (notify) SetStatus("Faixa já está na fila."); return; }
         if (existing >= 0) Queue.RemoveAt(existing);

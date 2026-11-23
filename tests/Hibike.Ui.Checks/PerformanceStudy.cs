@@ -85,6 +85,23 @@ internal static partial class Program
         results["savedPreferencesBytes"] = new FileInfo(Path.Combine(music.DataDirectory, "personalization.json")).Length;
         results["saveSnapshotCapturedOnUiThread"] = Dispatcher.UIThread.CheckAccess();
 
+        // Engine workloads that run on the UI thread: bulk queue edits and radio de-duplication.
+        var bulk = Enumerable.Range(0, PlaybackSessionStore.MaxQueue).Select(i => fixture[i % fixture.Length] with
+        { Id = "bulk-" + i, Source = "bulk-" + i, Title = "Bulk sample " + i + " (Official Video)" }).ToArray();
+        results["replaceQueue1000Tracks"] = Measure(() => music.ReplaceQueue(bulk), 5);
+        var sameSong = typeof(MusicController).GetMethod("SameRadioSong", BindingFlags.Static | BindingFlags.NonPublic)!
+            .CreateDelegate<Func<Track, Track, bool>>();
+        var excluded = bulk.Take(1000).Concat(fixture.Take(100)).ToArray();
+        var radioCandidates = Enumerable.Range(0, 100).Select(i => new Track("cand-" + i, "Candidate song " + i + " - Live",
+            "Artist " + i % 12, "cand-" + i, 200 + i, MusicArtist: i % 3 == 0 ? "Artist " + i % 12 : null)).ToArray();
+        // Candidates are new objects on every radio request; queue and history persist.
+        results["radioMatch100CandidatesVs1100Queued"] = Measure(() =>
+        {
+            foreach (var candidate in radioCandidates.Select(c => c with { }))
+                _ = excluded.Any(t => sameSong(t, candidate));
+        }, 3);
+        Set("_page", "home"); music.ReplaceQueue(fixture.Take(10)); Call("Refresh"); await Task.Delay(50);
+
         var artworkType = typeof(MainView).Assembly.GetType("Hibike.App.Views.Artwork")!;
         var bitmapField = artworkType.GetField("_bitmap", hidden)!;
         var asset = Path.Combine(music.DataDirectory, "offline-cover.png");

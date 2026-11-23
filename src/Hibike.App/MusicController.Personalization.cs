@@ -6,29 +6,43 @@ namespace Hibike.App;
 
 public sealed partial class MusicController
 {
-    private static bool IsRadioLoop(Track track) => System.Text.RegularExpressions.Regex.IsMatch(track.Title,
-        @"\b(extended|loop|slowed|reverb|sped\s*up|nightcore|\d+\s*(hours?|hrs?|horas?))\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    private static bool IsRadioLoop(Track track) => RadioLoopPattern().IsMatch(track.Title);
+
+    // Radio de-duplication compares every candidate with the whole queue and history on the UI
+    // thread. Each track's normalized words and artist are derived once per Track instance
+    // instead of once per comparison; the matching rules themselves are unchanged.
+    private sealed class RadioSongSignature(Track track)
+    {
+        public readonly HashSet<string> Words = RadioWords(track);
+        public readonly string Artist = RadioArtist(track);
+        public readonly bool HasMarker = RadioMarkerPattern().IsMatch(track.Title);
+    }
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Track, RadioSongSignature> RadioSignatures = new();
+    private static RadioSongSignature Signature(Track track) => RadioSignatures.GetValue(track, static t => new(t));
+
+    private static HashSet<string> RadioWords(Track track)
+    {
+        var title = track.MusicTitle ?? TrackTextFormatter.Title(track.Title, track.Artist);
+        title = RadioParenthesesPattern().Replace(title, " ");
+        title = RadioMarksPattern().Replace(title.Normalize(System.Text.NormalizationForm.FormKD).ToLowerInvariant(), "");
+        return RadioWordPattern().Matches(title)
+            .Select(m => m.Value).Where(w => (w.Length > 1 || int.TryParse(w, out _))
+                && w is not ("official" or "audio" or "video" or "mv" or "pv" or "full" or "lyrics" or "lyric" or "ost" or "soundtrack" or "extended" or "cover" or "music" or "original" or "piano" or "instrumental" or "remaster" or "remastered"))
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
+    private static string RadioArtist(Track t) => RadioArtistPattern().Replace(
+        (t.MusicArtist ?? TrackTextFormatter.Artist(t.Artist)).Normalize(System.Text.NormalizationForm.FormKC).ToLowerInvariant(), "");
 
     internal static bool SameRadioSong(Track left, Track right)
     {
-        static HashSet<string> Words(Track track)
-        {
-            var title = track.MusicTitle ?? TrackTextFormatter.Title(track.Title, track.Artist);
-            title = System.Text.RegularExpressions.Regex.Replace(title, @"\([^)]*\)", " ");
-            title = System.Text.RegularExpressions.Regex.Replace(title.Normalize(System.Text.NormalizationForm.FormKD).ToLowerInvariant(), @"\p{Mn}", "");
-            return System.Text.RegularExpressions.Regex.Matches(title, @"[\p{L}\p{N}]+")
-                .Select(m => m.Value).Where(w => (w.Length > 1 || int.TryParse(w, out _))
-                    && w is not ("official" or "audio" or "video" or "mv" or "pv" or "full" or "lyrics" or "lyric" or "ost" or "soundtrack" or "extended" or "cover" or "music" or "original" or "piano" or "instrumental" or "remaster" or "remastered"))
-                .ToHashSet(StringComparer.Ordinal);
-        }
         if (left.Source.Equals(right.Source, StringComparison.OrdinalIgnoreCase)) return true;
         if (left.EquivalentVideoIds?.Contains(right.Id) == true || right.EquivalentVideoIds?.Contains(left.Id) == true
             || left.EquivalentVideoIds is { } ids && right.EquivalentVideoIds is { } others && ids.Intersect(others).Any()) return true;
-        var a = Words(left); var b = Words(right);
+        var leftSignature = Signature(left); var rightSignature = Signature(right);
+        var a = leftSignature.Words; var b = rightSignature.Words;
         if (a.Count == 0 || b.Count == 0) return false;
-        static string Artist(Track t) => System.Text.RegularExpressions.Regex.Replace(
-            (t.MusicArtist ?? TrackTextFormatter.Artist(t.Artist)).Normalize(System.Text.NormalizationForm.FormKC).ToLowerInvariant(), @"[^\p{L}\p{N}]", "");
-        var sameArtist = Artist(left).Length > 0 && Artist(left) == Artist(right);
+        var sameArtist = leftSignature.Artist.Length > 0 && leftSignature.Artist == rightSignature.Artist;
         var durationClose = left.DurationSeconds > 0 && right.DurationSeconds > 0
             && Math.Abs(left.DurationSeconds - right.DurationSeconds) <= Math.Max(12, Math.Min(left.DurationSeconds, right.DurationSeconds) * .06);
         var structuredConflict = left.MusicArtist is not null && right.MusicArtist is not null && !sameArtist;
@@ -40,16 +54,30 @@ public sealed partial class MusicController
             if (sameArtist) return true;
             if (!durationClose) return false;
             if (!a.SetEquals(b)) return true;
-            if (System.Text.RegularExpressions.Regex.IsMatch(left.Title + " " + right.Title, @"\b(official|mv|lyrics?|ending)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase)) return true;
-            return Artist(left).Length == 0 || Artist(right).Length == 0
+            // Equivalent to matching the joined titles: a marker word cannot span the separating space.
+            if (leftSignature.HasMarker || rightSignature.HasMarker) return true;
+            return leftSignature.Artist.Length == 0 || rightSignature.Artist.Length == 0
                 || left.MusicArtist is not null && right.MusicArtist is null
                 || right.MusicArtist is not null && left.MusicArtist is null;
         }
-        var overlap = a.Intersect(b).Count();
+        var overlap = a.Count <= b.Count ? a.Count(b.Contains) : b.Count(a.Contains);
         // ponytail: metadata fallback cannot recognize fully translated titles; use recording IDs/fingerprints when available.
         return a.SetEquals(b) && (sameArtist || durationClose) || Math.Min(a.Count, b.Count) >= 3 && overlap >= Math.Ceiling(Math.Min(a.Count, b.Count) * .8)
             && (a.IsSubsetOf(b) || b.IsSubsetOf(a) || overlap >= Math.Ceiling(Math.Max(a.Count, b.Count) * .75));
     }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\b(extended|loop|slowed|reverb|sped\s*up|nightcore|\d+\s*(hours?|hrs?|horas?))\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    private static partial System.Text.RegularExpressions.Regex RadioLoopPattern();
+    [System.Text.RegularExpressions.GeneratedRegex(@"\b(official|mv|lyrics?|ending)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    private static partial System.Text.RegularExpressions.Regex RadioMarkerPattern();
+    [System.Text.RegularExpressions.GeneratedRegex(@"\([^)]*\)")]
+    private static partial System.Text.RegularExpressions.Regex RadioParenthesesPattern();
+    [System.Text.RegularExpressions.GeneratedRegex(@"\p{Mn}")]
+    private static partial System.Text.RegularExpressions.Regex RadioMarksPattern();
+    [System.Text.RegularExpressions.GeneratedRegex(@"[\p{L}\p{N}]+")]
+    private static partial System.Text.RegularExpressions.Regex RadioWordPattern();
+    [System.Text.RegularExpressions.GeneratedRegex(@"[^\p{L}\p{N}]")]
+    private static partial System.Text.RegularExpressions.Regex RadioArtistPattern();
     public sealed class ListeningStat
     {
         public double Seconds { get; set; }
@@ -197,7 +225,7 @@ public sealed partial class MusicController
     public void PlayNext(Track track)
     {
         if (track.IsArtist) return;
-        var existing = Queue.ToList().FindIndex(t => t.Source == track.Source);
+        var existing = IndexInQueue(track.Source);
         if (track.Source == Current?.Source) return;
         if (existing >= 0) Queue.RemoveAt(existing);
         _recommended.Remove(track.Source);
