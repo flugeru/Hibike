@@ -22,13 +22,12 @@ public sealed partial class MainView
         _topMenuLayer.Children.Add(_topMenuPanel);
         _topMenuLayer.PointerPressed += (_, e) => { if (e.Source == _topMenuLayer) { CloseTopMenu(); e.Handled = true; } };
         Put(content, _topMenuLayer, 1, 0); Grid.SetRowSpan(_topMenuLayer, 2);
-        _topMenuLayer.SizeChanged += (_, _) => { if (_topMenuOpen) SizeTopMenu(); };
-    }
-    private void SizeTopMenu()
-    {
-        if (_topMenuPanel.Child is not ScrollViewer scroll || scroll.Content is not StackPanel items) return;
-        items.Measure(new Size(Math.Max(0, _main.Bounds.Width - 32), double.PositiveInfinity));
-        _topMenuPanel.Height = Math.Min(items.DesiredSize.Height + 16, Math.Max(0, _topMenuLayer.Bounds.Height));
+        // The sheet sizes to its items and scrolls past the available height. Computing a fixed
+        // height from the hidden layer gave 0 on first open, so the sheet jumped open a frame later.
+        _topMenuLayer.SizeChanged += (_, e) => _topMenuPanel.MaxHeight = Math.Max(0, e.NewSize.Height);
+        // The scrim fades with the sheet instead of appearing and vanishing at once.
+        _topMenuLayer.Transitions = [new Avalonia.Animation.DoubleTransition
+            { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(180), Easing = new Avalonia.Animation.Easings.CubicEaseOut() }];
     }
     private void ToggleTopMenu()
     {
@@ -58,18 +57,26 @@ public sealed partial class MainView
         foreach (var playlist in _music.Playlists.Where(p => p.Pinned))
             Add("queue", playlist.Name, () => { ShowLocalPlaylist(playlist); return Task.CompletedTask; });
         _topMenuPanel.Child = new ScrollViewer { Content = items, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
-        _topMenuVersion++; _topMenuOpen = true; _topMenuLayer.IsVisible = true;
-        SizeTopMenu();
-        _topMenuPanel.IsHitTestVisible = true;
-        _topMenuPanel.IsEnabled = true;
+        _topMenuVersion++; _topMenuOpen = true;
+        _topMenuPanel.IsHitTestVisible = _topMenuLayer.IsHitTestVisible = true;
+        // Start the scrim from transparent without animating that reset, then fade it in.
+        var fade = _topMenuLayer.Transitions;
+        _topMenuLayer.Transitions = null;
+        _topMenuLayer.Opacity = UiMotion.Reduced ? 1 : 0;
+        _topMenuLayer.IsVisible = true;
+        _topMenuLayer.Transitions = fade;
+        _topMenuLayer.Opacity = 1;
         UiMotion.Enter(_topMenuPanel, -12);
     }
     private async void CloseTopMenu()
     {
         if (!_topMenuOpen) return;
         var version = ++_topMenuVersion; _topMenuOpen = false;
+        // Only stop input: disabling the sheet restyled every item to 40 % opacity before the fade.
         _topMenuPanel.IsHitTestVisible = false;
-        _topMenuPanel.IsEnabled = false;
+        _topMenuLayer.IsHitTestVisible = false;
+        if (UiMotion.Reduced) { var fade = _topMenuLayer.Transitions; _topMenuLayer.Transitions = null; _topMenuLayer.Opacity = 0; _topMenuLayer.Transitions = fade; }
+        else _topMenuLayer.Opacity = 0;
         await UiMotion.ExitAsync(_topMenuPanel, -12);
         if (version == _topMenuVersion) _topMenuLayer.IsVisible = false;
     }
