@@ -45,6 +45,7 @@ internal static class Icons
             "clear-selection" => "M3,5 L21,5 M3,12 L10,12 M3,19 L10,19 M14,13 L21,20 M21,13 L14,20",
             "playlist-add" => "M3,5 L20,5 M3,12 L14,12 M3,19 L10,19 M15,17 L23,17 M19,13 L19,21",
             "close" => "M5,5 L19,19 M19,5 L5,19",
+            "note" => "M9,20 A3,3 0 1 0 9,14 A3,3 0 1 0 9,20 M12,17 L12,4 L20,2 L20,6 L12,8",
             _ => "M3,9 L3,15 M8,4 L8,20 M13,7 L13,17 M18,2 L18,22 M23,9 L23,15"
         }),
         Stretch = Stretch.None,

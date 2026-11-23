@@ -117,7 +117,7 @@ public sealed partial class MainView
         _dockTitle.TextTrimming = _dockArtist.TextTrimming = TextTrimming.CharacterEllipsis; labels.Children.Add(_dockTitle); labels.Children.Add(_dockArtist); Put(metadata, labels, 0, 1);
         var open = ActionButton("", () => { ShowPlayer(); return Task.CompletedTask; }); open.Content = metadata; open.Classes.Add("subtle"); open.Padding = new Thickness(0); open.HorizontalContentAlignment = HorizontalAlignment.Stretch;
         Avalonia.Automation.AutomationProperties.SetName(open, "Expandir reprodução"); grid.Children.Add(open);
-        var center = new Grid { RowDefinitions = new("Auto,Auto,Auto"), MaxWidth = 720, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var center = new Grid { RowDefinitions = new("Auto,Auto"), RowSpacing = 2, MaxWidth = 720, HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Center };
         var controls = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 12 };
         _dockShuffle = IconButton("shuffle", "Embaralhar reprodução", TogglePlaybackShuffleAsync);
         controls.Children.Add(_dockShuffle);
@@ -130,30 +130,60 @@ public sealed partial class MainView
         _dockSeek.AddHandler(PointerReleasedEvent, (_, _) => { _dockSeeking = false; _music.Player.Seek(_dockSeek.Value); }, Avalonia.Interactivity.RoutingStrategies.Bubble, true);
         _dockSeek.KeyUp += (_, _) => _music.Player.Seek(_dockSeek.Value);
         Avalonia.Automation.AutomationProperties.SetName(_dockSeek, "Posição da reprodução");
-        Put(center, _dockSeek, 1, 0); Put(grid, center, 0, 1);
-        var times = new Grid { ColumnDefinitions = new("*,Auto") };
-        times.Children.Add(_dockTime); Put(times, _dockDuration, 0, 1); Put(center, times, 2, 0);
-        var rightHost = new Grid { RowDefinitions = new("Auto,Auto"), RowSpacing = 4, VerticalAlignment = VerticalAlignment.Center };
-        var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-        _dockQuality.TextAlignment = TextAlignment.Right;
+        // Elapsed and total time sit beside the seek bar, as in desktop players, keeping the dock compact.
+        var timeline = new Grid { ColumnDefinitions = new("Auto,*,Auto"), ColumnSpacing = 10 };
+        _dockTime.VerticalAlignment = _dockDuration.VerticalAlignment = VerticalAlignment.Center;
+        _dockTime.MinWidth = _dockDuration.MinWidth = 36;
+        _dockTime.TextAlignment = TextAlignment.Right;
+        timeline.Children.Add(_dockTime); Put(timeline, _dockSeek, 0, 1); Put(timeline, _dockDuration, 0, 2);
+        Put(center, timeline, 1, 0); Put(grid, center, 0, 1);
+        // Audio quality, source, favorite, queue and volume share one right-aligned row when the
+        // column is wide enough; otherwise the quality badge sits right-aligned above the actions.
+        // They used to be two centered rows that did not line up with the transport controls.
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
         _dockQuality.VerticalAlignment = VerticalAlignment.Center;
-        _dockQuality.TextWrapping = TextWrapping.Wrap;
-        _dockQuality.TextTrimming = TextTrimming.None;
+        _dockQuality.TextWrapping = TextWrapping.NoWrap;
+        _dockQuality.TextTrimming = TextTrimming.CharacterEllipsis;
         _dockQuality.TextAlignment = TextAlignment.Center;
         _dockQualityBadge = AudioInfoBadge(_dockQuality);
-        _dockQualityBadge.HorizontalAlignment = HorizontalAlignment.Center;
-        rightHost.Children.Add(_dockQualityBadge);
-        _dockFavorite = IconButton("heart", "Alternar favorito", TogglePlaybackFavoriteAsync);
-        right.Children.Add(_dockFavorite);
+        _dockQualityBadge.VerticalAlignment = VerticalAlignment.Center;
+        _dockQualityBadge.HorizontalAlignment = HorizontalAlignment.Right;
+        _dockQualityBadge.MaxWidth = 200;
         _sourceButton = IconButton("library", "Fonte de reprodução", ShowPlaybackSourcesAsync);
         _sourceButton.IsVisible = false;
-        _sourceButton.VerticalAlignment = VerticalAlignment.Center;
-        var sourceAndControls = new Grid { ColumnDefinitions = new("Auto,*"), ColumnSpacing = 12 };
-        sourceAndControls.Children.Add(_sourceButton); Put(sourceAndControls, rightHost, 0, 1);
-        right.Children.Add(IconButton("queue", "Mostrar ou ocultar fila", ToggleDesktopQueueAsync));
-        var volume = _dockVolume = new Slider { Minimum = 0, Maximum = 1, Value = _music.Player.Volume, Width = 88, MinHeight = 48 };
+        actions.Children.Add(_sourceButton);
+        _dockFavorite = IconButton("heart", "Alternar favorito", TogglePlaybackFavoriteAsync);
+        actions.Children.Add(_dockFavorite);
+        actions.Children.Add(IconButton("queue", "Mostrar ou ocultar fila", ToggleDesktopQueueAsync));
+        var volumeIcon = Icons.Make("volume", Muted, 20);
+        volumeIcon.Margin = new Thickness(6, 0, 0, 0);
+        actions.Children.Add(volumeIcon);
+        var volume = _dockVolume = new Slider { Minimum = 0, Maximum = 1, Value = _music.Player.Volume, Width = 96, MinHeight = 48, VerticalAlignment = VerticalAlignment.Center };
         Avalonia.Automation.AutomationProperties.SetName(volume, "Volume da barra"); volume.ValueChanged += (_, _) => _music.Volume = volume.Value;
-        right.Children.Add(volume); Put(rightHost, right, 1, 0); Put(grid, sourceAndControls, 0, 2);
+        actions.Children.Add(volume);
+        var right = new Grid { RowDefinitions = new("Auto,Auto"), ColumnDefinitions = new("Auto,Auto"), ColumnSpacing = 12, RowSpacing = 2,
+            HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+        right.Children.Add(_dockQualityBadge); right.Children.Add(actions);
+        bool? inline = null;
+        void ArrangeRight()
+        {
+            var available = grid.ColumnDefinitions[2].ActualWidth;
+            if (available <= 0) return;
+            _dockQualityBadge.Measure(Size.Infinity); actions.Measure(Size.Infinity);
+            var fits = !_dockQualityBadge.IsVisible
+                || _dockQualityBadge.DesiredSize.Width + right.ColumnSpacing + actions.DesiredSize.Width <= available;
+            if (inline == fits) return;
+            inline = fits;
+            Grid.SetRow(_dockQualityBadge, 0); Grid.SetColumn(_dockQualityBadge, 0);
+            Grid.SetRow(actions, fits ? 0 : 1); Grid.SetColumn(actions, fits ? 1 : 0);
+            Grid.SetColumnSpan(_dockQualityBadge, fits ? 1 : 2); Grid.SetColumnSpan(actions, fits ? 1 : 2);
+        }
+        // Re-evaluate only when the dock or the badge changes size, or the badge appears/disappears.
+        grid.SizeChanged += (_, _) => ArrangeRight();
+        _dockQualityBadge.SizeChanged += (_, _) => ArrangeRight();
+        _dockQualityBadge.PropertyChanged += (_, e) =>
+        { if (e.Property == IsVisibleProperty) Dispatcher.UIThread.Post(ArrangeRight, DispatcherPriority.Loaded); };
+        Put(grid, right, 0, 2);
         _desktopDock.Child = grid; _desktopDock.Padding = new Thickness(20, 12, 20, 8); _desktopDock.Background = UiTheme.Brush(UiTheme.Surface);
         _desktopDock.BorderBrush = UiTheme.Brush(UiTheme.Outline); _desktopDock.BorderThickness = UiTheme.TopBorder;
     }

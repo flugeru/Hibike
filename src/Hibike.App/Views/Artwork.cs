@@ -20,7 +20,13 @@ internal sealed class Artwork : Border
         BorderBrush = UiTheme.Brush(UiTheme.Outline); BorderThickness = UiTheme.One;
         if (naturalAspect) { Background = Brushes.Transparent; BorderThickness = new Thickness(0); CornerRadius = new(8); }
         var panel = new Grid();
-        panel.Children.Add(Icons.Make("wave", UiTheme.Primary, UiTheme.IconSize));
+        // A quiet, proportional note on the surface tile reads as "cover pending/absent" at every
+        // size; the old full-white wave looked like playback activity and vanished on black cards.
+        var placeholder = Icons.Make("note", UiTheme.TextDisabled, Math.Clamp(size * .3, 18, 72));
+        panel.Children.Add(placeholder);
+        // Player covers are stretched past their nominal size; keep the note proportional.
+        SizeChanged += (_, e) => placeholder.Width = placeholder.Height =
+            Math.Clamp(Math.Min(e.NewSize.Width, e.NewSize.Height) * .3, 18, 96);
         var picture = new Image { Stretch = stretch, Opacity = 0, Transitions = Fade() };
         panel.Children.Add(picture);
         static Avalonia.Animation.Transitions Fade() => new() { new Avalonia.Animation.DoubleTransition

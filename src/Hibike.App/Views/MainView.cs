@@ -538,7 +538,12 @@ public sealed partial class MainView : UserControl
         Shelf("Descubra algo novo", "Artistas ainda não explorados", _music.HomeRecommendations.Skip(12).Where(t => !familiar.Contains(TrackTextFormatter.Artist(t.Artist))).Take(12).Select(t => Card(t, () => TrackCard(t))));
         var albumTracks = _music.HomeRecommendations.Concat(_music.Favorites).Where(t => !string.IsNullOrWhiteSpace(t.Album)).GroupBy(t => (t.Artist, t.Album));
         Shelf("Álbuns para você", "Álbuns identificados no catálogo · faixas disponíveis", albumTracks.Take(12).Select(g => Card(g.First() with { Title = g.Key.Album! }, () => CoverCard(g.First() with { Title = g.Key.Album! }, g.Key.Artist, () => { OpenLocalCollection(g.Key.Album!, g); return Task.CompletedTask; }, songActions: false))));
-        if (_music.HomeLoading || !string.IsNullOrEmpty(_music.HomeMessage)) next.Add(Text(_music.HomeLoading ? "Preparando descobertas… Sua biblioteca já está disponível." : _music.HomeMessage, UiTheme.Caption, Muted));
+        if (_music.HomeLoading || !string.IsNullOrEmpty(_music.HomeMessage))
+        {
+            var homeNote = Text(_music.HomeLoading ? "Preparando descobertas… Sua biblioteca já está disponível." : _music.HomeMessage, UiTheme.Caption, Muted);
+            homeNote.TextWrapping = TextWrapping.Wrap;
+            next.Add(homeNote);
+        }
         var recommended = _music.Queue.Where(_music.IsRecommended).Take(12).ToArray();
         if (recommended.Length > 0) Shelf("Porque você ouviu…", _music.PlaybackContext, recommended.Select(t => Card(t, () => TrackCard(t))));
         if (_music.History.Count >= 5)
@@ -682,7 +687,8 @@ public sealed partial class MainView : UserControl
         var artwork = new Artwork(track, size, highQuality: true)
         {
             DeferOffscreen = _page == "home", CornerRadius = new(roundArtwork ? size / 2 : 16),
-            Background = _page == "library" ? UiTheme.Brush(UiTheme.SurfaceElevated) : Brushes.Transparent,
+            // Cards without artwork kept a transparent tile and disappeared on the black page.
+            Background = UiTheme.Brush(UiTheme.SurfaceElevated),
             BorderThickness = new Thickness(0)
         };
         cover.Children.Add(artwork);
@@ -1006,8 +1012,11 @@ public sealed partial class MainView : UserControl
             HorizontalAlignment = HorizontalAlignment.Stretch };
         var queuePanel = new Grid { RowDefinitions = new("Auto,Auto,*"), RowSpacing = UiTheme.SectionGap };
         desktopLayout.HorizontalAlignment = HorizontalAlignment.Stretch;
-        var queueHeader = new Grid { ColumnDefinitions = new("*,Auto") };
-        var queueHeading = _detailQueueHeading = UiTheme.Text(_music.PlaybackContext, UiTheme.SectionTitle, weight: FontWeight.SemiBold); queueHeading.TextTrimming = TextTrimming.CharacterEllipsis; queueHeader.Children.Add(queueHeading);
+        var queueHeader = new Grid { ColumnDefinitions = new("*,Auto"), ColumnSpacing = UiTheme.CardGap };
+        var queueHeading = _detailQueueHeading = UiTheme.Text(_music.PlaybackContext, UiTheme.SectionTitle, weight: FontWeight.SemiBold);
+        // Long radio names wrap to a second line instead of running into "Limpar fila".
+        queueHeading.TextWrapping = TextWrapping.Wrap; queueHeading.MaxLines = 2; queueHeading.TextTrimming = TextTrimming.CharacterEllipsis;
+        queueHeading.VerticalAlignment = VerticalAlignment.Center; queueHeader.Children.Add(queueHeading);
         Put(queueHeader, ActionButton("Limpar fila", () => { _music.ClearQueue(); return Task.CompletedTask; }), 0, 1);
         queuePanel.Children.Add(queueHeader);
         var playerRadio = new WrapPanel { ItemSpacing = 8 };
@@ -1046,6 +1055,7 @@ public sealed partial class MainView : UserControl
             return Task.CompletedTask;
         });
         bool? wideLayout = null;
+        Border? wideQuality = null;
         void ArrangeTransport()
         {
             if (wideLayout != true || transport.Bounds.Width <= 0) return;
@@ -1054,8 +1064,11 @@ public sealed partial class MainView : UserControl
             var controlsWidth = controls.Bounds.Width;
             var ideal = (transport.Bounds.Width - controlsWidth) / 2 - transport.ColumnSpacing;
             var required = text.Width + favorite!.Bounds.Width + UiTheme.CompactGap;
+            // A long title may push the controls right, but never so far that the audio-quality
+            // badge in the last column is clipped at the window edge.
+            var badge = wideQuality is { IsVisible: true } ? wideQuality.DesiredSize.Width : 0;
             var left = Math.Clamp(Math.Max(ideal, required), 0, Math.Max(0,
-                transport.Bounds.Width - controlsWidth - UiTheme.PageGap));
+                transport.Bounds.Width - controlsWidth - 2 * transport.ColumnSpacing - badge));
             if (Math.Abs(transport.ColumnDefinitions[0].Width.Value - left) > .5)
                 transport.ColumnDefinitions[0].Width = new GridLength(left);
         }
@@ -1085,11 +1098,13 @@ public sealed partial class MainView : UserControl
                     Put(transport, metadata, 0, 0); metadata.VerticalAlignment = VerticalAlignment.Center;
                     Put(transport, controls, 0, 1);
                     _expandedQuality = Text("", UiTheme.Caption, Muted);
-                    _expandedQuality.TextWrapping = TextWrapping.Wrap;
+                    _expandedQuality.TextWrapping = TextWrapping.NoWrap;
+                    _expandedQuality.TextTrimming = TextTrimming.CharacterEllipsis;
                     _expandedQuality.TextAlignment = TextAlignment.Center;
                     _expandedQuality.VerticalAlignment = VerticalAlignment.Center;
-                    var qualityBadge = AudioInfoBadge(_expandedQuality);
+                    var qualityBadge = wideQuality = AudioInfoBadge(_expandedQuality);
                     qualityBadge.HorizontalAlignment = HorizontalAlignment.Right;
+                    qualityBadge.VerticalAlignment = VerticalAlignment.Center;
                     Put(transport, qualityBadge, 0, 2);
                     RefreshDock();
                     Put(transport, seek, 1, 0); Grid.SetColumnSpan(seek, 3);
