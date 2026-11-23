@@ -7,12 +7,13 @@ namespace Hibike.App.Views;
 
 public sealed partial class MainView
 {
-    private readonly Grid _topMenuLayer = new() { IsVisible = false, Background = Brushes.Transparent };
+    // A dimmed page behind an elevated sheet makes the menu read as a layer above the content.
+    private readonly Grid _topMenuLayer = new() { IsVisible = false, Background = UiTheme.Brush("#99000000") };
     private readonly Border _topMenuPanel = new()
     {
         ClipToBounds = true, VerticalAlignment = VerticalAlignment.Top,
-        Background = UiTheme.Brush(UiTheme.Surface), BorderBrush = UiTheme.Brush(UiTheme.Outline),
-        BorderThickness = new Thickness(1), CornerRadius = new(16)
+        Background = UiTheme.Brush("#161616"), BorderBrush = UiTheme.Brush("#262626"),
+        BorderThickness = new Thickness(1), CornerRadius = new(18)
     };
     private bool _topMenuOpen;
     private int _topMenuVersion;

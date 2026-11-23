@@ -298,6 +298,11 @@ public sealed partial class MainView : UserControl
         Put(grid, _miniRecoveryNotice, 1, 0);
         Grid.SetColumnSpan(_miniRecoveryNotice, 4);
         var card = UiTheme.Card(grid, padding: 0);
+        // Floats over scrolling content: its own surface, a hairline edge and a soft shadow keep it
+        // separate from covers passing underneath.
+        card.Background = UiTheme.Brush("#161616");
+        card.BorderBrush = UiTheme.Brush("#262626"); card.BorderThickness = UiTheme.One;
+        card.BoxShadow = BoxShadows.Parse("0 10 28 0 #E6000000");
         card.Margin = UiTheme.MiniMargin;
         card.ClipToBounds = true;
         card.MaxWidth = UiTheme.PageMaxWidth - UiTheme.PageMargin.Left - UiTheme.PageMargin.Right;
@@ -442,7 +447,8 @@ public sealed partial class MainView : UserControl
         _brandIcon.IsVisible = _page == "home" && compactHeader && !ShowOfflineHome;
         _pageTitle.IsVisible = _page != "home" || compactHeader || ShowOfflineHome;
         _pageTitle.Text = _page switch { "home" when ShowOfflineHome => _music.OfflineMode ? "Modo offline" : "Sem conexão", "home" => "Hibike", "downloads" => "Downloads", "settings" => "Configurações", "account" => "Minha conta", "collection" => "Coleção", _ => "Buscar" };
-        _pageTitle.FontSize = _page == "downloads" ? UiTheme.PageTitle : UiTheme.TopBarTitle;
+        // Top-level pages share the large title; sub-pages with a back button keep the compact one.
+        _pageTitle.FontSize = _page is "downloads" or "explore" ? UiTheme.PageTitle : UiTheme.TopBarTitle;
         var showOnlineHome = _page == "home" && !ShowOfflineHome;
         _homeScroll.IsVisible = showOnlineHome;
         if (_homeRefreshContainer is not null) _homeRefreshContainer.IsVisible = showOnlineHome;

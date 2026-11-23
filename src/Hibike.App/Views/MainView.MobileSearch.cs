@@ -54,7 +54,7 @@ public sealed partial class MainView
         _mobileSearchLocal = ScopeButton("Sua biblioteca");
         scopes.Children.Add(_mobileSearchOnline);
         scopes.Children.Add(_mobileSearchLocal);
-        var types = new StackPanel { Orientation = Orientation.Horizontal, Spacing = UiTheme.ProgressRadius };
+        var types = new StackPanel { Orientation = Orientation.Horizontal, Spacing = UiTheme.CompactGap };
         filterBar.Children.Add(UiTheme.FadingScroll(types, horizontal: true));
         foreach (var kind in new[] { "Tudo", "Músicas", "Artistas", "Álbuns", "Playlists" })
         {

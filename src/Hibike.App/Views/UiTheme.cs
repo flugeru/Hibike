@@ -13,7 +13,9 @@ internal static class UiTheme
     public const string Background = "#000000", Surface = "#0D0D0D", SurfaceElevated = "#191919",
         Outline = "#2B2B2B", Primary = "#F2F2F2", PrimaryContainer = "#242424", OnPrimary = "#080808",
         Success = "#71D6A3", Warning = "#FFCC80", Error = "#FF8A8A", TextPrimary = "#F5F5F5",
-        TextSecondary = "#B0B0B0", TextDisabled = "#686868", Scrim = "#CC000000";
+        TextSecondary = "#B0B0B0", TextDisabled = "#686868", Scrim = "#CC000000",
+        // Tonal surfaces replace 1 px outlines on controls: filled, borderless, brighter on interaction.
+        Tonal = "#171717", TonalHover = "#202020", TonalPressed = "#282828", CardSurface = "#111111";
     public const double CardRadius = 18, ControlRadius = 12, ThumbRadius = 8, RoundRadius = 22,
         MobileGutter = 10, CompactGap = 8, SectionGap = 14, PageGap = 18, CardGap = 16, CardPadding = 20,
         TopBarTitle = 18, PageTitle = 28, SectionTitle = 18, DialogTitle = 22, Body = 15, Caption = 13, Label = 12,
@@ -163,13 +165,13 @@ internal static class UiTheme
     };
     public static Border Card(Control child, double padding = CardPadding) => new()
     {
-        Child = child, Background = Brush(Surface), BorderBrush = Brush(Outline), BorderThickness = One,
+        Child = child, Background = Brush(CardSurface), BorderThickness = Zero,
         CornerRadius = new(CardRadius), Padding = new(padding)
     };
     public static Border Chip(Control child) => new()
     {
-        Child = child, Background = Brush(SurfaceElevated), BorderBrush = Brush(Outline),
-        BorderThickness = One, CornerRadius = new(ThumbRadius), Padding = ChipPadding
+        Child = child, Background = Brush(Tonal), BorderThickness = Zero,
+        CornerRadius = new(ThumbRadius), Padding = ChipPadding
     };
     public static Border AudioBadge(Control child) => new()
     {
@@ -184,8 +186,8 @@ internal static class UiTheme
     };
     public static Border Inner(Control child) => new()
     {
-        Child = child, Background = Brush(SurfaceElevated), BorderBrush = Brush(Outline),
-        BorderThickness = One, CornerRadius = new(ControlRadius), Padding = InnerPadding
+        Child = child, Background = Brush(Tonal), BorderThickness = Zero,
+        CornerRadius = new(ControlRadius), Padding = InnerPadding
     };
     public static void StateBanner(Border border, string color)
     {
@@ -221,8 +223,8 @@ internal static class UiTheme
         Add(new Style(x => x.OfType<Button>()), new(TemplatedControl.CornerRadiusProperty, new CornerRadius(ControlRadius)),
             new(Layoutable.MinHeightProperty, TouchSize), new(Layoutable.MinWidthProperty, TouchSize),
             new(TemplatedControl.PaddingProperty, ButtonPadding), new(TemplatedControl.FontSizeProperty, ButtonText),
-            new(TemplatedControl.ForegroundProperty, Brush(Primary)), new(TemplatedControl.BackgroundProperty, Brushes.Transparent),
-            new(TemplatedControl.BorderBrushProperty, Brush(Outline)), new(TemplatedControl.BorderThicknessProperty, One),
+            new(TemplatedControl.ForegroundProperty, Brush(Primary)), new(TemplatedControl.BackgroundProperty, Brush(Tonal)),
+            new(TemplatedControl.BorderBrushProperty, Brushes.Transparent), new(TemplatedControl.BorderThicknessProperty, Zero),
             new(ContentControl.HorizontalContentAlignmentProperty, HorizontalAlignment.Center),
             new(ContentControl.VerticalContentAlignmentProperty, VerticalAlignment.Center));
         Add(new Style(x => x.OfType<Button>().Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
@@ -231,7 +233,8 @@ internal static class UiTheme
             new Setter(ContentPresenter.ForegroundProperty, Brush("#151019")));
         Add(new Style(x => x.OfType<Button>().Class("onboardingContinue").Class(":disabled").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
             new Setter(ContentPresenter.ForegroundProperty, Brush("#AAAAAA")));
-        Add(new Style(x => x.OfType<Button>().Class("subtle")), new Setter(TemplatedControl.BorderThicknessProperty, Zero));
+        Add(new Style(x => x.OfType<Button>().Class("subtle")), new(TemplatedControl.BorderThicknessProperty, Zero),
+            new(TemplatedControl.BackgroundProperty, Brushes.Transparent));
         Add(new Style(x => x.OfType<Button>().Class("cover")), new(TemplatedControl.BorderThicknessProperty, Zero),
             new(TemplatedControl.CornerRadiusProperty, new CornerRadius(CardRadius)), new(TemplatedControl.PaddingProperty, new Thickness(8)));
         Add(new Style(x => x.OfType<Button>().Class("pill")), new Setter(TemplatedControl.CornerRadiusProperty, new CornerRadius(24)));
@@ -246,14 +249,15 @@ internal static class UiTheme
             new Setter(Layoutable.MarginProperty, MiniPlayInset));
         Add(new Style(x => x.OfType<Button>().Class("largePlay").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
             new Setter(Layoutable.MarginProperty, Zero));
-        Add(new Style(x => x.OfType<Button>().Class("nav")), new(TemplatedControl.BorderThicknessProperty, Zero), new(TemplatedControl.PaddingProperty, Zero));
+        Add(new Style(x => x.OfType<Button>().Class("nav")), new(TemplatedControl.BorderThicknessProperty, Zero), new(TemplatedControl.PaddingProperty, Zero),
+            new(TemplatedControl.BackgroundProperty, Brushes.Transparent));
         Add(new Style(x => x.OfType<Button>().Class(":disabled")), new Setter(Visual.OpacityProperty, .4));
         // Target Fluent's presenter so local backgrounds do not suppress pointer states.
         foreach (var state in new[] { ":pointerover", ":pressed" })
         {
             Add(new Style(x => x.OfType<Button>().Class(state).Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
-                new(ContentPresenter.BackgroundProperty, Brush(SurfaceElevated)), new(ContentPresenter.BorderBrushProperty, Brush(Primary)),
-                new(ContentPresenter.ForegroundProperty, Brush(Primary)));
+                new(ContentPresenter.BackgroundProperty, Brush(state == ":pressed" ? TonalPressed : TonalHover)),
+                new(ContentPresenter.BorderBrushProperty, Brushes.Transparent), new(ContentPresenter.ForegroundProperty, Brush(Primary)));
         }
         Add(new Style(x => x.OfType<Button>().Class("cardAction")),
             new(Layoutable.WidthProperty, TouchSize), new(Layoutable.HeightProperty, TouchSize),
@@ -273,8 +277,8 @@ internal static class UiTheme
         Add(new Style(x => x.OfType<Button>().Class("cardAction").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter")),
             new(Layoutable.MarginProperty, RoundInset), new(TemplatedControl.PaddingProperty, Zero),
             new(TemplatedControl.BorderThicknessProperty, Zero), new(TemplatedControl.CornerRadiusProperty, new CornerRadius(22)));
-        Add(new Style(x => x.OfType<TextBox>()), new(TemplatedControl.BackgroundProperty, Brush(Surface)),
-            new(TemplatedControl.ForegroundProperty, Brush(TextPrimary)), new(TemplatedControl.BorderBrushProperty, Brush(Outline)),
+        Add(new Style(x => x.OfType<TextBox>()), new(TemplatedControl.BackgroundProperty, Brush(Tonal)),
+            new(TemplatedControl.ForegroundProperty, Brush(TextPrimary)), new(TemplatedControl.BorderBrushProperty, Brushes.Transparent),
             new(TemplatedControl.BorderThicknessProperty, One), new(TemplatedControl.CornerRadiusProperty, new CornerRadius(ControlRadius)),
             new(TemplatedControl.PaddingProperty, ButtonPadding), new(TemplatedControl.FontSizeProperty, Body), new(Layoutable.MinHeightProperty, TouchSize));
         Add(new Style(x => x.OfType<TextBox>().Class(":focus-within")), new Setter(TemplatedControl.BorderBrushProperty, Brush(Primary)));
@@ -305,8 +309,8 @@ internal static class UiTheme
         resources["SliderThumbCornerRadius"] = new CornerRadius(SeekThumbPressedSize / 2);
         resources["TextControlBorderBrushFocused"] = Brush(Primary);
         resources["TextControlBorderBrushPointerOver"] = Brush(Primary);
-        resources["TextControlBackgroundFocused"] = Brush(Surface);
-        resources["TextControlBackgroundPointerOver"] = Brush(Surface);
+        resources["TextControlBackgroundFocused"] = Brush(Tonal);
+        resources["TextControlBackgroundPointerOver"] = Brush(TonalHover);
         resources["TextControlPlaceholderForeground"] = Brush(TextSecondary);
     }
 }
