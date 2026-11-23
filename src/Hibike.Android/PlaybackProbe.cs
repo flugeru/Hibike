@@ -41,6 +41,10 @@ internal static class PlaybackProbe
             var startupMs = watch.ElapsedMilliseconds;
             await Task.Delay(1200);
             if (!player.IsPlaying || player.Position < 0.3) throw new IOException("Native audio position did not advance.");
+            var output = player.AudioOutput;
+            for (var i = 0; i < 10 && output.Format is null; i++) { await Task.Delay(100); output = player.AudioOutput; }
+            if (output.Format is null) throw new IOException("Playing AudioTrack format missing.");
+            global::Android.Util.Log.Info("HibikeProbe", $"HIBIKE_PROBE_OUTPUT_OK output={output.Output} connection={output.Connection} format={output.Format}");
             global::Android.Util.Log.Info("HibikeProbe", "HIBIKE_PROBE_LOCAL_OK startup_ms=" + startupMs + " position=" + player.Position);
             global::Android.Util.Log.Info("HibikeProbe", $"HIBIKE_PROBE_BUFFER duration={player.Duration:F1}s buffered={PlaybackService.Instance!.BufferedPosition:F1}s position={player.Position:F1}s");
             using var nativeController = new global::Android.Media.Session.MediaController(context, PlaybackService.Instance!.PlatformToken!);
@@ -51,10 +55,15 @@ internal static class PlaybackProbe
             }
             Key(global::Android.Views.Keycode.MediaPause); await Task.Delay(500);
             if (player.IsPlaying) throw new IOException("Media session pause did not reach the player.");
+            if (player.AudioOutput != new AudioOutputInfo()) throw new IOException("Paused output route was not cleared.");
             Key(global::Android.Views.Keycode.MediaPlay); await Task.Delay(500);
             if (!player.IsPlaying) throw new IOException("Media session play did not reach the player.");
             var queueController = AppServices.Controller!;
-            queueController.Enqueue(new("probe-next", "Next track test", "Hibike CI", path, 90, IsLocal: true));
+            // Queue identity is the source, not the track ID. Use a distinct playable file.
+            var nextPath = Path.Combine(context.CacheDir!.AbsolutePath, "probe-next.wav");
+            File.Copy(path, nextPath, overwrite: true);
+            queueController.Enqueue(new("probe-next", "Next track test", "Hibike CI", nextPath, 90, IsLocal: true));
+            if (!queueController.Upcoming.Any(t => t.Source == nextPath)) throw new IOException("Next-track fixture was not enqueued.");
             Key(global::Android.Views.Keycode.MediaNext);
             for (var i = 0; i < 30 && queueController.Current?.Id != "probe-next"; i++) await Task.Delay(100);
             if (queueController.Current?.Id != "probe-next") throw new IOException("Media session next did not advance the queue.");

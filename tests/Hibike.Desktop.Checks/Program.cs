@@ -47,6 +47,8 @@ try
     Console.WriteLine("Protected session encryption, restore and logout passed.");
 }
 finally { if (Directory.Exists(sessionDirectory)) Directory.Delete(sessionDirectory); }
+if (args.Contains("--wasapi"))
+    await WasapiEndpointChecks.Run();
 if (args.Contains("--engines"))
 {
     var path = Path.Combine(Path.GetTempPath(), "hibike-engines-" + Guid.NewGuid() + ".wav");

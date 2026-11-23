@@ -11,6 +11,15 @@ public sealed class MpvAudioPlayer : IAudioPlayer
     private Timer? _timer;
     private bool _disposed, _loaded;
     private double _volume = .8, _position, _duration;
+    private static readonly AudioOutputInfo NoOutput = new();
+    private volatile AudioOutputInfo _audioOutput = NoOutput;
+    private long _nextOutputPoll;
+#if WINDOWS
+    private readonly WindowsWasapiEndpointProbe _endpointProbe = new();
+    public AudioOutputInfo AudioOutput => _endpointProbe.Read(_audioOutput);
+#else
+    public AudioOutputInfo AudioOutput => _audioOutput;
+#endif
     public bool IsPlaying { get; private set; }
     // Reported so MusicController's stall recovery also covers desktop streams; without it a
     // dropped connection left libmpv waiting on its cache indefinitely.
@@ -23,6 +32,11 @@ public sealed class MpvAudioPlayer : IAudioPlayer
     public double Volume { get { lock (_gate) return _volume; } set { if (double.IsFinite(value)) lock (_gate) { _volume = Math.Clamp(value, 0, 1); if (_handle != IntPtr.Zero) Set("volume", (_volume * 100).ToString(System.Globalization.CultureInfo.InvariantCulture)); } } }
     public Task PlayAsync(AudioSource source, CancellationToken cancellationToken) => Task.Run(() =>
     {
+        if (File.Exists(source.Url))
+        {
+            try { source = LocalTrackMetadata.ReadAudioSource(source); }
+            catch (InvalidDataException e) { PlaybackDiagnostics.Write("Áudio local", e.Message); }
+        }
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -41,6 +55,7 @@ public sealed class MpvAudioPlayer : IAudioPlayer
                 Check(mpv_initialize(_handle));
                 _timer = new Timer(Poll, null, 100, 100);
             }
+            ClearAudioOutput();
             Command("stop"); _loaded = false; _position = _duration = 0; IsPlaying = IsBuffering = false;
             while (Marshal.PtrToStructure<MpvEvent>(mpv_wait_event(_handle, 0)).Id != 0) { }
             Set("http-header-fields", ""); Set("user-agent", "Hibike"); Set("referrer", "");
@@ -81,9 +96,36 @@ public sealed class MpvAudioPlayer : IAudioPlayer
             var waitingForCache = unpaused && Property("paused-for-cache") == "yes";
             IsPlaying = unpaused && !waitingForCache;
             IsBuffering = waitingForCache;
+            var now = Environment.TickCount64;
+            if (!_loaded) ClearAudioOutput();
+            else if (now >= _nextOutputPoll)
+            {
+                _nextOutputPoll = now + 2000;
+                var route = ReadAudioOutput();
+                // Preserve snapshot identity until the route changes; endpoint samples are tied to it.
+                if (route != _audioOutput) _audioOutput = route;
+            }
         }
         if (ended) Ended?.Invoke(this, EventArgs.Empty);
         if (failed) Failed?.Invoke(this, "libmpv não conseguiu abrir ou continuar áudio.");
+    }
+    private void ClearAudioOutput()
+    {
+        _audioOutput = NoOutput;
+        _nextOutputPoll = 0;
+    }
+    private AudioOutputInfo ReadAudioOutput()
+    {
+        // audio-device is the requested option (often "auto"), not the routed endpoint.
+        // audio-out-params describes samples written to the API, not the source or DAC.
+        var driver = Property("current-ao");
+        if (string.IsNullOrWhiteSpace(driver)) return NoOutput;
+        var sampleFormat = Property("audio-out-params/format");
+        var rate = Number("audio-out-params/samplerate");
+        var channels = Property("audio-out-params/hr-channels");
+        var format = string.Join(" · ", new[] { sampleFormat, rate > 0 ? $"{rate / 1000:0.###} kHz" : null, channels }.Where(s => !string.IsNullOrWhiteSpace(s)));
+        return new(Output: driver, Format: format.Length > 0 ? format : null,
+            Note: format.Length > 0 ? "Formato entregue pelo mpv à API de áudio; não é uma medição no dispositivo." : null);
     }
     private double Number(string name) => double.TryParse(Property(name), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var n) && double.IsFinite(n) ? Math.Max(0, n) : 0;
     private string? Property(string name) { var p = mpv_get_property_string(_handle, name); if (p == IntPtr.Zero) return null; try { return Marshal.PtrToStringUTF8(p); } finally { mpv_free(p); } }
@@ -116,6 +158,7 @@ public sealed class MpvAudioPlayer : IAudioPlayer
         {
             if (_handle != IntPtr.Zero) Command("stop");
             _loaded = IsPlaying = IsBuffering = false;
+            ClearAudioOutput();
             _position = _duration = 0;
             PlaybackSource = null;
         }
@@ -123,7 +166,7 @@ public sealed class MpvAudioPlayer : IAudioPlayer
     public void Pause() { lock (_gate) { if (_handle != IntPtr.Zero) Set("pause", "yes"); IsPlaying = IsBuffering = false; } }
     public void Resume() { lock (_gate) { if (_handle != IntPtr.Zero) Set("pause", "no"); } }
     public void Seek(double seconds) { if (double.IsFinite(seconds)) lock (_gate) { if (_handle != IntPtr.Zero) Command("seek", Math.Max(0, seconds).ToString(System.Globalization.CultureInfo.InvariantCulture), "absolute"); } }
-    public void Dispose() { lock (_gate) { if (_disposed) return; _disposed = true; _timer?.Dispose(); if (_handle != IntPtr.Zero) mpv_terminate_destroy(_handle); _handle = IntPtr.Zero; IsPlaying = false; } }
+    public void Dispose() { lock (_gate) { if (_disposed) return; _disposed = true; ClearAudioOutput(); _timer?.Dispose(); if (_handle != IntPtr.Zero) mpv_terminate_destroy(_handle); _handle = IntPtr.Zero; IsPlaying = false; } }
     [StructLayout(LayoutKind.Sequential)] private struct MpvEvent { public int Id, Error; public ulong Reply; public IntPtr Data; }
     [StructLayout(LayoutKind.Sequential)] private struct Node { public IntPtr Value; public int Format; }
     [StructLayout(LayoutKind.Sequential)] private struct NodeList { public int Count; public IntPtr Values, Keys; }

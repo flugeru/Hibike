@@ -27,6 +27,7 @@ Hibike é um player de música para **Windows e Android**, com visual AMOLED, in
 | :--- | :--- | :--- |
 | Importe músicas com tags e capas. Organize favoritos, playlists e sua fila. | Explore buscas, rádios, recomendações, artistas e coleções. | Alterne entre miniplayer e player expandido, com informações técnicas do áudio. |
 
+- **Qualidade do áudio:** toque no indicador de bitrate do player para ver o caminho da faixa até a saída. Codec, bitrate, amostragem e profundidade da **faixa** são separados do que o sistema informa sobre o **fone, caixa ou alto-falante**. Um arquivo sem perdas não garante transmissão Bluetooth sem perdas. O painel acompanha mudanças de saída enquanto está aberto. [Ver exemplo com um fone simulado](docs/audio-info-mobile.svg).
 - **No Android:** reprodução em segundo plano e controles de mídia do sistema.
 - **No Windows:** libmpv como padrão, VLC como alternativa e integração com Discord.
 - **No dia a dia:** fila e volume persistentes, com sessão Google armazenada de forma protegida.

@@ -249,14 +249,14 @@ public sealed partial class MainView
         if (!_dockSeeking) _dockSeek.Value = Math.Clamp(_music.Position, 0, _dockSeek.Maximum);
         _dockTime.Text = Time(_music.Position);
         _dockDuration.Text = Time(duration);
-        var source = _music.CurrentSource;
+        var source = _music.Pending is null && track is not null ? _music.CurrentSource : null;
         var quality = new List<string>();
         if (!string.IsNullOrWhiteSpace(source?.Codec)) quality.Add(source.Codec.ToUpperInvariant());
         else if (!string.IsNullOrWhiteSpace(source?.Container)) quality.Add(source.Container.ToUpperInvariant());
         if (source?.BitDepth is > 0) quality.Add($"{source.BitDepth} bits");
         if (source?.BitrateKbps is > 0) quality.Add($"{source.BitrateKbps:0.#} kb/s");
         if (source?.SampleRateHz is > 0) quality.Add($"{source.SampleRateHz / 1000:0.#} kHz");
-        var summary = string.Join(" · ", quality);
+        var summary = quality.Count > 0 ? string.Join(" · ", quality) : track is not null ? "Caminho do sinal" : "";
         _dockQuality.Text = summary;
         _dockQuality.IsVisible = summary.Length > 0;
         _dockQualityBadge.IsVisible = summary.Length > 0;

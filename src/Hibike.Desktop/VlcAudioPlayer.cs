@@ -12,6 +12,10 @@ public sealed class VlcAudioPlayer : IAudioPlayer
     private Task _tail = Task.CompletedTask;
     private bool _disposed;
     private volatile bool _isPlaying;
+    private static readonly AudioOutputInfo NoOutput = new();
+    private static readonly AudioOutputInfo ActiveOutput = new(Note: "O LibVLC não informa o formato entregue à saída de áudio.");
+    private AudioOutputInfo? _audioOutput;
+    public AudioOutputInfo AudioOutput => Volatile.Read(ref _audioOutput) ?? NoOutput;
     private long _position, _duration;
     public event EventHandler? Ended;
     public event EventHandler<string>? Failed;
@@ -51,6 +55,23 @@ public sealed class VlcAudioPlayer : IAudioPlayer
         try { await command.ConfigureAwait(false); }
         catch (Exception e) { PlaybackDiagnostics.Write("VLC", e.Message); Failed?.Invoke(this, "Falha no player: " + e.Message); }
     }
+    // Called on the command queue, never from a native callback or the UI. VLC warns that
+    // its initial device ID can be unknown; only publish a matching enumerated device.
+    private void RefreshAudioOutput()
+    {
+        var snapshot = Volatile.Read(ref _audioOutput);
+        if (snapshot is null || _player is null) return;
+        string? device = null;
+        try
+        {
+            if (_player.OutputDevice is { Length: > 0 } id)
+                device = _player.AudioOutputDeviceEnum.FirstOrDefault(d => d.DeviceIdentifier == id).Description;
+        }
+        catch (Exception e) { PlaybackDiagnostics.Write("Saída do VLC", e.Message); }
+        // End/error can arrive during enumeration. Do not revive the old route.
+        Interlocked.CompareExchange(ref _audioOutput, string.IsNullOrWhiteSpace(device) ? ActiveOutput : ActiveOutput with { Device = device }, snapshot);
+    }
+    private void ClearAudioOutput() => Volatile.Write(ref _audioOutput, null);
     public Task PlayAsync(AudioSource source, CancellationToken cancellationToken) => QueueCommand(async () =>
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -63,16 +84,23 @@ public sealed class VlcAudioPlayer : IAudioPlayer
             _player = new MediaPlayer(_engine);
             _player.TimeChanged += (_, e) => Interlocked.Exchange(ref _position, e.Time);
             _player.LengthChanged += (_, e) => Interlocked.Exchange(ref _duration, e.Length);
-            _player.Playing += (_, _) => _isPlaying = true;
+            _player.Playing += (_, _) =>
+            {
+                _isPlaying = true;
+                Volatile.Write(ref _audioOutput, ActiveOutput);
+                Send(RefreshAudioOutput);
+            };
+            _player.AudioDevice += (_, _) => Send(RefreshAudioOutput);
             _player.Paused += (_, _) => _isPlaying = false;
-            _player.Stopped += (_, _) => _isPlaying = false;
-            _player.EndReached += (_, _) => { _isPlaying = false; Ended?.Invoke(this, EventArgs.Empty); };
-            _player.EncounteredError += (_, _) => { _isPlaying = false; Failed?.Invoke(this, "Não foi possível reproduzir este áudio. Tente abrir a faixa novamente."); };
+            _player.Stopped += (_, _) => { _isPlaying = false; ClearAudioOutput(); };
+            _player.EndReached += (_, _) => { _isPlaying = false; ClearAudioOutput(); Ended?.Invoke(this, EventArgs.Empty); };
+            _player.EncounteredError += (_, _) => { _isPlaying = false; ClearAudioOutput(); Failed?.Invoke(this, "Não foi possível reproduzir este áudio. Tente abrir a faixa novamente."); };
             PlaybackDiagnostics.Write("VLC", $"Inicialização: {startup.ElapsedMilliseconds} ms");
         }
         var watch = System.Diagnostics.Stopwatch.StartNew();
         PlaybackDiagnostics.Write("VLC", "Parando mídia anterior.");
         _player!.Stop();
+        ClearAudioOutput();
         PlaybackDiagnostics.Write("VLC", $"Stop: {watch.ElapsedMilliseconds} ms");
         cancellationToken.ThrowIfCancellationRequested();
         Interlocked.Exchange(ref _position, 0); Interlocked.Exchange(ref _duration, 0);
@@ -142,6 +170,7 @@ public sealed class VlcAudioPlayer : IAudioPlayer
     public Task StopAsync() => QueueCommand(() =>
     {
         _player?.Stop();
+        ClearAudioOutput();
         _isPlaying = false;
         PlaybackSource = null;
         Interlocked.Exchange(ref _position, 0);
@@ -162,7 +191,7 @@ public sealed class VlcAudioPlayer : IAudioPlayer
             tail = _tail = Task.Run(async () =>
             {
                 try { await previous.ConfigureAwait(false); } catch { }
-                _player?.Dispose(); _engine?.Dispose(); _isPlaying = false;
+                _player?.Dispose(); _engine?.Dispose(); _isPlaying = false; ClearAudioOutput();
             });
         }
         try { tail.Wait(TimeSpan.FromSeconds(5)); } catch (AggregateException) { }

@@ -41,6 +41,7 @@ public sealed partial class MusicController
         : _seekAfterLoad ?? Player.Position;
     public string DataDirectory { get; }
     public IAudioPlayer Player { get; }
+    public AudioOutputInfo AudioOutput => Player.AudioOutput;
     public ObservableCollection<Track> Results { get; } = [];
     public string? ResultsQuery { get; private set; }
     public string? SearchError { get; private set; }

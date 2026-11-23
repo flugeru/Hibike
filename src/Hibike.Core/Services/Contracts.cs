@@ -20,6 +20,7 @@ public interface IAudioPlayer : IDisposable
     double Duration { get; }
     double Volume { get; set; }
     AudioSource? PlaybackSource => null;
+    AudioOutputInfo AudioOutput => new();
     event EventHandler? Ended;
     event EventHandler<string>? Failed;
     Task PlayAsync(AudioSource source, CancellationToken cancellationToken);

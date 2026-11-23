@@ -17,6 +17,7 @@ public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPr
     public double Position => PlaybackService.Instance?.Position ?? 0;
     public double Duration => PlaybackService.Instance?.Duration ?? 0;
     public AudioSource? PlaybackSource { get; private set; }
+    public AudioOutputInfo AudioOutput => PlaybackService.Instance?.AudioOutput ?? new();
     public double Volume { get => _volume; set { _volume = Math.Clamp(value, 0, 1); Main(() => PlaybackService.Instance?.SetVolume(_volume)); } }
     public Task BeginPreparationAsync(Track track, CancellationToken cancellationToken) => PrepareAsync(track, cancellationToken, reuseService: false);
     public Task BeginRecoveryAsync(Track track, CancellationToken cancellationToken) => PrepareAsync(track, cancellationToken, reuseService: true);

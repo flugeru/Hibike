@@ -23,6 +23,12 @@ edge fade. No surface gradients. Album display falls back to artist because Trac
 Lyrics, timer and volume cards were not invented without existing controls/data.
 Project retains existing .NET 10 targets and Android workload.
 
+## Audio signal path
+
+Run `dotnet run --project tests/Hibike.Ui.Checks -c Release -- --audio-info --headless` for the player badge, route changes, track switches and closing the panel. The route is simulated; this does not validate a physical headset.
+
+For hardware review, play a local FLAC and a compressed stream. Leave the panel open while switching between the built-in speaker, Bluetooth and USB/wired headphones. Confirm that the route follows **playback** rather than listing paired devices, the file's format does not become the headset's format, and unavailable information is labeled as such. Repeat after pausing and resuming. Some systems do not expose the accessory name or negotiated Bluetooth codec.
+
 ## Layout references
 
 - [OrbisExtract MainView and UiTheme](https://github.com/flugeru/OrbisExtract): palette, cards, page column and dialog composition.

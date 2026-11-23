@@ -23,6 +23,8 @@ public sealed class PlaybackService : MediaSessionService
     internal const string PrepareAction = "com.flugel.hibike.PREPARE";
     public static PlaybackService? Instance { get; private set; }
     private IExoPlayer? _player;
+    private readonly AndroidOutputProbe _output = new();
+    internal AudioOutputInfo AudioOutput => Playing ? _output.Snapshot() : new();
     private MediaSession? _session;
     private SessionPlayer? _sessionPlayer;
     private PlaybackListener? _playbackListener;
@@ -48,7 +50,8 @@ public sealed class PlaybackService : MediaSessionService
         var control = new DefaultLoadControl.Builder().SetBufferDurationsMs(2000, 10000, 250, 1000)!
             .SetPrioritizeTimeOverSizeThresholds(true)!.Build();
         var attributes = new AndroidX.Media3.Common.AudioAttributes.Builder().SetUsage(C.UsageMedia)!.SetContentType(C.AudioContentTypeMusic)!.Build();
-        _player = new ExoPlayerBuilder(this).SetLooper(Looper.MainLooper)!.SetLoadControl(control)!
+        _player = new ExoPlayerBuilder(this).SetRenderersFactory(new AndroidOutputProbe.Renderers(this, _output))!
+            .SetLooper(Looper.MainLooper)!.SetLoadControl(control)!
             .SetAudioAttributes(attributes, true)!.SetHandleAudioBecomingNoisy(true)!.SetWakeMode(2)!.Build()!;
         _playbackListener = new PlaybackListener(this);
         _player.AddListener(_playbackListener);

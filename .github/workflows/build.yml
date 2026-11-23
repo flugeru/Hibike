@@ -53,6 +53,8 @@ jobs:
         run: dotnet test tests/Hibike.Core.Tests/Hibike.Core.Tests.csproj -c Release --logger "trx;LogFileName=core.trx" --results-directory artifacts/tests
       - name: Check Android collapsing toolbars
         run: dotnet run --project tests/Hibike.Ui.Checks -c Release -- --headless --collapsing-top-bars
+      - name: Check audio quality panel and live route changes
+        run: dotnet run --no-build --project tests/Hibike.Ui.Checks -c Release -- --headless --audio-info
       - name: Prepare verified Python, QuickJS and YT-DLP
         run: python3 scripts/prepare_android_runtime.py --abi arm64-v8a
       # Pull requests must never access the production signing secrets.

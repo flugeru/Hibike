@@ -19,7 +19,7 @@ internal static partial class Program
     {
         var directory = Path.Combine(Path.GetTempPath(), "hibike-ui-check-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
-        if (args.Contains("--queue-only") || args.Contains("--performance-study") || args.Contains("--performance-checks")
+        if (args.Contains("--audio-info") || args.Contains("--queue-only") || args.Contains("--performance-study") || args.Contains("--performance-checks")
             || args.Contains("--collapsing-top-bars") || args.Contains("--android-screens") || args.Contains("--collapsing-cost"))
         {
             // Keep onboarding and home discovery offline before the view is attached.
@@ -43,6 +43,13 @@ internal static partial class Program
             try
             {
                 var window = lifetime.MainWindow!; var view = (MainView)window.Content!;
+                if (args.Contains("--audio-info"))
+                {
+                    await CheckAudioInfoAsync(view, window);
+                    Console.WriteLine("Audio info: source, route changes and sheet lifecycle passed.");
+                    result = 0;
+                    return;
+                }
                 if (args.Contains("--collapsing-cost"))
                 {
                     await MeasureCollapsingCostAsync(window);
@@ -982,6 +989,9 @@ internal static partial class Program
         public bool IsPlaying { get; private set; }
         public double Position { get; set; }
         public double Duration => 267.7;
+        public AudioOutputInfo Route { get; set; } = new();
+        public int RouteReads { get; private set; }
+        public AudioOutputInfo AudioOutput { get { RouteReads++; return Route; } }
         public double Volume { get; set; }
         public event EventHandler? Ended { add { } remove { } }
         public event EventHandler<string>? Failed { add { } remove { } }

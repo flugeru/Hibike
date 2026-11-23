@@ -1631,82 +1631,13 @@ public sealed partial class MainView : UserControl
         }));
         ShowSheet("Laboratório experimental", panel);
     }
-    private async void ShowAudioInfo()
-    {
-        var source = _music.CurrentSource;
-        var track = _music.Current;
-        var panel = new StackPanel { Spacing = 8 };
-        panel.Children.Add(Text(TrackTextFormatter.Title(source?.Title ?? _music.Current?.Title ?? "", source?.Artist ?? _music.Current?.Artist), UiTheme.SectionTitle));
-        var adjustableVolume = _compactPlayer && _showingPlayer;
-        if (adjustableVolume)
-        {
-            var volume = new Slider
-            {
-                Minimum = 0, Maximum = 1, Value = _music.Player.Volume,
-                MinHeight = UiTheme.TouchSize, SmallChange = .05, LargeChange = .1
-            };
-            Avalonia.Automation.AutomationProperties.SetName(volume, "Volume");
-            var label = Text($"Volume · {_music.Player.Volume:P0}", UiTheme.Body, Muted);
-            volume.ValueChanged += (_, _) =>
-            {
-                _music.Volume = volume.Value;
-                label.Text = $"Volume · {volume.Value:P0}";
-            };
-            panel.Children.Add(label);
-            panel.Children.Add(volume);
-        }
-        void Detail(string label, string? value)
-        {
-            if (string.IsNullOrWhiteSpace(value)) return;
-            var row = new Grid { ColumnDefinitions = new("*,*"), ColumnSpacing = 12, Margin = new Thickness(0, 4) };
-            var caption = Text(label, UiTheme.Caption, Muted); caption.TextWrapping = TextWrapping.Wrap; row.Children.Add(caption);
-            Put(row, new SelectableTextBlock { Text = value, FontSize = UiTheme.Body, Foreground = UiTheme.Brush(UiTheme.TextPrimary), TextWrapping = TextWrapping.Wrap }, 0, 1);
-            panel.Children.Add(row);
-        }
-        Detail(_music.Current?.IsLocal == true ? "Bitrate médio do áudio" : "Bitrate da fonte", source?.BitrateKbps is > 0 ? $"{source.BitrateKbps:0.#} kb/s" : null);
-        Detail("Artista", string.IsNullOrWhiteSpace(source?.Artist) ? track?.Artist : source.Artist);
-        Detail("Origem", track?.IsLocal == true ? "Arquivo local" : "Online");
-        if (_music.Player.Duration > 0 || track?.DurationSeconds > 0) Detail("Duração", Time(Math.Max(_music.Player.Duration, track?.DurationSeconds ?? 0)));
-        if (_music.Current?.Album is { } album) Detail("Álbum", album);
-        if (_music.Current?.TrackNumber is { } number) Detail("Faixa", number);
-        if (_music.Current?.Date is { } date) Detail("Data", date);
-        Detail("Codec", source?.Codec);
-        Detail("Contêiner", source?.Container);
-        Detail("Amostragem", source?.SampleRateHz is > 0 ? $"{source.SampleRateHz / 1000:0.#} kHz" : null);
-        Detail("Canais", source?.Channels?.ToString("0"));
-        if (source?.BitDepth is > 0) Detail("Profundidade", $"{source.BitDepth} bits");
-        if (_music.Current?.IsLocal != true) Detail("Formato", source?.Format);
-        if (!adjustableVolume) Detail("Volume", $"{_music.Player.Volume:P0}");
-        var note = Text(_music.Current?.IsLocal == true
-            ? "Dados lidos do arquivo. Em FLAC, bitrate médio calculado pelo tamanho do áudio e número de amostras, sem incluir metadados."
-            : "Dados fornecidos pela fonte; bitrate pode ser variável. Valores ausentes não são estimados.", UiTheme.Caption, Muted);
-        note.TextWrapping = TextWrapping.Wrap; panel.Children.Add(note);
-        if (DeveloperFeatures.Enabled) panel.Children.Add(ActionButton("Abrir diagnóstico", () => { ShowDiagnostics(); return Task.CompletedTask; }));
-        var mediaStatus = Text("", UiTheme.Caption, Muted); mediaStatus.TextWrapping = TextWrapping.Wrap;
-        panel.Children.Add(mediaStatus);
-        ShowSheet("Informações do áudio", panel, preservePlayer: true);
-        var overlay = _overlay;
-        if (track?.IsLocal == true && (!OperatingSystem.IsAndroid() || source?.Codec is null) && AppServices.ReadMediaInfo is { } read)
-        {
-            mediaStatus.Text = OperatingSystem.IsAndroid() ? "Lendo metadados do arquivo…" : "Lendo MediaInfo…";
-            try
-            {
-                var details = await read(track.Source);
-                if (_overlay != overlay || _music.Current != track) return;
-                mediaStatus.Text = details.Count == 0 ? "Leitor indisponível ou arquivo não reconhecido. Metadados existentes preservados." : OperatingSystem.IsAndroid() ? "Detalhes adicionais · Android" : "Detalhes adicionais · MediaInfo";
-                foreach (var pair in details) Detail(pair.Key, pair.Value);
-            }
-            catch (Exception) { if (_overlay == overlay) mediaStatus.Text = "Leitura adicional indisponível. Metadados existentes preservados."; }
-        }
-        else mediaStatus.Text = track?.IsLocal == true ? "MediaInfo não disponível nesta plataforma." : "Dados do fluxo selecionado e do catálogo. MediaInfo não recebe URLs autenticadas nem cookies.";
-    }
     private Border AudioInfoBadge(TextBlock label)
     {
         var button = ActionButton("", () => { ShowAudioInfo(); return Task.CompletedTask; });
         button.Classes.Add("subtle"); button.Content = label; button.Padding = UiTheme.Zero;
         button.MinHeight = UiTheme.TouchSize;
         Avalonia.Automation.AutomationProperties.SetName(button, "Informações do áudio");
-        ToolTip.SetTip(button, "Informações do áudio");
+        ToolTip.SetTip(button, "Ver caminho do sinal e detalhes da faixa");
         var badge = UiTheme.AudioBadge(button);
         badge.Padding = new Thickness(12, 0);
         return badge;
