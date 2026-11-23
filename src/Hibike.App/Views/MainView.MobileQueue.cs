@@ -24,22 +24,18 @@ public sealed partial class MainView
     private Grid BuildMobileQueue()
     {
         var page = new Grid { RowDefinitions = new("Auto,Auto,Auto,Auto,Auto,*"), RowSpacing = UiTheme.CompactGap };
-        var header = new Grid { ColumnDefinitions = new("Auto,*,Auto") };
         _mobileQueueBack = IconButton("back", "Voltar", () =>
         {
             if (_queuePane.IsVisible) { _queueOpen = false; Refresh(); }
             else ReturnFromMobileQueue();
             return Task.CompletedTask;
         });
-        header.Children.Add(_mobileQueueBack);
         _mobileQueueHeader = CollectionText("Sua fila", UiTheme.PageTitle, weight: FontWeight.SemiBold);
-        Put(header, _mobileQueueHeader, 0, 1);
-        Put(header, IconButton("more", "Opções da fila", () =>
+        page.Children.Add(AppBar(_mobileQueueBack, _mobileQueueHeader, IconButton("more", "Opções da fila", () =>
         {
             ShowMobileQueueOptions();
             return Task.CompletedTask;
-        }), 0, 2);
-        page.Children.Add(header);
+        })));
 
         var current = new Grid { ColumnDefinitions = new("Auto,*,Auto"), ColumnSpacing = 12 };
         _mobileQueueCover = new ContentControl { Content = new Artwork(null, UiTheme.ThumbnailSize), VerticalAlignment = VerticalAlignment.Center };
@@ -120,6 +116,7 @@ public sealed partial class MainView
         var current = _music.Pending ?? _music.Current;
         _mobileQueueBack.IsVisible = _queueOpenedFromPlayer || _queuePane.IsVisible;
         _mobileQueueHeader.Text = _mobileQueueBack.IsVisible ? "Fila" : "Sua fila";
+        _mobileQueueHeader.FontSize = _mobileQueueBack.IsVisible ? UiTheme.TopBarTitle : UiTheme.PageTitle;
         _mobileQueueError.Text = _music.Status;
         _mobileQueueError.IsVisible = _music.HasError;
         if (!Equals(_mobileQueueCurrent, current))

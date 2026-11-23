@@ -81,8 +81,15 @@ public sealed partial class MainView : UserControl
         _main.Child = CreateTrackSelectionHost(content);
         var header = new Grid { Name = "AppHeader", RowDefinitions = new("Auto,20"), ColumnDefinitions = new("Auto,*,Auto") };
         header.RowDefinitions[0].MinHeight = 28;
-        var brandIcon = _brandIcon = new Image { Source = new Avalonia.Media.Imaging.Bitmap(Avalonia.Platform.AssetLoader.Open(new Uri("avares://Hibike.App/Assets/hibike-desktop.png"))), Width = 22, Height = 22, VerticalAlignment = VerticalAlignment.Center };
-        var pageBrand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        if (androidLayout)
+        {
+            // Same fixed bar as Biblioteca and Fila; the loading line overlays its bottom edge.
+            header.RowDefinitions = new("*");
+            header.Height = UiTheme.TopBarHeight;
+        }
+        var brandSize = androidLayout ? UiTheme.BrandIconSize : 22;
+        var brandIcon = _brandIcon = new Image { Source = new Avalonia.Media.Imaging.Bitmap(Avalonia.Platform.AssetLoader.Open(new Uri("avares://Hibike.App/Assets/hibike-desktop.png"))), Width = brandSize, Height = brandSize, VerticalAlignment = VerticalAlignment.Center };
+        var pageBrand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = androidLayout ? 10 : 8 };
         pageBrand.Children.Add(brandIcon); pageBrand.Children.Add(_pageTitle); Put(header, pageBrand, 0, 1);
         _preferencesBack = CollectionIcon("back", "Voltar", () => { BackFromPreferences(); return Task.CompletedTask; });
         _preferencesBack.IsVisible = false;
@@ -93,10 +100,10 @@ public sealed partial class MainView : UserControl
         androidMenu.MinHeight = androidMenu.MinWidth = UiTheme.TouchSize;
         androidMenu.Height = androidMenu.Width = androidMenu.MinHeight;
         androidMenu.Padding = UiTheme.Zero;
-        if (!OperatingSystem.IsAndroid()) androidMenu.MinHeight = androidMenu.Height = 32;
+        if (!androidLayout) androidMenu.MinHeight = androidMenu.Height = 32;
         androidMenu.Margin = new Thickness(UiTheme.CompactGap, 0, 0, 0);
         Put(header, androidMenu, 0, 2); Grid.SetRowSpan(androidMenu, 2);
-        if (OperatingSystem.IsAndroid()) { brandIcon.IsVisible = true; _pageTitle.Text = "Hibike"; }
+        if (androidLayout) { brandIcon.IsVisible = true; _pageTitle.Text = "Hibike"; }
         pageBrand.VerticalAlignment = VerticalAlignment.Center; _pageTitle.VerticalAlignment = VerticalAlignment.Center;
         InitializeLoading(header, pageBrand);
         content.Children.Add(header);
@@ -125,7 +132,7 @@ public sealed partial class MainView : UserControl
         InitializeOfflineWorkspace(content, statusArea);
         InitializeTopMenu(content);
         InitializeCollapsingTopBars(content);
-        var navGrid = new Grid { ColumnDefinitions = new("*,*,*,*,*"), Height = OperatingSystem.IsAndroid() ? 60 : UiTheme.NavHeight, Background = UiTheme.Brush(UiTheme.Surface) };
+        var navGrid = new Grid { ColumnDefinitions = new("*,*,*,*,*"), Height = androidLayout ? 60 : UiTheme.NavHeight, Background = UiTheme.Brush(UiTheme.Surface) };
         var tabs = new[] { ("home", "Início", "home"), ("explore", "Buscar", "search"), ("library", "Biblioteca", "library"), ("downloads", "Downloads", "download"), ("queue", "Fila", "queue") };
         for (var index = 0; index < tabs.Length; index++)
         {
@@ -447,8 +454,10 @@ public sealed partial class MainView : UserControl
         _brandIcon.IsVisible = _page == "home" && compactHeader && !ShowOfflineHome;
         _pageTitle.IsVisible = _page != "home" || compactHeader || ShowOfflineHome;
         _pageTitle.Text = _page switch { "home" when ShowOfflineHome => _music.OfflineMode ? "Modo offline" : "Sem conexão", "home" => "Hibike", "downloads" => "Downloads", "settings" => "Configurações", "account" => "Minha conta", "collection" => "Coleção", _ => "Buscar" };
-        // Top-level pages share the large title; sub-pages with a back button keep the compact one.
-        _pageTitle.FontSize = _page is "downloads" or "explore" ? UiTheme.PageTitle : UiTheme.TopBarTitle;
+        // Top-level pages share the large title; sub-pages with a back button use the compact one.
+        // On phones the brand on Início is a top-level title too.
+        _pageTitle.FontSize = _page is "downloads" or "explore" || _page == "home" && _androidLayout ? UiTheme.PageTitle : UiTheme.TopBarTitle;
+        _pageTitle.FontWeight = _page == "home" && _androidLayout ? FontWeight.Bold : FontWeight.SemiBold;
         var showOnlineHome = _page == "home" && !ShowOfflineHome;
         _homeScroll.IsVisible = showOnlineHome;
         if (_homeRefreshContainer is not null) _homeRefreshContainer.IsVisible = showOnlineHome;
@@ -721,7 +730,7 @@ public sealed partial class MainView : UserControl
         more.Click += (_, e) => { e.Handled = true; ShowSongMenu(track, more); }; host.Children.Add(more);
         void SetActions(bool visible)
         {
-            var show = songActions && !playlist && !OperatingSystem.IsAndroid() && visible;
+            var show = songActions && !playlist && !_androidLayout && visible;
             var entering = show && !more.IsVisible;
             playOverlay.IsVisible = more.IsVisible = show;
             if (entering)
@@ -839,8 +848,8 @@ public sealed partial class MainView : UserControl
         Put(grid, more, 0, 2);
         more.Classes.Add("subtle");
         AttachSongHold(play, track, openMenu, selectionTracks);
-        var border = new Border { Child = grid, Padding = UiTheme.RowPadding, Height = OperatingSystem.IsAndroid() || showMenu ? 64 : UiTheme.TrackRowHeight };
-        var showOptions = showMenu || !OperatingSystem.IsAndroid();
+        var border = new Border { Child = grid, Padding = UiTheme.RowPadding, Height = _androidLayout || showMenu ? 64 : UiTheme.TrackRowHeight };
+        var showOptions = showMenu || !_androidLayout;
         more.IsVisible = showOptions;
         if (selectionTracks is not null)
         {

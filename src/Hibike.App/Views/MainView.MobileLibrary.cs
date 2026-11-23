@@ -48,14 +48,10 @@ public sealed partial class MainView
     {
         var page = new Grid { RowDefinitions = new("Auto,Auto,Auto,Auto,Auto,Auto,*"),
             RowSpacing = UiTheme.CompactGap, ClipToBounds = true };
-        var header = new Grid { ColumnDefinitions = new("Auto,*,Auto") };
         _mobileLibraryBack = IconButton("back", "Voltar à biblioteca", () => { CloseMobileLibraryGroup(); return Task.CompletedTask; });
-        header.Children.Add(_mobileLibraryBack);
         _mobileLibraryTitle = CollectionText("Sua biblioteca", UiTheme.PageTitle, weight: FontWeight.SemiBold);
-        Put(header, _mobileLibraryTitle, 0, 1);
         _mobileLibraryAdd = IconButton("folder", "Importar músicas", RunMobileLibraryHeaderActionAsync);
-        Put(header, _mobileLibraryAdd, 0, 2);
-        page.Children.Add(header);
+        page.Children.Add(AppBar(_mobileLibraryBack, _mobileLibraryTitle, _mobileLibraryAdd));
 
         var tabs = new Grid { ColumnDefinitions = new("*,*,*,*"), ColumnSpacing = 2 };
         for (var index = 0; index < LibraryTabLabels.Length; index++)
@@ -156,6 +152,7 @@ public sealed partial class MainView
         _mobileLibraryError.IsVisible = _music.HasError;
         _mobileLibraryBack.IsVisible = detail is not null;
         _mobileLibraryTitle.Text = detail is null ? "Sua biblioteca" : detail.Playlist?.Name ?? detail.Title;
+        _mobileLibraryTitle.FontSize = detail is null ? UiTheme.PageTitle : UiTheme.TopBarTitle;
         _mobileLibraryTabRail.IsVisible = _mobileLibraryTools.IsVisible = detail is null;
         _mobileLibraryViewMode.IsVisible = detail is null && _mobileLibraryTab != LibraryTab.Songs;
         _mobileLibraryViewMode.Content = _mobileLibraryListMode ? "Grade" : "Lista";

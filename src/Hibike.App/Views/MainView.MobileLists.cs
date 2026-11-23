@@ -24,7 +24,7 @@ public sealed partial class MainView
         if (_page == "library" && _mobileLibrary is null)
         {
             _mobileLibrary = BuildMobileLibrary();
-            Grid.SetRow(_mobileLibrary, 2);
+            PlaceOwnHeaderPage(_mobileLibrary);
             content.Children.Add(_mobileLibrary);
         }
 
@@ -48,7 +48,7 @@ public sealed partial class MainView
             else if (!queueOnSide && !content.Children.Contains(_mobileQueue))
             {
                 _queuePane.Child = null;
-                Grid.SetRow(_mobileQueue, 2);
+                PlaceOwnHeaderPage(_mobileQueue);
                 content.Children.Add(_mobileQueue);
             }
             _mobileQueue.IsVisible = true;
@@ -63,6 +63,29 @@ public sealed partial class MainView
     }
 
     private static TextBlock TopBarTitle(string text) => CollectionText(text, UiTheme.TopBarTitle, weight: FontWeight.SemiBold);
+
+    // Pages that draw their own app bar start where the shared header would, instead of two
+    // collapsed rows (and their spacing) lower, so every title sits at the same height.
+    private void PlaceOwnHeaderPage(Control page)
+    {
+        Grid.SetRow(page, _androidLayout ? 0 : 2);
+        Grid.SetRowSpan(page, _androidLayout ? _pageContent.RowDefinitions.Count : 1);
+    }
+
+    private Grid AppBar(Button? leading, TextBlock title, Control? trailing)
+    {
+        // Gaps are margins on the actions, not column spacing, so a hidden back button leaves the
+        // title at the same left edge as every other page.
+        var bar = new Grid { ColumnDefinitions = new("Auto,*,Auto") };
+        if (_androidLayout) bar.Height = UiTheme.TopBarHeight;
+        title.VerticalAlignment = VerticalAlignment.Center;
+        title.TextTrimming = TextTrimming.CharacterEllipsis;
+        if (leading is not null) { leading.Margin = new Thickness(0, 0, UiTheme.CompactGap, 0); bar.Children.Add(leading); }
+        if (trailing is not null) trailing.Margin = new Thickness(UiTheme.CompactGap, 0, 0, 0);
+        Put(bar, title, 0, 1);
+        if (trailing is not null) { trailing.VerticalAlignment = VerticalAlignment.Center; Put(bar, trailing, 0, 2); }
+        return bar;
+    }
 
     private static Border CollectionSegments(Grid tabs)
     {

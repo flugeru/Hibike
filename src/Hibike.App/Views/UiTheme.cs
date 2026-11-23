@@ -18,7 +18,9 @@ internal static class UiTheme
         Tonal = "#171717", TonalHover = "#202020", TonalPressed = "#282828", CardSurface = "#111111";
     public const double CardRadius = 18, ControlRadius = 12, ThumbRadius = 8, RoundRadius = 22,
         MobileGutter = 10, CompactGap = 8, SectionGap = 14, PageGap = 18, CardGap = 16, CardPadding = 20,
-        TopBarTitle = 18, PageTitle = 28, SectionTitle = 18, DialogTitle = 22, Body = 15, Caption = 13, Label = 12,
+        // One app-bar system: top-level pages use PageTitle, pages with a back button TopBarTitle,
+        // both vertically centred in a TopBarHeight bar on phones.
+        TopBarTitle = 22, PageTitle = 28, TopBarHeight = 56, BrandIconSize = 30, SectionTitle = 18, DialogTitle = 22, Body = 15, Caption = 13, Label = 12,
         ButtonText = 14, TouchSize = 48, IconSize = 24, IconStroke = 1.8, RoundSize = 44,
         ThumbnailSize = 52, PlaySize = 72, TransportIconSize = 32,
         ProgressHeight = 8, ProgressRadius = 4, MiniProgressHeight = 4, SeekHeight = 6,

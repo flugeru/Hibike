@@ -32,6 +32,7 @@ public sealed partial class MainView
             IsHitTestVisible = false
         };
         Put(header, _loadingBanner, 1, 1);
+        if (header.RowDefinitions.Count == 1) { Grid.SetRow(_loadingBanner, 0); _loadingBanner.VerticalAlignment = VerticalAlignment.Bottom; }
     }
 
     private async Task WithHeaderLoadingAsync(string message, Func<Task> operation, bool keepFeedbackVisible = false)
