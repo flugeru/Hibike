@@ -21,8 +21,24 @@ public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPr
     public Task BeginPreparationAsync(Track track, CancellationToken cancellationToken) => PrepareAsync(track, cancellationToken, reuseService: false);
     public Task BeginRecoveryAsync(Track track, CancellationToken cancellationToken) => PrepareAsync(track, cancellationToken, reuseService: true);
 
+    // Notification artwork used to be downloaded after the stream was resolved and before it was
+    // opened, adding up to its 4 s timeout to every start. It now loads alongside resolution and
+    // playback waits for it only briefly; otherwise Media3 receives the artwork URI instead.
+    private static readonly TimeSpan ArtworkBudget = TimeSpan.FromMilliseconds(250);
+    private (string Url, Task<byte[]?> Bytes)? _artwork;
+
+    private Task<byte[]?> ArtworkFor(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return Task.FromResult<byte[]?>(null);
+        if (_artwork is { } current && current.Url == url) return current.Bytes;
+        var bytes = NotificationArtwork.LoadAsync(url, CancellationToken.None);
+        _artwork = (url, bytes);
+        return bytes;
+    }
+
     private async Task PrepareAsync(Track track, CancellationToken cancellationToken, bool reuseService)
     {
+        _ = ArtworkFor(track.Thumbnail);
         if (!reuseService || PlaybackService.Instance is null)
         {
             var intent = new Intent(context, typeof(PlaybackService)).SetAction(PlaybackService.PrepareAction)!.PutExtra("title", track.Title);
@@ -50,7 +66,10 @@ public sealed class AndroidAudioPlayer(Context context) : IAudioPlayer, IAudioPr
         var started = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            var artwork = await NotificationArtwork.LoadAsync(source.Artwork, cancellationToken);
+            var loading = ArtworkFor(source.Artwork);
+            await Task.WhenAny(loading, Task.Delay(ArtworkBudget, cancellationToken));
+            cancellationToken.ThrowIfCancellationRequested();
+            var artwork = loading.IsCompletedSuccessfully ? loading.Result : null;
             await MainAsync(() => service.Open(source, _volume, artwork)).WaitAsync(cancellationToken);
             while (service.State != 3 || !service.Playing)
             {

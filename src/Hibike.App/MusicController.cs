@@ -280,6 +280,7 @@ public sealed partial class MusicController
         HasError = false; Pending = track; LoadingAudio = true; SetStatus("Obtendo áudio…");
         var stage = "YT-DLP";
         var entered = false;
+        var preparation = Task.CompletedTask;
         try
         {
             PlaybackDiagnostics.Write("Reprodução", "Aguardando tentativa anterior.");
@@ -300,11 +301,10 @@ public sealed partial class MusicController
                 index = Favorites.IndexOf(original); if (index >= 0) Favorites[index] = track;
                 Pending = track;
             }
+            // Starting the platform playback service and resolving the stream are independent;
+            // they used to run one after the other on every start.
             if (Player is IAudioPreparation preparing)
-            {
-                if (continuing) await preparing.BeginRecoveryAsync(track, request.Token);
-                else await preparing.BeginPreparationAsync(track, request.Token);
-            }
+                preparation = continuing ? preparing.BeginRecoveryAsync(track, request.Token) : preparing.BeginPreparationAsync(track, request.Token);
             Player.Pause();
             PlaybackDiagnostics.Write("Reprodução", "Iniciando resolução de " + track.Id);
             using var extractTimeout = CancellationTokenSource.CreateLinkedTokenSource(request.Token);
@@ -313,6 +313,7 @@ public sealed partial class MusicController
                 ? (Track: requestedSource, Audio: await _catalog.ResolveAsync(requestedSource, extractTimeout.Token))
                 // ponytail: automatic alternatives disabled until matching is reliable; restore ResolveFirstAsync when reactivating selector.
                 : (Track: track, Audio: await _catalog.ResolveAsync(track, extractTimeout.Token));
+            await preparation;
             var source = resolved.Audio with { Title = track.Title, Artist = track.Artist, Artwork = track.Thumbnail ?? resolved.Audio.Artwork };
             stage = "Player";
             PlaybackDiagnostics.Write("Reprodução", "Áudio resolvido; enviando ao player.");
@@ -383,7 +384,13 @@ public sealed partial class MusicController
         }
         finally
         {
-            if (Player is IAudioPreparation preparing && !Player.IsPlaying) preparing.CancelPreparation();
+            if (Player is IAudioPreparation preparing && !Player.IsPlaying)
+            {
+                // Never cancel ahead of a preparation still starting the service, or it would
+                // come up afterwards and keep its "preparing" notification.
+                try { await preparation; } catch (Exception) { /* Its failure was already reported or superseded. */ }
+                if (!Player.IsPlaying) preparing.CancelPreparation();
+            }
             if (entered) _playGate.Release();
             if (ReferenceEquals(_play, request)) { _play = null; Pending = null; LoadingAudio = false; Changed?.Invoke(); }
             request.Dispose();

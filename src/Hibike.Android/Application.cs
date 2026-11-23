@@ -15,7 +15,10 @@ public sealed class Application(nint handle, JniHandleOwnership ownership)
     protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
     {
         var context = global::Android.App.Application.Context;
-        AppServices.Configure(new YtDlpCatalog(new AndroidCommandRunner(context), context.FilesDir!.AbsolutePath),
+        var extractor = new AndroidCommandRunner(context);
+        // Pay Python and yt-dlp start-up while the user is still browsing, not on the first tap.
+        extractor.Prewarm();
+        AppServices.Configure(new YtDlpCatalog(extractor, context.FilesDir!.AbsolutePath),
             new AndroidAudioPlayer(context), context.FilesDir!.AbsolutePath);
         AppServices.IsNetworkAvailable = DefaultNetworkState.Create(context).IsAvailable;
         AppServices.RequestDisplayFrame = new AndroidDisplayFrames().Post;
